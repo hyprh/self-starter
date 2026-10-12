@@ -1,12 +1,12 @@
 // Thin wrappers around the codex CLI: `codex queue` to deliver into a thread,
-// `codex app-server` to create a dedicated thread the way the Codex app does,
-// and `codex exec resume` to run a turn in one. Arguments are passed as an
-// array, never through a shell.
+// `codex app-server` to create, inspect and wake threads the way the Codex app
+// does, and `codex exec resume` to run a turn in a dedicated thread. Arguments
+// are passed as an array, never through a shell.
 
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { createInterface } from "node:readline";
 import type { Sandbox } from "../core/definition.js";
+import { AppServerSession } from "./app-server.js";
 
 export interface ExecResult {
   ok: boolean;
@@ -98,6 +98,21 @@ export function parseExecJsonl(stdout: string): ExecResult {
   return result;
 }
 
+type TurnLike = { status?: string; items?: unknown; error?: { message?: string } } | undefined;
+
+/** The outcome of an app-server turn: whether it completed, and its last agent message. */
+function turnResult(turn: TurnLike): ExecResult {
+  const items: Array<{ type?: string; text?: string }> = Array.isArray(turn?.items) ? turn.items : [];
+  const last = [...items].reverse().find((item) => item.type === "agentMessage" && typeof item.text === "string");
+  const result: ExecResult = { ok: turn?.status === "completed" };
+  if (last?.text !== undefined) result.lastMessage = last.text;
+  if (!result.ok) result.error = turn?.error?.message ?? `the turn ended as ${String(turn?.status)}`;
+  return result;
+}
+
+const turnCompletedIn = (threadId: string) => (message: { method?: string; params?: Record<string, any> }) =>
+  message.method === "turn/completed" && message.params?.threadId === threadId;
+
 export interface StartThreadOptions {
   cwd: string;
   /** Title shown in the Codex app. */
@@ -108,9 +123,26 @@ export interface StartThreadOptions {
   timeoutMs: number;
 }
 
+/** A thread as seen from outside, without loading it. */
+export interface ThreadView {
+  /** Whether one of its recent turns contains the marker, such as a fire id. */
+  mentions: boolean;
+  /** Whether its latest turn is still running somewhere. */
+  busy: boolean;
+}
+
+export interface WakeOptions {
+  threadId: string;
+  cwd?: string;
+  sandbox: Sandbox;
+  timeoutMs: number;
+}
+
 export interface CodexRunner {
   queue(threadId: string, message: string): Promise<{ submissionId?: string }>;
   startThread(options: StartThreadOptions): Promise<ExecResult>;
+  inspectThread(threadId: string, marker: string): Promise<ThreadView>;
+  wakeThread(options: WakeOptions): Promise<ExecResult>;
   exec(options: { cwd: string; prompt: string; sandbox: Sandbox; outputSchemaPath?: string; timeoutMs: number }): Promise<ExecResult>;
   resume(options: {
     threadId: string;
@@ -157,82 +189,72 @@ export class CodexCli implements CodexRunner {
     return match ? { submissionId: match[1]! } : {};
   }
 
+  private appServer(cwd?: string): Promise<AppServerSession> {
+    return AppServerSession.open(this.command, this.prefix, cwd);
+  }
+
   /**
    * Creates a thread through `codex app-server`, names it and runs its first
    * turn. Threads made this way are listed by the Codex app like the user's
    * own; threads made by `codex exec` are left out of its default list.
    */
-  startThread(options: StartThreadOptions): Promise<ExecResult> {
-    const child = spawn(this.command, [...this.prefix, "app-server"], { cwd: options.cwd, stdio: ["pipe", "pipe", "pipe"] });
-    return new Promise<ExecResult>((resolve) => {
-      type Message = { id?: number | string; method?: string; params?: Record<string, any>; result?: Record<string, any>; error?: { message?: string } };
-      const waiting = new Map<number | string, (message: Message) => void>();
-      let nextId = 1;
-      let threadId: string | undefined;
-      let stderr = "";
-      let settled = false;
+  async startThread(options: StartThreadOptions): Promise<ExecResult> {
+    let session: AppServerSession | undefined;
+    let threadId: string | undefined;
+    try {
+      session = await this.appServer(options.cwd);
+      threadId = (await session.request("thread/start", { cwd: options.cwd })).thread?.id as string | undefined;
+      if (!threadId) throw new Error("thread/start returned no thread");
+      await session.request("thread/name/set", { threadId, name: options.name });
+      const completed = session.next(turnCompletedIn(threadId), options.timeoutMs, "the first turn");
+      const params: Record<string, unknown> = { threadId, input: [{ type: "text", text: options.prompt, text_elements: [] }] };
+      if (options.outputSchema !== undefined) params.outputSchema = options.outputSchema;
+      await session.request("turn/start", params);
+      return { ...turnResult((await completed).params?.turn), threadId };
+    } catch (error) {
+      return { ok: false, ...(threadId ? { threadId } : {}), error: `codex app-server: ${(error as Error).message}` };
+    } finally {
+      session?.close();
+    }
+  }
 
-      const finish = (result: ExecResult) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        child.kill("SIGTERM");
-        setTimeout(() => child.kill("SIGKILL"), 3000).unref();
-        resolve(threadId && !result.threadId ? { ...result, threadId } : result);
-      };
-      const timer = setTimeout(() => finish({ ok: false, error: `timed out after ${Math.round(options.timeoutMs / 60_000)} min` }), options.timeoutMs);
-      const send = (message: Record<string, unknown>) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-      const request = (method: string, params: Record<string, unknown>) =>
-        new Promise<Message>((answer) => {
-          const id = nextId++;
-          waiting.set(id, answer);
-          send({ id, method, params });
-        });
+  /** Reads a thread's recent turns without loading it, so a Codex app that has it open is not disturbed. */
+  async inspectThread(threadId: string, marker: string): Promise<ThreadView> {
+    const session = await this.appServer();
+    try {
+      const page = await session.request("thread/turns/list", { threadId, limit: 5, itemsView: "full" });
+      const turns: Array<{ status?: string }> = Array.isArray(page.data) ? page.data : [];
+      return { mentions: JSON.stringify(turns).includes(marker), busy: turns[0]?.status === "inProgress" };
+    } finally {
+      session.close();
+    }
+  }
 
-      child.on("error", (error) => finish({ ok: false, error: `could not start codex app-server: ${error.message}` }));
-      child.on("close", () => finish({ ok: false, error: `codex app-server exited: ${shortError(stderr)}` }));
-      child.stdin.on("error", () => {});
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < 64 * 1024) stderr += chunk.toString("utf8");
+  /**
+   * Loads a thread that no Codex process has open. A message queued for it is
+   * then picked up here and runs as a turn in that same thread, as it would in
+   * the Codex app; this returns when that turn ends.
+   */
+  async wakeThread(options: WakeOptions): Promise<ExecResult> {
+    const session = await this.appServer(options.cwd);
+    try {
+      const started = session.next((m) => m.method === "turn/started" && m.params?.threadId === options.threadId, 60_000, "the queued message to start");
+      const completed = session.next(turnCompletedIn(options.threadId), options.timeoutMs, "the turn to finish");
+      completed.catch(() => {}); // settled below, or abandoned when nothing started
+      await session.request("thread/resume", {
+        threadId: options.threadId,
+        approvalPolicy: "never",
+        sandbox: options.sandbox,
+        excludeTurns: true,
+        ...(options.cwd ? { cwd: options.cwd } : {}),
       });
-      createInterface({ input: child.stdout }).on("line", (line) => {
-        let message: Message;
-        try {
-          message = JSON.parse(line) as Message;
-        } catch {
-          return;
-        }
-        if (message.id !== undefined && message.method === undefined) {
-          waiting.get(message.id)?.(message);
-          waiting.delete(message.id);
-        } else if (message.id !== undefined) {
-          // Approvals and other questions: nobody is there to answer them.
-          send({ id: message.id, error: { code: -32601, message: "self-starter does not answer this request" } });
-        } else if (message.method === "turn/completed" && message.params?.threadId === threadId) {
-          const turn = message.params?.turn ?? {};
-          const items: Array<{ type?: string; text?: string }> = Array.isArray(turn.items) ? turn.items : [];
-          const last = [...items].reverse().find((item) => item.type === "agentMessage" && typeof item.text === "string");
-          const result: ExecResult = { ok: turn.status === "completed" };
-          if (last?.text !== undefined) result.lastMessage = last.text;
-          if (!result.ok) result.error = turn.error?.message ?? `the turn ended as ${String(turn.status)}`;
-          finish(result);
-        }
-      });
-
-      void (async () => {
-        const init = await request("initialize", { clientInfo: { name: "self-starter", version: "1" } });
-        if (init.error) return finish({ ok: false, error: `codex app-server: ${init.error.message ?? "initialize failed"}` });
-        send({ method: "initialized" });
-        const started = await request("thread/start", { cwd: options.cwd });
-        threadId = started.result?.thread?.id;
-        if (!threadId) return finish({ ok: false, error: `codex app-server: ${started.error?.message ?? "thread/start returned no thread"}` });
-        await request("thread/name/set", { threadId, name: options.name });
-        const params: Record<string, unknown> = { threadId, input: [{ type: "text", text: options.prompt, text_elements: [] }] };
-        if (options.outputSchema !== undefined) params.outputSchema = options.outputSchema;
-        const turn = await request("turn/start", params);
-        if (turn.error) finish({ ok: false, error: `codex app-server: ${turn.error.message ?? "turn/start failed"}` });
-      })();
-    });
+      await started;
+      return { ...turnResult((await completed).params?.turn), threadId: options.threadId };
+    } catch (error) {
+      return { ok: false, threadId: options.threadId, error: (error as Error).message };
+    } finally {
+      session.close();
+    }
   }
 
   async exec(options: { cwd: string; prompt: string; sandbox: Sandbox; outputSchemaPath?: string; timeoutMs: number }): Promise<ExecResult> {

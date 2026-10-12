@@ -331,8 +331,66 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     }
   });
 
-  it("reminds about an origin fire nobody picked up, and accepts a late receipt", async () => {
+  it("wakes the origin thread when no Codex app picked the fire up", async () => {
     const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+
+      await t.executor.tick();
+      assert.equal(t.codex.wakes.length, 0, "an open Codex app gets a minute to pick it up");
+      t.clock.at += 61_000;
+      await t.executor.tick();
+      const wake = await eventually(() => t.codex.wakes[0]);
+      assert.equal(wake.threadId, ORIGIN);
+      assert.equal(wake.sandbox, "workspace-write");
+      const fire = await eventually(() => (t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
+      assert.equal(fire.receipt?.summary, "The price moved on earnings; details in the thread.");
+      assert.equal((await eventually(() => t.notifier.sent[0])).threadId, ORIGIN);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("leaves the fire to an open Codex app, and waits while the user is mid-turn", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" }, policy: { max_fires: 2 } });
+      server.price = 200;
+      const first = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(first)?.status === "delivered");
+      t.codex.threadViews.set(ORIGIN, { mentions: true, busy: true });
+      t.clock.at += 61_000;
+      await t.executor.tick();
+      t.clock.at += 6 * 60_000;
+      await t.executor.tick();
+      assert.equal(t.codex.wakes.length, 0, "the open app is on it");
+      assert.equal(t.notifier.sent.length, 0, "and no reminder is needed");
+      t.service.report({ fireId: first, summary: "done in the app", notify: false }, fromThread({ turnId: "turn-30" }));
+
+      server.price = 100;
+      await t.engine.runNow("price-alert");
+      server.price = 200;
+      const second = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(second)?.status === "delivered");
+      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: true });
+      t.clock.at += 61_000;
+      await t.executor.tick();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal(t.codex.wakes.length, 0, "not while the user is in the middle of a turn");
+      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: false });
+      t.clock.at += 61_000;
+      await t.executor.tick();
+      await eventually(() => t.codex.wakes.length === 1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("reminds about an origin fire nobody picked up when waking is off, and accepts a late receipt", async () => {
+    const t = setup(server, { wakeClosedThreads: false });
     try {
       await t.activate({ target: { kind: "origin" } });
       server.price = 200;

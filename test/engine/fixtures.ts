@@ -6,7 +6,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CodexRunner, ExecResult } from "../../src/engine/codex.js";
+import type { CodexRunner, ExecResult, ThreadView, WakeOptions } from "../../src/engine/codex.js";
 import type { Notification, Notifier } from "../../src/engine/notify.js";
 import { resolvePaths, type Paths } from "../../src/engine/paths.js";
 
@@ -55,7 +55,20 @@ export class FakeCodex implements CodexRunner {
   queueError: Error | undefined;
   resumeAnswer = '{"summary":"looked into it","notify":true}';
   resumeOk = true;
+  /** How each thread looks from outside; by default nobody has it open and it is idle. */
+  threadViews = new Map<string, ThreadView>();
+  wakes: WakeOptions[] = [];
+  wakeAnswer = "The price moved on earnings; details in the thread.";
   private threads = 0;
+
+  async inspectThread(threadId: string): Promise<ThreadView> {
+    return this.threadViews.get(threadId) ?? { mentions: false, busy: false };
+  }
+
+  async wakeThread(options: WakeOptions): Promise<ExecResult> {
+    this.wakes.push(options);
+    return { ok: true, threadId: options.threadId, lastMessage: this.wakeAnswer };
+  }
 
   async queue(threadId: string, message: string): Promise<{ submissionId?: string }> {
     if (this.queueError) throw this.queueError;

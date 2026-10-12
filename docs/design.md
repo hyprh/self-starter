@@ -280,7 +280,7 @@ Besides these phases, a trigger is ACTIVE, PAUSED (by the user or Codex), EXPIRE
 
 - The message is stored in a queue database under `~/.codex`; the command does not need a running Codex.
 - A Codex process that has the thread loaded picks the message up within about 10 seconds and runs it as a turn (`turn_trigger: "queue"`); if a turn is running, it waits until that turn ends, so the user is never interrupted.
-- If no process has the thread loaded, the message waits until the thread is opened again. The engine sends a reminder notification after 5 minutes without a receipt.
+- If no process has the thread loaded, nothing picks the message up. After a minute the engine checks the thread from outside (app server `thread/turns/list`, which does not load it): if the fire's message is there, an open Codex app is handling it; if the thread's latest turn is still running, it looks again later; otherwise it wakes the thread: it starts its own app server and calls `thread/resume` (approval policy `never`, the trigger's `action.sandbox`), the queued message is picked up there and runs as a turn in the same thread, and the server stops when the turn ends. Verified with Codex CLI 0.162.1: the queued message runs exactly once, in the original thread. With `wakeClosedThreads: false` in config.json the message waits instead, and a reminder notification goes out after 5 minutes.
 - The thread must already have a turn (a rollout). Any thread the user talked in has one.
 - The delivered turn uses the thread's own model, approval and sandbox settings, so delivery cannot raise privileges.
 
@@ -325,7 +325,7 @@ When you are done, call the trigger_report tool with fire_id="fire_01J9...", a o
 
 ### 6.4 Receipts and notifications
 
-- Origin threads: the agent calls `trigger_report(fire_id, summary, notify)`. After 5 minutes without one, a reminder notification goes out; after 30 minutes the fire is closed as "no reply". A late report still counts.
+- Origin threads: the agent calls `trigger_report(fire_id, summary, notify)`; when a woken turn ends without one, its last message becomes the receipt. After 30 minutes without a receipt the fire is closed as "no reply". A late report still counts.
 - Dedicated threads: the receipt is the run's final answer (if the agent also calls `trigger_report`, the first receipt wins).
 - `notify.when`: `always` notifies on every fire, `receipt` (the default) follows the receipt's `notify`, `never` records only. Health notifications always go out.
 - Notifications go to channels: `desktop` (terminal-notifier, where clicking opens `codex://threads/<id>`, or osascript on macOS; notify-send on Linux) and `email`. Email is the user's own mailbox sending to itself: `self-starter channel email you@gmail.com` fills in the server for common providers (Gmail, iCloud, Yahoo, Fastmail, QQ, NetEase, Aliyun), asks for an app password and sends a test email; any other SMTP server works with `--host`. Outlook.com addresses are refused with an explanation, since Microsoft now requires OAuth for sending. A trigger picks channels with `notify.channels`; otherwise the user's default applies. The app password is kept in its own 0600 file that probes never receive. Quiet hours hold notifications until the window ends.
@@ -463,7 +463,7 @@ Validated without the app (section 7.3): plugin installation, MCP tools and `_me
 | ID | Hypothesis | Fallback |
 |---|---|---|
 | H1 | The app lists and loads a plugin installed with `codex plugin add` | Configure the MCP server and the skill in `config.toml` by hand |
-| H5 | A queued message reaches a thread the app has open, idle or busy, within about 10 seconds | The reminder notification; the user opens the thread |
+| H5 | A queued message reaches a thread the app has open, idle or busy, within about 10 seconds | The engine wakes the thread after a minute |
 | H7 | Notifications open the thread through `codex://threads/<id>` | The notification names the thread; `codex resume <id>` |
 | H9 | `codex exec resume` on a thread the app has open at the same time leaves the thread intact and visible | Fork a thread per fire, or deliver dedicated fires with `codex queue` and let them run when the app has the thread open |
 

@@ -21,6 +21,11 @@ export interface Config {
     maxConcurrentAgentRuns: number;
   };
   maxConcurrentProbes: number;
+  /**
+   * When no Codex app has the origin thread open, so a fire queued for it is not
+   * picked up within a minute, load the thread here and run the fire in it.
+   */
+  wakeClosedThreads: boolean;
   /** A fire sent to the origin thread with no receipt after this long triggers a reminder notification. */
   originReminderMinutes: number;
   /** After this long without a receipt, a fire is closed as "no reply". */
@@ -31,6 +36,7 @@ export interface Config {
 export const DEFAULT_CONFIG: Config = {
   budget: { maxAgentRunsPerDay: 20, maxConcurrentAgentRuns: 1 },
   maxConcurrentProbes: 2,
+  wakeClosedThreads: true,
   originReminderMinutes: 5,
   receiptTimeoutMinutes: 30,
   agentRunTimeoutMinutes: 20,

@@ -2,6 +2,10 @@
 // thread, or a turn run in the trigger's dedicated thread. Applies the
 // concurrency policy, the daily agent budget, retries, receipts, receipt
 // timeouts and quiet hours.
+//
+// A message queued into the origin thread runs as soon as a Codex app has that
+// thread open. When nobody does, the executor wakes the thread itself after a
+// minute, so the conversation still reacts while the app is closed.
 
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -20,6 +24,13 @@ import type { Store } from "./store.js";
 
 const RETRY_DELAYS_MS = [30_000, 120_000, 600_000];
 const MAX_FAILURES = RETRY_DELAYS_MS.length + 1;
+/** A Codex app that has the thread open picks a queued message up within seconds; after this, nobody has. */
+const WAKE_AFTER_MS = 60_000;
+/** While the user is in the middle of a turn in the origin thread, look again this much later. */
+const BUSY_RECHECK_MS = 60_000;
+
+/** What became of a fire queued into its origin thread. */
+type OriginOutcome = "picked-up" | "waking" | "woken" | "unreachable";
 /** Errors from codex that mean the thread no longer exists. */
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
 
@@ -67,6 +78,8 @@ export class Executor {
   private readonly nextAttemptAt = new Map<string, number>();
   private readonly deferred: Deferred[] = [];
   private readonly reminded = new Set<string>();
+  private readonly originOutcome = new Map<string, OriginOutcome>();
+  private readonly nextOriginCheck = new Map<string, number>();
   private readonly threadCreation = new Map<string, Promise<string>>();
   private activeAgentRuns = 0;
   private kicking = false;
@@ -145,11 +158,10 @@ export class Executor {
     return this.deps.fires.get(fireId)!;
   }
 
-  /** Periodic work: reminders, receipt timeouts, notifications held by quiet hours, and retries. */
+  /** Periodic work: waking closed origin threads, reminders, receipt timeouts, notifications held by quiet hours, and retries. */
   async tick(): Promise<void> {
     const now = this.now().getTime();
     const timeoutMs = this.deps.config.receiptTimeoutMinutes * 60_000;
-    const reminderMs = this.deps.config.originReminderMinutes * 60_000;
     for (const fire of this.deps.fires.withStatus("delivered")) {
       if (!fire.deliveredAt) continue;
       const age = now - Date.parse(fire.deliveredAt);
@@ -162,13 +174,83 @@ export class Executor {
         };
         this.deps.fires.record({ type: "receipt", fireId: fire.fireId, receipt, at: receipt.at });
         await this.afterReceipt(fire.fireId, receipt);
-      } else if (fire.target?.kind === "origin" && age > reminderMs && !fire.notifiedAt && !this.reminded.has(fire.fireId)) {
-        this.reminded.add(fire.fireId);
-        await this.remind(fire);
+      } else if (fire.target?.kind === "origin") {
+        await this.followOrigin(fire, age, now);
       }
     }
     await this.flushDeferred();
     this.kick();
+  }
+
+  /** A fire queued into the origin thread is still open: wake the thread if nobody has it open, or remind the user. */
+  private async followOrigin(fire: FireRecord, age: number, now: number): Promise<void> {
+    const outcome = this.originOutcome.get(fire.fireId);
+    const wake = this.deps.config.wakeClosedThreads;
+    if (wake && outcome === undefined) {
+      if (age >= WAKE_AFTER_MS && (this.nextOriginCheck.get(fire.fireId) ?? 0) <= now) this.startWake(fire, now);
+      return;
+    }
+    const remind = wake ? outcome === "unreachable" : true;
+    if (remind && age > this.deps.config.originReminderMinutes * 60_000 && !fire.notifiedAt && !this.reminded.has(fire.fireId)) {
+      this.reminded.add(fire.fireId);
+      await this.remind(fire);
+    }
+  }
+
+  private startWake(fire: FireRecord, now: number): void {
+    const codex = this.deps.codex();
+    const threadId = fire.target?.threadId;
+    if (!codex || !threadId || !this.deps.store.hasTrigger(fire.triggerId)) {
+      this.originOutcome.set(fire.fireId, "unreachable");
+      return;
+    }
+    if (this.activeAgentRuns >= this.deps.config.budget.maxConcurrentAgentRuns) return; // next tick
+    this.originOutcome.set(fire.fireId, "waking");
+    this.activeAgentRuns += 1;
+    void this.wake(fire, threadId, codex, now)
+      .catch((error: Error) => {
+        this.originOutcome.set(fire.fireId, "unreachable");
+        this.log(`could not wake thread ${threadId} for fire ${fire.fireId}: ${error.message}`);
+      })
+      .finally(() => {
+        this.activeAgentRuns -= 1;
+        this.kick();
+      });
+  }
+
+  /** Runs a fire in its origin thread when no Codex app picked it up, so the conversation reacts even while the app is closed. */
+  private async wake(fire: FireRecord, threadId: string, codex: CodexRunner, now: number): Promise<void> {
+    const view = await codex.inspectThread(threadId, fire.fireId);
+    if (view.mentions) {
+      this.originOutcome.set(fire.fireId, "picked-up"); // an open Codex app is on it
+      return;
+    }
+    if (view.busy) {
+      // The user is in the middle of a turn there; the queued message runs after it.
+      this.originOutcome.delete(fire.fireId);
+      this.nextOriginCheck.set(fire.fireId, now + BUSY_RECHECK_MS);
+      return;
+    }
+    const { definition } = this.deps.store.loadTrigger(fire.triggerId);
+    this.log(`no Codex app has thread ${threadId} open; running fire ${fire.fireId} there`);
+    const result = await codex.wakeThread({
+      threadId,
+      cwd: this.cwdFor(definition),
+      sandbox: definition.action.sandbox,
+      timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
+    });
+    if (!result.ok) {
+      this.originOutcome.set(fire.fireId, "unreachable");
+      this.log(`fire ${fire.fireId} did not run in thread ${threadId}: ${result.error}`);
+      return;
+    }
+    this.originOutcome.set(fire.fireId, "woken");
+    // Usually the turn reported through trigger_report; otherwise its last message is the receipt.
+    if (this.deps.fires.get(fire.fireId)?.receipt) return;
+    const at = this.now().toISOString();
+    const receipt: Receipt = { ...parseReceipt(result.lastMessage, fire.summary), at, source: "final-answer" };
+    this.deps.fires.record({ type: "receipt", fireId: fire.fireId, receipt, at });
+    await this.afterReceipt(fire.fireId, receipt);
   }
 
   /** Dispatches pending fires that are ready. Never runs twice at once. */
