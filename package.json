@@ -1,0 +1,27 @@
+{
+  "name": "codex-triggers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Let Codex act when conditions are met: agent-written probes, a background engine, and a Codex plugin.",
+  "type": "module",
+  "bin": {
+    "ctrig": "dist/src/cli/main.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test --test-reporter=spec $(find dist/test -name \"*.test.js\" | sort)",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "deno": "2.9.6",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "6.0.3"
+  }
+}

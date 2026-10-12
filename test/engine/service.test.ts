@@ -1,0 +1,399 @@
+import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import { bundledDeno, DEFAULT_CONFIG, type Config } from "../../src/engine/config.js";
+import { Engine } from "../../src/engine/engine.js";
+import { Executor } from "../../src/engine/executor.js";
+import { FireLog } from "../../src/engine/fires.js";
+import { Secrets } from "../../src/engine/secrets.js";
+import { ServiceError, TriggerService, type Caller } from "../../src/engine/service.js";
+import { Store } from "../../src/engine/store.js";
+import { EVENT_PROBE, eventually, FakeCodex, RecordingNotifier, STATE_PROBE, startServer, tempHome, type TestServer } from "./fixtures.js";
+
+const deno = bundledDeno();
+const ORIGIN = "thread-origin";
+const fromThread = (extra: Partial<Caller> = {}): Caller => ({ via: "mcp", threadId: ORIGIN, turnId: "turn-1", ...extra });
+
+function setup(server: TestServer, configChanges: Partial<Config> = {}) {
+  const home = tempHome();
+  const { paths } = home;
+  const store = new Store(paths);
+  store.ensureLayout();
+  const config: Config = { ...DEFAULT_CONFIG, ...configChanges, budget: { ...DEFAULT_CONFIG.budget, ...(configChanges.budget ?? {}) } };
+  const fires = new FireLog(paths.fires);
+  const secrets = new Secrets(paths);
+  const notifier = new RecordingNotifier();
+  const codex = new FakeCodex();
+  const logs: string[] = [];
+  const clock = { at: Date.now() };
+  const now = () => new Date(clock.at);
+  const log = (line: string) => logs.push(line);
+  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now });
+  const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
+  const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", deno: () => deno, codex: () => "/fake/codex", log, now });
+
+  const definition = (overrides: Record<string, unknown> = {}) => ({
+    id: "price-alert",
+    name: "Price above 150",
+    intent: "Tell me when the price goes above 150",
+    probe: { params: { url: server.origin, threshold: 150 }, permissions: { net: [server.host] }, interval: { min: "10s", max: "1h", default: "1m" } },
+    action: { type: "agent", prompt: "Find out why the price moved." },
+    ...overrides,
+  });
+
+  /** Drafts and activates a trigger, as the MCP tools would after the user approved. */
+  const activate = async (overrides: Record<string, unknown> = {}, code = STATE_PROBE, caller: Caller = fromThread()) => {
+    const view = await service.createDraft({ definition: definition(overrides), code }, caller);
+    assert.ok(view.trial?.ok, `trial run failed: ${view.trial?.error}`);
+    return { view, trigger: service.activateDraft({ draftId: view.draftId }, caller) };
+  };
+
+  return { home, paths, store, fires, secrets, notifier, codex, logs, clock, executor, engine, service, definition, activate, cleanup: home.cleanup };
+}
+
+describe("triggers end to end", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+  let server: TestServer;
+  let t: ReturnType<typeof setup>;
+
+  beforeEach(async () => {
+    server = await startServer();
+    t = setup(server);
+  });
+  afterEach(async () => {
+    t.cleanup();
+    await server.close();
+  });
+
+  it("drafts, approves, fires into the origin thread and takes the receipt", async () => {
+    const view = await t.service.createDraft({ definition: t.definition({ policy: { max_fires: 1 } }), code: STATE_PROBE }, fromThread());
+    assert.equal(view.trial?.ok, true);
+    assert.equal(view.trial?.fire, false);
+    assert.match(view.approvalText, /^Create the trigger "Price above 150" \(price-alert\)\?/);
+    assert.match(view.approvalText, new RegExp(`Network: ${server.host.replace(/\./g, "\\.")}`));
+    assert.match(view.approvalText, /back in the thread where the trigger was created/);
+    assert.equal(t.store.hasTrigger("price-alert"), false, "nothing is live before approval");
+
+    const trigger = t.service.activateDraft({ draftId: view.draftId }, fromThread());
+    assert.equal(trigger.lifecycle, "active");
+    assert.equal(trigger.approval, "approved");
+
+    const quiet = await t.engine.runNow("price-alert");
+    assert.equal(quiet?.ok, true);
+    assert.equal(quiet?.fireId, undefined);
+
+    server.price = 180;
+    const fired = await t.engine.runNow("price-alert");
+    assert.ok(fired?.fireId, "the trigger fired");
+    const queued = await eventually(() => t.codex.queued[0]);
+    assert.equal(queued.threadId, ORIGIN);
+    assert.match(queued.message, /^\[codex-triggers\] Price above 150 \(price-alert · fire #1 · fire_/);
+    assert.match(queued.message, /Find out why the price moved\./);
+    assert.match(queued.message, /<trigger-data trust="untrusted">[\s\S]*"price": 180[\s\S]*<\/trigger-data>/);
+    assert.match(queued.message, new RegExp(`trigger_report tool with fire_id="${fired.fireId}"`));
+    assert.equal(t.fires.get(fired.fireId)?.status, "delivered");
+
+    // While the fire is open, this thread cannot change triggers.
+    await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "other" }), code: STATE_PROBE }, fromThread()), (error: ServiceError) => error.code === "refused");
+    assert.throws(() => t.service.pause({ triggerId: "price-alert" }, fromThread()), (error: ServiceError) => error.code === "refused");
+
+    const report = t.service.report({ fireId: fired.fireId, summary: "Earnings beat; volume 3x normal", notify: true }, fromThread({ turnId: "turn-9" }));
+    assert.equal(report.status, "done");
+    assert.equal(report.userNotified, true);
+    const notification = await eventually(() => t.notifier.sent[0]);
+    assert.equal(notification.body, "Earnings beat; volume 3x normal");
+    assert.equal(notification.threadId, ORIGIN);
+
+    // The turn that handled the fire stays locked out; a later turn of the user is fine.
+    assert.throws(() => t.service.pause({ triggerId: "price-alert" }, fromThread({ turnId: "turn-9" })), (error: ServiceError) => error.code === "refused");
+    assert.equal(t.service.pause({ triggerId: "price-alert" }, fromThread({ turnId: "turn-10" })).lifecycle, "paused");
+
+    assert.throws(() => t.service.report({ fireId: fired.fireId, summary: "again", notify: false }, fromThread()), /already has a receipt/);
+  });
+
+  it("fires only on the transition and stops after max_fires", async () => {
+    await t.activate({ policy: { max_fires: 2 } });
+    server.price = 200;
+    assert.ok((await t.engine.runNow("price-alert"))?.fireId);
+    assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "still above: no second fire");
+    server.price = 100;
+    await t.engine.runNow("price-alert");
+    server.price = 200;
+    assert.ok((await t.engine.runNow("price-alert"))?.fireId, "fires again after clearing");
+    assert.equal(t.engine.runtime("price-alert").lifecycle, "exhausted");
+    assert.equal(await t.engine.runNow("price-alert"), undefined, "an exhausted trigger does not run");
+  });
+
+  it("creates a dedicated thread and runs fires there", async () => {
+    const { trigger } = await t.activate({ target: { cwd: t.paths.home } });
+    assert.equal(trigger.target, "dedicated");
+    await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+    assert.equal(t.codex.started.length, 1);
+    assert.equal(t.codex.started[0]!.name, "Trigger: Price above 150");
+    assert.match(t.codex.started[0]!.prompt, /This thread belongs to the trigger "Price above 150"/);
+    assert.equal(t.codex.started[0]!.cwd, t.paths.home);
+
+    server.price = 200;
+    const fired = await t.engine.runNow("price-alert");
+    const fire = await eventually(() => (t.fires.get(fired!.fireId!)?.status === "done" ? t.fires.get(fired!.fireId!) : undefined));
+    assert.equal(t.codex.resumes.length, 1);
+    assert.equal(t.codex.resumes[0]!.threadId, "thread-dedicated-1");
+    assert.equal(t.codex.resumes[0]!.sandbox, "read-only");
+    assert.match(t.codex.resumes[0]!.prompt, /give your final answer as JSON/);
+    assert.equal(fire.receipt?.source, "final-answer");
+    assert.equal(fire.receipt?.summary, "looked into it");
+    assert.equal((await eventually(() => t.notifier.sent[0])).threadId, "thread-dedicated-1");
+    assert.equal(t.codex.started.length, 1, "the thread is reused");
+    assert.equal(t.codex.execs.length, 0);
+  });
+
+  it("falls back to codex exec when the app server cannot create the thread", async () => {
+    t.codex.appServerBroken = true;
+    await t.activate();
+    await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+    assert.equal(t.codex.execs.length, 1);
+    assert.match(t.logs.join("\n"), /using codex exec/);
+  });
+
+  it("falls back to a thread of its own when the origin thread is gone, and keeps using it", async () => {
+    await t.activate({ policy: { max_fires: 2 }, target: { kind: "origin" } });
+    t.codex.queueError = new Error("codex queue failed: thread not found");
+    for (const n of [1, 2]) {
+      server.price = 200;
+      const fired = await t.engine.runNow("price-alert");
+      await eventually(() => t.fires.get(fired!.fireId!)?.status === "done");
+      server.price = 100;
+      await t.engine.runNow("price-alert");
+      assert.equal(t.codex.resumes[n - 1]?.threadId, "thread-dedicated-1");
+    }
+    assert.equal(t.codex.started.length, 1, "one fallback thread, reused");
+  });
+
+  it("pauses a trigger whose code changed after approval until it is approved again", async () => {
+    await t.activate();
+    writeFileSync(join(t.paths.triggers, "price-alert", "probe.ts"), `${STATE_PROBE}\n// changed`);
+    assert.equal(await t.engine.runNow("price-alert"), undefined);
+    const runtime = t.engine.runtime("price-alert");
+    assert.equal(runtime.lifecycle, "paused");
+    assert.match(runtime.pausedReason ?? "", /^needs approval: its probe code or permissions changed after approval/);
+    assert.match((await eventually(() => t.notifier.sent[0])).body, /ctrig approve price-alert/);
+    assert.throws(() => t.service.resume({ triggerId: "price-alert" }, fromThread({ turnId: "turn-2" })), /ctrig approve price-alert/);
+    assert.throws(() => t.service.approveTrigger({ triggerId: "price-alert" }, fromThread()), (error: ServiceError) => error.code === "refused");
+
+    const approved = t.service.approveTrigger({ triggerId: "price-alert" }, { via: "cli" });
+    assert.equal(approved.lifecycle, "active");
+    assert.equal(t.store.loadTrigger("price-alert").definition.meta.revision, 2);
+    assert.equal((await t.engine.runNow("price-alert"))?.ok, true);
+  });
+
+  it("only gives a secret to probes that cannot reach other hosts", async () => {
+    const withSecret = { probe: { params: { url: server.origin, threshold: 150 }, permissions: { net: [server.host], env: ["API_KEY"] } } };
+    t.secrets.set("API_KEY", "s3cret", ["api.example.com"]);
+    const refused = await t.service.createDraft({ definition: t.definition(withSecret), code: STATE_PROBE }, fromThread());
+    assert.equal(refused.trial?.ok, false);
+    assert.match(refused.trial?.error ?? "", /API_KEY may only be sent to api\.example\.com, but the probe can also reach 127\.0\.0\.1/);
+    assert.match(refused.warnings[0] ?? "", /The trial run failed/);
+
+    t.secrets.set("API_KEY", "s3cret", ["127.0.0.1"]);
+    const allowed = await t.service.createDraft({ definition: t.definition({ ...withSecret, id: "price-alert-2" }), code: STATE_PROBE }, fromThread());
+    assert.equal(allowed.trial?.ok, true);
+    assert.match(allowed.approvalText, /Secrets: API_KEY/);
+  });
+
+  it("treats the first event run as a baseline and fires once per new event", async () => {
+    server.events = [{ id: "a", title: "A" }, { id: "b", title: "B" }];
+    const { view } = await t.activate({ mode: "event", action: { type: "notify" } }, EVENT_PROBE);
+    assert.match(view.warnings.join(" "), /saw 2 event\(s\)/);
+    assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "baseline");
+    server.events.push({ id: "c", title: "C" });
+    const fired = await t.engine.runNow("price-alert");
+    assert.ok(fired?.fireId);
+    assert.deepEqual(t.fires.get(fired.fireId)?.events?.map((e) => e.key), ["c"]);
+    assert.equal((await eventually(() => t.notifier.sent[0])).body, "3 items (new: C)");
+    assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "c is not new any more");
+    assert.equal(t.codex.queued.length + t.codex.resumes.length, 0, "notify actions do not involve Codex");
+  });
+
+  it("updates parameters through an approved draft and starts the state over", async () => {
+    await t.activate();
+    await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+    server.price = 200;
+    await t.engine.runNow("price-alert");
+    assert.equal(t.engine.runtime("price-alert").fireCount, 1);
+
+    const view = t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { params: { threshold: 300 } }, policy: { cooldown: "1h" } } }, fromThread({ turnId: "turn-3" }));
+    assert.deepEqual(view.changes, ["policy.cooldown: \"1h\" (new)", "probe.params.threshold: 150 → 300"]);
+    assert.match(view.approvalText, /^Change the trigger "Price above 150"/);
+    assert.match(view.approvalText, /Probe code \(unchanged\)/);
+    assert.throws(
+      () => t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { permissions: { net: ["evil.example"] } } } }, fromThread({ turnId: "turn-3" })),
+      /cannot change probe\.permissions\.net/,
+    );
+
+    t.service.activateDraft({ draftId: view.draftId }, fromThread({ turnId: "turn-4" }));
+    const definition = t.store.loadTrigger("price-alert").definition;
+    assert.equal(definition.meta.revision, 2);
+    assert.equal(definition.probe.params.threshold, 300);
+    assert.equal(definition.target.thread_id, "thread-dedicated-1", "the dedicated thread is kept");
+    assert.equal(t.engine.runtime("price-alert").fireCount, 0);
+    assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "200 is below the new threshold");
+  });
+
+  it("requires replace=true to replace an existing trigger", async () => {
+    await t.activate();
+    await assert.rejects(
+      t.service.createDraft({ definition: t.definition(), code: STATE_PROBE }, fromThread({ turnId: "turn-5" })),
+      (error: ServiceError) => error.code === "conflict",
+    );
+    const view = await t.service.createDraft({ definition: t.definition(), code: `${STATE_PROBE}\n// v2`, replace: true }, fromThread({ turnId: "turn-5" }));
+    assert.equal(view.replaces, "price-alert");
+    assert.deepEqual(view.changes, ["probe code: new version"]);
+  });
+
+  it("rejects invalid definitions with every problem listed", async () => {
+    await assert.rejects(
+      t.service.createDraft({ definition: { id: "Bad Id", name: "", probe: {}, judge: "x" }, code: STATE_PROBE }, fromThread()),
+      (error: ServiceError) => error.code === "invalid" && /judge/.test(error.message) && /id must use/.test(error.message) && /name is required/.test(error.message),
+    );
+  });
+});
+
+describe("delivery rules", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+  let server: TestServer;
+  beforeEach(async () => {
+    server = await startServer();
+  });
+  afterEach(async () => {
+    await server.close();
+  });
+
+  it("retries a failed run, then gives up and tells the user", async () => {
+    const t = setup(server);
+    try {
+      await t.activate();
+      await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+      t.codex.resumeOk = false;
+      server.price = 200;
+      const fired = await t.engine.runNow("price-alert");
+      const fireId = fired!.fireId!;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        await eventually(() => t.fires.get(fireId)!.failures >= attempt || t.fires.get(fireId)!.status === "failed");
+        t.clock.at += 11 * 60_000;
+        t.executor.kick();
+      }
+      await eventually(() => t.fires.get(fireId)?.status === "failed");
+      assert.equal(t.codex.resumes.length, 4);
+      assert.match((await eventually(() => t.notifier.sent[0])).title, /could not hand the fire to Codex/);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("skips agent runs over the daily budget but still notifies", async () => {
+    const t = setup(server, { budget: { maxAgentRunsPerDay: 1, maxConcurrentAgentRuns: 1 } });
+    try {
+      await t.activate({ policy: { concurrency: "queue" }, target: { kind: "origin" } });
+      server.price = 200;
+      const first = await t.engine.runNow("price-alert");
+      await eventually(() => t.fires.get(first!.fireId!)?.status === "delivered");
+      server.price = 100;
+      await t.engine.runNow("price-alert");
+      server.price = 200;
+      const second = await t.engine.runNow("price-alert");
+      await eventually(() => t.fires.get(second!.fireId!)?.status === "skipped");
+      assert.equal(t.codex.queued.length, 1);
+      assert.match((await eventually(() => t.notifier.sent[0])).body, /daily limit of 1 runs is used up/);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("merges fires that happen while the previous one is open (coalesce)", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      const open: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        server.price = 200;
+        open.push((await t.engine.runNow("price-alert"))!.fireId!);
+        server.price = 100;
+        await t.engine.runNow("price-alert");
+      }
+      await eventually(() => t.codex.queued.length === 1);
+      assert.equal(t.fires.get(open[1]!)?.status, "pending", "waits while the first is open");
+      t.service.report({ fireId: open[0]!, summary: "done", notify: false }, fromThread({ turnId: "turn-7" }));
+      await eventually(() => t.codex.queued.length === 2);
+      assert.equal(t.fires.get(open[1]!)?.status, "merged");
+      assert.match(t.codex.queued[1]!.message, /\(2 fires merged\)/);
+      assert.equal(t.notifier.sent.length, 0, "notify=false and when=receipt: no notification");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("reminds about an origin fire nobody picked up, and accepts a late receipt", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      t.clock.at += 6 * 60_000;
+      await t.executor.tick();
+      assert.match(t.notifier.sent[0]?.body ?? "", /waiting for Codex in your thread/);
+      t.clock.at += 30 * 60_000;
+      await t.executor.tick();
+      assert.equal(t.fires.get(fireId)?.receipt?.source, "timeout");
+      assert.equal(t.notifier.sent.length, 1, "the reminder already told the user");
+      t.service.report({ fireId, summary: "late but done", notify: true }, fromThread({ turnId: "turn-8" }));
+      assert.equal(t.fires.get(fireId)?.receipt?.summary, "late but done");
+      assert.equal((await eventually(() => t.notifier.sent[1])).body, "late but done");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("holds notifications during quiet hours", async () => {
+    const t = setup(server);
+    try {
+      t.clock.at = Date.parse("2026-10-12T03:00:00Z");
+      await t.activate({ action: { type: "notify" }, policy: { quiet_hours: { from: "01:00", to: "07:00", tz: "UTC" } } });
+      server.price = 200;
+      await t.engine.runNow("price-alert");
+      await t.executor.tick();
+      assert.equal(t.notifier.sent.length, 0);
+      t.clock.at = Date.parse("2026-10-12T07:00:30Z");
+      await t.executor.tick();
+      assert.equal(t.notifier.sent[0]?.body, "price 200");
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
+describe("deleting a trigger", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+  it("closes its open fires and does not let them block a new trigger with the same id", async () => {
+    const server = await startServer();
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const first = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(first)?.status === "delivered");
+      t.service.delete({ triggerId: "price-alert" }, { via: "cli" });
+      assert.equal(t.fires.get(first)?.receipt?.source, "closed");
+      // The origin thread is free again.
+      t.clock.at += 1000;
+      server.price = 100;
+      await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromThread({ turnId: "turn-11" }));
+      server.price = 200;
+      const second = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(second)?.status === "delivered");
+      assert.equal(t.codex.queued.length, 2);
+      assert.doesNotMatch(t.codex.queued[1]!.message, /previous_fire/);
+    } finally {
+      t.cleanup();
+      await server.close();
+    }
+  });
+});
