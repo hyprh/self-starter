@@ -1,4 +1,4 @@
-// Client side of the control API, used by the MCP server and by ctrig.
+// Client side of the control API, used by the MCP server and by self-starter.
 
 import { connect } from "node:net";
 import type { Caller } from "../engine/service.js";
@@ -39,7 +39,7 @@ export function callDaemon<T>(
       fn();
     };
     const timer = setTimeout(() => {
-      settle(() => reject(new Error(`the codex-triggers daemon did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`)));
+      settle(() => reject(new Error(`the self-starter daemon did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`)));
     }, timeoutMs);
     socket.setEncoding("utf8");
     socket.on("connect", () => socket.write(`${JSON.stringify({ id, method, params, caller })}\n`));
@@ -60,7 +60,7 @@ export function callDaemon<T>(
       settle(() =>
         reject(
           error.code === "ENOENT" || error.code === "ECONNREFUSED"
-            ? new DaemonUnavailable("the codex-triggers daemon is not running")
+            ? new DaemonUnavailable("the self-starter daemon is not running")
             : error,
         ),
       );

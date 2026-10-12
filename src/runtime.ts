@@ -9,7 +9,7 @@ export const PACKAGE_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 export const VERSION: string = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")) as { version: string }).version;
 
-/** The `ctrig` entry point, which also runs the daemon (`ctrig daemon`) and the MCP server (`ctrig mcp`). */
+/** The `self-starter` entry point, which also runs the daemon (`self-starter daemon`) and the MCP server (`self-starter mcp`). */
 export const CLI_SCRIPT = join(PACKAGE_ROOT, "dist", "src", "cli", "main.js");
 
 /** Source of the Codex plugin (skill and manifest). */

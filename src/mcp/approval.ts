@@ -38,7 +38,7 @@ function appleScriptString(text: string): string {
 export async function nativeDialog(message: string): Promise<Decision> {
   if (process.platform === "darwin") {
     const script =
-      `display dialog ${appleScriptString(message)} with title "codex-triggers" ` +
+      `display dialog ${appleScriptString(message)} with title "Self-Starter" ` +
       `buttons {"Deny", "Approve"} default button "Deny" cancel button "Deny" with icon caution giving up after ${DIALOG_TIMEOUT_S}`;
     const out = await run("osascript", ["-e", script]);
     if (out.code === null) return "unavailable";
@@ -49,7 +49,7 @@ export async function nativeDialog(message: string): Promise<Decision> {
   if (zenity) {
     const out = await run(zenity, [
       "--question",
-      "--title=codex-triggers",
+      "--title=Self-Starter",
       "--no-markup",
       "--width=640",
       "--ok-label=Approve",
@@ -62,7 +62,7 @@ export async function nativeDialog(message: string): Promise<Decision> {
   }
   const kdialog = which("kdialog");
   if (kdialog) {
-    const out = await run(kdialog, ["--title", "codex-triggers", "--yes-label", "Approve", "--no-label", "Deny", "--yesno", message]);
+    const out = await run(kdialog, ["--title", "Self-Starter", "--yes-label", "Approve", "--no-label", "Deny", "--yesno", message]);
     if (out.code === null) return "unavailable";
     return out.code === 0 ? "approved" : "declined";
   }

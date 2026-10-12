@@ -1,4 +1,4 @@
-// ctrigd: the background process that runs probes (Engine), hands fires to
+// self-starter daemon: the background process that runs probes (Engine), hands fires to
 // Codex (Executor), and answers the control API (TriggerService).
 
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -59,7 +59,7 @@ const heldLocks = new Set<string>();
 
 /** A pid file that keeps a second daemon from starting. */
 function acquireLock(path: string): () => void {
-  if (heldLocks.has(path)) throw new AlreadyRunning(`ctrigd is already running (pid ${process.pid})`);
+  if (heldLocks.has(path)) throw new AlreadyRunning(`self-starter daemon is already running (pid ${process.pid})`);
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       writeFileSync(path, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
@@ -77,7 +77,7 @@ function acquireLock(path: string): () => void {
       const pid = Number(readFileSync(path, "utf8").trim());
       // Our own pid in the file means a previous daemon crashed and the pid was reused.
       if (Number.isInteger(pid) && pid > 0 && pid !== process.pid && isAlive(pid)) {
-        throw new AlreadyRunning(`ctrigd is already running (pid ${pid})`);
+        throw new AlreadyRunning(`self-starter daemon is already running (pid ${pid})`);
       }
       rmSync(path, { force: true }); // left behind by a daemon that crashed
     }
@@ -86,7 +86,7 @@ function acquireLock(path: string): () => void {
 }
 
 function createLogger(paths: Paths, toStderr: boolean): (line: string) => void {
-  const file = join(paths.logs, "ctrigd.log");
+  const file = join(paths.logs, "daemon.log");
   if (existsSync(file) && statSync(file).size > LOG_MAX_BYTES) renameSync(file, `${file}.1`);
   return (line: string) => {
     const entry = `${new Date().toISOString()} ${line}\n`;
@@ -131,7 +131,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     const server = await startControlServer(paths.socket, handlers, log);
     engine.start();
     executor.kick();
-    log(`ctrigd ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"})`);
+    log(`self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"})`);
     return {
       paths,
       store,
@@ -145,7 +145,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
         executor.close();
         await server.close();
         releaseLock();
-        log("ctrigd stopped");
+        log("self-starter daemon stopped");
       },
     };
   } catch (error) {

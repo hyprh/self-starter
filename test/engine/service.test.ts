@@ -88,7 +88,7 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.ok(fired?.fireId, "the trigger fired");
     const queued = await eventually(() => t.codex.queued[0]);
     assert.equal(queued.threadId, ORIGIN);
-    assert.match(queued.message, /^\[codex-triggers\] Price above 150 \(price-alert · fire #1 · fire_/);
+    assert.match(queued.message, /^\[self-starter\] Price above 150 \(price-alert · fire #1 · fire_/);
     assert.match(queued.message, /Find out why the price moved\./);
     assert.match(queued.message, /<trigger-data trust="untrusted">[\s\S]*"price": 180[\s\S]*<\/trigger-data>/);
     assert.match(queued.message, new RegExp(`trigger_report tool with fire_id="${fired.fireId}"`));
@@ -177,8 +177,8 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     const runtime = t.engine.runtime("price-alert");
     assert.equal(runtime.lifecycle, "paused");
     assert.match(runtime.pausedReason ?? "", /^needs approval: its probe code or permissions changed after approval/);
-    assert.match((await eventually(() => t.notifier.sent[0])).body, /ctrig approve price-alert/);
-    assert.throws(() => t.service.resume({ triggerId: "price-alert" }, fromThread({ turnId: "turn-2" })), /ctrig approve price-alert/);
+    assert.match((await eventually(() => t.notifier.sent[0])).body, /self-starter approve price-alert/);
+    assert.throws(() => t.service.resume({ triggerId: "price-alert" }, fromThread({ turnId: "turn-2" })), /self-starter approve price-alert/);
     assert.throws(() => t.service.approveTrigger({ triggerId: "price-alert" }, fromThread()), (error: ServiceError) => error.code === "refused");
 
     const approved = t.service.approveTrigger({ triggerId: "price-alert" }, { via: "cli" });

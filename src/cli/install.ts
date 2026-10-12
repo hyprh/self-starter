@@ -1,6 +1,6 @@
-// `ctrig install`, `ctrig uninstall` and `ctrig doctor`: wiring codex-triggers into Codex.
+// `self-starter install`, `self-starter uninstall` and `self-starter doctor`: wiring Self-Starter into Codex.
 //
-// The plugin is copied into a local marketplace under ~/.codex-triggers, with an
+// The plugin is copied into a local marketplace under ~/.self-starter, with an
 // .mcp.json that starts this installation's MCP server through absolute paths, so
 // it does not depend on the PATH that the Codex app gives its MCP servers.
 
@@ -16,10 +16,10 @@ import { Store } from "../engine/store.js";
 import { CLI_SCRIPT, PLUGIN_SOURCE, VERSION } from "../runtime.js";
 import { serviceManager, serviceSpec, spawnDetachedDaemon } from "../service/manager.js";
 
-export const MARKETPLACE_NAME = "codex-triggers";
-export const PLUGIN_NAME = "codex-triggers";
+export const MARKETPLACE_NAME = "self-starter";
+export const PLUGIN_NAME = "self-starter";
 export const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
-export const MCP_SERVER_NAME = "codex_triggers";
+export const MCP_SERVER_NAME = "self_starter";
 
 function isExecutable(path: string): boolean {
   try {
@@ -97,14 +97,14 @@ export function buildMarketplace(paths: Paths): string {
         command: process.execPath,
         args: [CLI_SCRIPT, "mcp"],
         cwd: ".",
-        env: { CODEX_TRIGGERS_HOME: paths.home, ...(process.env.CODEX_HOME ? { CODEX_HOME: process.env.CODEX_HOME } : {}) },
+        env: { SELF_STARTER_HOME: paths.home, ...(process.env.CODEX_HOME ? { CODEX_HOME: process.env.CODEX_HOME } : {}) },
         startup_timeout_sec: 30,
       },
     },
   });
   writeJsonAtomic(join(paths.marketplace, ".agents", "plugins", "marketplace.json"), {
     name: MARKETPLACE_NAME,
-    interface: { displayName: "codex-triggers" },
+    interface: { displayName: "Self-Starter" },
     plugins: [{ name: PLUGIN_NAME, source: { source: "local", path: `./plugins/${PLUGIN_NAME}` } }],
   });
   return pluginDir;
@@ -141,7 +141,7 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   log(`codex: ${codexBin}`);
 
   const deno = resolveDeno(config);
-  if (!deno) throw new Error("deno was not found; run `npm install` in the codex-triggers folder (it ships deno), or install deno");
+  if (!deno) throw new Error("deno was not found; run `npm install` in the self-starter folder (it ships deno), or install deno");
   log(`deno: ${deno}`);
 
   const pluginDir = buildMarketplace(paths);
@@ -209,7 +209,7 @@ export async function doctor(paths: Paths): Promise<Check[]> {
     const out = spawnSync(deno, ["--version"], { encoding: "utf8" });
     add(out.status === 0, "deno", `${(out.stdout ?? "").split("\n")[0] ?? ""} (${deno}${deno === bundledDeno() ? ", bundled" : ""})`);
   } else {
-    add(false, "deno", "not found; run `npm install` in the codex-triggers folder");
+    add(false, "deno", "not found; run `npm install` in the self-starter folder");
   }
 
   const codexBin = resolveCodex(config) ?? findCodex();
@@ -219,19 +219,19 @@ export async function doctor(paths: Paths): Promise<Check[]> {
     const queue = runCodex(codexBin, ["queue", "--help"]);
     add(queue.ok, "codex queue", queue.ok ? "available" : "missing; update the Codex CLI");
     const plugins = runCodex(codexBin, ["plugin", "list", "--marketplace", MARKETPLACE_NAME]);
-    add(plugins.ok && plugins.output.includes(PLUGIN_NAME), "plugin", plugins.ok ? `${PLUGIN_ID} registered` : "not installed; run `ctrig install`");
+    add(plugins.ok && plugins.output.includes(PLUGIN_NAME), "plugin", plugins.ok ? `${PLUGIN_ID} registered` : "not installed; run `self-starter install`");
   } else {
-    add(false, "codex", "not found; install the Codex CLI or run `ctrig install --codex <path>`");
+    add(false, "codex", "not found; install the Codex CLI or run `self-starter install --codex <path>`");
   }
 
   const manager = serviceManager();
-  add(manager.kind === "none" || manager.installed(), "service", manager.kind === "none" ? "no service manager here" : manager.installed() ? `${manager.kind}: ${manager.file}` : "not installed; run `ctrig service install`");
+  add(manager.kind === "none" || manager.installed(), "service", manager.kind === "none" ? "no service manager here" : manager.installed() ? `${manager.kind}: ${manager.file}` : "not installed; run `self-starter service install`");
 
   if (await isDaemonRunning(paths.socket)) {
     const status = await callDaemon<{ version: string; pid: number; triggers: { total: number } }>(paths.socket, "status", {});
-    add(status.version === VERSION, "daemon", `running, pid ${status.pid}, version ${status.version}${status.version === VERSION ? "" : ` (this ctrig is ${VERSION}; run \`ctrig service restart\`)`}, ${status.triggers.total} trigger(s)`);
+    add(status.version === VERSION, "daemon", `running, pid ${status.pid}, version ${status.version}${status.version === VERSION ? "" : ` (this self-starter is ${VERSION}; run \`self-starter service restart\`)`}, ${status.triggers.total} trigger(s)`);
   } else {
-    add(false, "daemon", "not running; run `ctrig service start`");
+    add(false, "daemon", "not running; run `self-starter service start`");
   }
 
   const notifier =

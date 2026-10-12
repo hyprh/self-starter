@@ -207,7 +207,7 @@ export class CodexCli implements CodexRunner {
           waiting.delete(message.id);
         } else if (message.id !== undefined) {
           // Approvals and other questions: nobody is there to answer them.
-          send({ id: message.id, error: { code: -32601, message: "codex-triggers does not answer this request" } });
+          send({ id: message.id, error: { code: -32601, message: "self-starter does not answer this request" } });
         } else if (message.method === "turn/completed" && message.params?.threadId === threadId) {
           const turn = message.params?.turn ?? {};
           const items: Array<{ type?: string; text?: string }> = Array.isArray(turn.items) ? turn.items : [];
@@ -220,7 +220,7 @@ export class CodexCli implements CodexRunner {
       });
 
       void (async () => {
-        const init = await request("initialize", { clientInfo: { name: "codex-triggers", version: "1" } });
+        const init = await request("initialize", { clientInfo: { name: "self-starter", version: "1" } });
         if (init.error) return finish({ ok: false, error: `codex app-server: ${init.error.message ?? "initialize failed"}` });
         send({ method: "initialized" });
         const started = await request("thread/start", { cwd: options.cwd });

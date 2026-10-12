@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// ctrig: the codex-triggers command line. It also runs the daemon (`ctrig daemon`)
-// and the plugin's MCP server (`ctrig mcp`).
+// self-starter: the Self-Starter command line. It also runs the daemon (`self-starter daemon`)
+// and the plugin's MCP server (`self-starter mcp`).
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,41 +19,41 @@ import { VERSION } from "../runtime.js";
 import { ensureDaemon, serviceManager, serviceSpec } from "../service/manager.js";
 import { doctor, install, uninstall } from "./install.js";
 
-const HELP = `ctrig ${VERSION}: let Codex act when something happens
+const HELP = `self-starter ${VERSION}: let Codex act when something happens
 
 Setup
-  ctrig install [--codex <path>] [--no-service]  install the Codex plugin and the background service
-  ctrig uninstall [--purge]                       remove them (--purge also deletes triggers and history)
-  ctrig doctor                                    check the installation
+  self-starter install [--codex <path>] [--no-service]  install the Codex plugin and the background service
+  self-starter uninstall [--purge]                       remove them (--purge also deletes triggers and history)
+  self-starter doctor                                    check the installation
 
 Triggers
-  ctrig list                                      all triggers and their state
-  ctrig show <id>                                 definition, state, recent checks and fires
-  ctrig test <id>                                 run the probe once, without firing
-  ctrig pause <id> | resume <id> | delete <id>
-  ctrig history [<id>] [-n <count>]               recent fires and what came of them
-  ctrig drafts                                    drafts waiting for approval
-  ctrig recipes                                   ready-made recipes Codex can set up for you
-  ctrig approve <draft-id | trigger-id>           review and approve in the terminal
+  self-starter list                                      all triggers and their state
+  self-starter show <id>                                 definition, state, recent checks and fires
+  self-starter test <id>                                 run the probe once, without firing
+  self-starter pause <id> | resume <id> | delete <id>
+  self-starter history [<id>] [-n <count>]               recent fires and what came of them
+  self-starter drafts                                    drafts waiting for approval
+  self-starter recipes                                   ready-made recipes Codex can set up for you
+  self-starter approve <draft-id | trigger-id>           review and approve in the terminal
 
 Secrets (API keys for probes)
-  ctrig secret set <NAME> --hosts <host,...>      store a secret that may only be sent to these hosts
-  ctrig secret set <NAME> --any-host              ... or to any host the probe can reach
-  ctrig secret list | ctrig secret rm <NAME>
+  self-starter secret set <NAME> --hosts <host,...>      store a secret that may only be sent to these hosts
+  self-starter secret set <NAME> --any-host              ... or to any host the probe can reach
+  self-starter secret list | self-starter secret rm <NAME>
 
 Notifications
-  ctrig channel list                              where notifications go
-  ctrig channel email --to <addr> --host <smtp-host> [--port 465] [--user <login>] [--from <addr>] [--starttls] [--default]
-                                                  send notifications by email too (asks for the SMTP password)
-  ctrig channel default desktop[,email]           channels for triggers that do not choose their own
-  ctrig channel test [desktop|email]              send a test notification
-  ctrig channel rm email
+  self-starter channel list                              where notifications go
+  self-starter channel email --to <addr> --host <smtp-host> [--port 465] [--user <login>] [--from <addr>] [--starttls] [--default]
+                                                        send notifications by email too (asks for the SMTP password)
+  self-starter channel default desktop[,email]           channels for triggers that do not choose their own
+  self-starter channel test [desktop|email]              send a test notification
+  self-starter channel rm email
 
 Background service
-  ctrig service install|uninstall|start|stop|restart|status
-  ctrig logs [-n <lines>]
-  ctrig daemon                                    run the daemon in the foreground
-  ctrig mcp                                       run the MCP server on stdio (Codex starts it)
+  self-starter service install|uninstall|start|stop|restart|status
+  self-starter logs [-n <lines>]
+  self-starter daemon                                    run the daemon in the foreground
+  self-starter mcp                                       run the MCP server on stdio (Codex starts it)
 `;
 
 interface Args {
@@ -87,7 +87,7 @@ const out = (line = ""): void => {
 class UsageError extends Error {}
 
 function need(value: string | undefined, what: string): string {
-  if (!value) throw new UsageError(`missing ${what}; see ctrig help`);
+  if (!value) throw new UsageError(`missing ${what}; see self-starter help`);
   return value;
 }
 
@@ -224,7 +224,7 @@ async function secretCommand(args: Args): Promise<void> {
       out(secrets.remove(need(name, "secret name")) ? `Removed ${name}.` : `No secret named ${name}.`);
       return;
     default:
-      throw new UsageError("usage: ctrig secret set|list|rm");
+      throw new UsageError("usage: self-starter secret set|list|rm");
   }
 }
 
@@ -235,7 +235,7 @@ async function channelCommand(args: Args): Promise<void> {
     case undefined: {
       const settings = channelSettings(loadConfig(paths));
       out(`desktop  ${process.platform === "darwin" ? "macOS notifications" : "notify-send"}`);
-      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (ctrig channel email --to ... --host ...)");
+      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (self-starter channel email --to ... --host ...)");
       out(`default  ${settings.default.join(", ")}`);
       return;
     }
@@ -251,7 +251,7 @@ async function channelCommand(args: Args): Promise<void> {
       new Store(paths).ensureLayout();
       saveEmailChannel(paths, { to, host, port, secure, ...(user ? { user } : {}), ...(from ? { from } : {}) }, password);
       if (args.flags.has("default")) setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, "email"])]);
-      out(`Email set up: notifications can go to ${to}. Try it: ctrig channel test email`);
+      out(`Email set up: notifications can go to ${to}. Try it: self-starter channel test email`);
       return;
     }
     case "default": {
@@ -265,7 +265,7 @@ async function channelCommand(args: Args): Promise<void> {
       const notifier = new ChannelNotifier(paths, new SystemNotifier(), (line) => {
         if (/failed|not set up|no email channel/.test(line)) errors.push(line);
       });
-      await notifier.notify({ title: "codex-triggers test", body: "If you can read this, notifications work.", channels: [channel] });
+      await notifier.notify({ title: "Self-Starter test", body: "If you can read this, notifications work.", channels: [channel] });
       if (errors.length > 0) throw new Error(errors.join("; "));
       out(`Sent a test notification to ${channel}.`);
       return;
@@ -276,7 +276,7 @@ async function channelCommand(args: Args): Promise<void> {
       out(removeEmailChannel(paths) ? "Removed the email channel." : "No email channel was set up.");
       return;
     default:
-      throw new UsageError("usage: ctrig channel list|email|default|test|rm");
+      throw new UsageError("usage: self-starter channel list|email|default|test|rm");
   }
 }
 
@@ -284,13 +284,13 @@ async function serviceCommand(action: string | undefined): Promise<void> {
   const manager = serviceManager();
   switch (action) {
     case "install": {
-      if (manager.kind === "none") throw new Error("no launchd or systemd user session here; run `ctrig daemon` some other way");
+      if (manager.kind === "none") throw new Error("no launchd or systemd user session here; run `self-starter daemon` some other way");
       if (await isDaemonRunning(paths.socket)) {
         await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
         await new Promise((r) => setTimeout(r, 1000));
       }
       manager.install(serviceSpec(paths, loadConfig(paths).codexBin));
-      out((await waitForDaemon(paths.socket, 10_000)) ? `Installed and started (${manager.file}).` : `Installed (${manager.file}), but the daemon did not answer yet; see ctrig logs.`);
+      out((await waitForDaemon(paths.socket, 10_000)) ? `Installed and started (${manager.file}).` : `Installed (${manager.file}), but the daemon did not answer yet; see self-starter logs.`);
       return;
     }
     case "uninstall":
@@ -325,7 +325,7 @@ async function serviceCommand(action: string | undefined): Promise<void> {
       return;
     }
     default:
-      throw new UsageError("usage: ctrig service install|uninstall|start|stop|restart|status");
+      throw new UsageError("usage: self-starter service install|uninstall|start|stop|restart|status");
   }
 }
 
@@ -378,7 +378,7 @@ async function main(argv: string[]): Promise<void> {
       await install(paths, { codex: args.flags.get("codex") as string | undefined, service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
       out("\nDone. Restart the Codex app (or start a new `codex` session) so it loads the plugin, then ask Codex, for example:");
       out('  "Watch https://example.com/status and tell me when it stops returning 200."');
-      out("Codex uses the skill $codex-triggers:triggers to set it up and asks you to approve it.");
+      out("Codex uses the skill $self-starter:triggers to set it up and asks you to approve it.");
       return;
     case "uninstall":
       await uninstall(paths, { purge: args.flags.has("purge"), log: (l) => out(`✓ ${l}`) });
@@ -441,7 +441,7 @@ async function main(argv: string[]): Promise<void> {
       for (const r of recipes) {
         out(`${r.id}  ${r.title}`);
         out(`  ${r.summary}`);
-        if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (ctrig secret set ...)`);
+        if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (self-starter secret set ...)`);
       }
       out("\nAsk Codex to set one up, for example: \"watch my IBKR account for unusual activity\".");
       return;
@@ -450,7 +450,7 @@ async function main(argv: string[]): Promise<void> {
       const drafts = await daemonCall<Array<{ draftId: string; createdAt: string; trialOk: boolean | null; replaces: string | null }>>("draft.list");
       if (drafts.length === 0) return out("No drafts.");
       for (const d of drafts) out(`${d.draftId}  ${when(d.createdAt)}  trial ${d.trialOk === null ? "not run" : d.trialOk ? "ok" : "failed"}${d.replaces ? `  (replaces ${d.replaces})` : ""}`);
-      out("\nApprove one with: ctrig approve <draft-id>");
+      out("\nApprove one with: self-starter approve <draft-id>");
       return;
     }
     case "approve":
@@ -467,14 +467,14 @@ async function main(argv: string[]): Promise<void> {
       await channelCommand(args);
       return;
     case "logs": {
-      const file = join(paths.logs, "ctrigd.log");
+      const file = join(paths.logs, "daemon.log");
       if (!existsSync(file)) return out("No log yet.");
       const lines = readFileSync(file, "utf8").trimEnd().split("\n");
       for (const line of lines.slice(-Number(args.flags.get("n") ?? 50))) out(line);
       return;
     }
     default:
-      throw new UsageError(`unknown command: ${command}; see ctrig help`);
+      throw new UsageError(`unknown command: ${command}; see self-starter help`);
   }
 }
 
@@ -485,6 +485,6 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
 });
 
 main(process.argv.slice(2)).catch((error: Error) => {
-  process.stderr.write(`ctrig: ${error.message}\n`);
+  process.stderr.write(`self-starter: ${error.message}\n`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
 });

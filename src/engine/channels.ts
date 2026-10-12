@@ -70,7 +70,7 @@ export function setDefaultChannels(paths: Paths, names: string[]): ChannelName[]
   if (unknown.length > 0 || names.length === 0) throw new Error(`channels must be some of: ${CHANNEL_NAMES.join(", ")}`);
   const config = loadConfig(paths);
   const settings = channelSettings(config);
-  if (names.includes("email") && !settings.email) throw new Error("set up email first: ctrig channel email --to ... --host ...");
+  if (names.includes("email") && !settings.email) throw new Error("set up email first: self-starter channel email --to ... --host ...");
   settings.default = [...new Set(names)] as ChannelName[];
   config.channels = settings;
   saveConfig(paths, config);
@@ -89,7 +89,7 @@ export function composeEmail(notification: Notification): { subject: string; tex
   if (notification.threadId) {
     lines.push(`Open the thread in Codex: codex://threads/${notification.threadId}`, `Or in a terminal: codex resume ${notification.threadId}`, "");
   }
-  lines.push(`Sent by codex-triggers on ${hostname()}.`);
+  lines.push(`Sent by Self-Starter on ${hostname()}.`);
   return { subject, text: lines.join("\n") };
 }
 
@@ -113,7 +113,7 @@ export async function sendEmail(settings: EmailSettings, password: string | unde
 
 /**
  * Sends each notification to its channels: the ones the trigger chose, or the
- * default. Settings are read for every notification, so `ctrig channel` changes
+ * default. Settings are read for every notification, so `self-starter channel` changes
  * apply without restarting the daemon. Failures are logged, never thrown.
  */
 export class ChannelNotifier implements Notifier {
@@ -133,7 +133,7 @@ export class ChannelNotifier implements Notifier {
           await this.desktop.notify(notification);
         } else if (channel === "email") {
           if (!settings.email) {
-            this.log(`email requested for "${notification.title}" but no email channel is set up (ctrig channel email)`);
+            this.log(`email requested for "${notification.title}" but no email channel is set up (self-starter channel email)`);
             continue;
           }
           await this.send(settings.email, readPassword(this.paths), composeEmail(notification));

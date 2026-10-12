@@ -30,7 +30,7 @@ const now = new Date(input.now);
 
 const TOKEN = Deno.env.get("IBKR_FLEX_TOKEN");
 if (!TOKEN) {
-  throw new Error("IBKR_FLEX_TOKEN is not set; run: ctrig secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com");
+  throw new Error("IBKR_FLEX_TOKEN is not set; run: self-starter secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com");
 }
 const tradeQuery: string | undefined = params.trade_query_id || undefined;
 const activityQuery: string | undefined = params.activity_query_id || undefined;
@@ -86,7 +86,7 @@ async function call(url: string): Promise<string> {
   const wait = lastRequest + spacing - Date.now();
   if (wait > 0) await sleep(wait);
   lastRequest = Date.now();
-  const response = await fetch(url, { headers: { "user-agent": "codex-triggers-ibkr/1" }, signal: AbortSignal.timeout(30_000) });
+  const response = await fetch(url, { headers: { "user-agent": "self-starter-ibkr/1" }, signal: AbortSignal.timeout(30_000) });
   const body = await response.text();
   if (!response.ok) throw new Error(`IBKR Flex Web Service answered HTTP ${response.status}`);
   return body;
@@ -98,7 +98,7 @@ function checkStatus(xml: string, step: string): void {
   if (!code && (!status || status === "Success")) return;
   const message = textOf(xml, "ErrorMessage") ?? status ?? "unknown error";
   if (code && RETRYABLE.has(code)) throw new NotReady(`${code}: ${message}`);
-  const hint = code && TOKEN_PROBLEMS.has(code) ? " Generate a new token in the IBKR Client Portal and run: ctrig secret set IBKR_FLEX_TOKEN ..." : "";
+  const hint = code && TOKEN_PROBLEMS.has(code) ? " Generate a new token in the IBKR Client Portal and run: self-starter secret set IBKR_FLEX_TOKEN ..." : "";
   throw new Error(`IBKR Flex ${step} failed (${code ?? status}): ${message.replace(/\.$/, "")}.${hint}`);
 }
 

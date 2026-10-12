@@ -1,4 +1,4 @@
-// Settings in ~/.codex-triggers/config.json, and how binaries are located.
+// Settings in ~/.self-starter/config.json, and how binaries are located.
 
 import { accessSync, constants, existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -12,7 +12,7 @@ export interface Config {
     default?: Array<"desktop" | "email">;
     email?: { to: string; from?: string; host: string; port: number; secure: boolean; user?: string };
   };
-  /** Absolute path of the codex CLI. Recorded by `ctrig install`; found on PATH otherwise. */
+  /** Absolute path of the codex CLI. Recorded by `self-starter install`; found on PATH otherwise. */
   codexBin?: string;
   /** Absolute path of deno. Defaults to the binary shipped with the deno npm package. */
   denoBin?: string;

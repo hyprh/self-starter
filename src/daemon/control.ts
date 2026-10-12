@@ -1,5 +1,5 @@
 // The control API: newline-delimited JSON requests on a Unix socket that only
-// the current user can open. Used by the MCP server and by ctrig.
+// the current user can open. Used by the MCP server and by self-starter.
 //
 //   request:  {"id": 1, "method": "trigger.list", "params": {...}, "caller": {...}}
 //   response: {"id": 1, "result": ...}  or  {"id": 1, "error": {"code": "...", "message": "..."}}

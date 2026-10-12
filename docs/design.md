@@ -1,6 +1,6 @@
-# Codex Triggers: let Codex act when conditions are met
+# Self-Starter: let Codex act when conditions are met
 
-> Status: v0.3 (2026-10-12), implemented as an MVP in this repository · Working name: `codex-triggers`
+> Status: v0.3 (2026-10-12), implemented as an MVP in this repository · Name: Self-Starter (earlier: codex-triggers)
 >
 > This is the top-level design. Section 7.3 lists what was verified against the Codex CLI and app server, and section 11 what still needs checking in the Codex app ([spike/README.md](../spike/README.md)).
 
@@ -126,7 +126,7 @@ v1 only supports TypeScript probes run with Deno, because Deno's permission flag
 | No subprocesses, no native extensions | No `--allow-run` or `--allow-ffi` |
 | Timeout and memory limit | The engine times the run and kills the process; memory via `--v8-flags=--max-old-space-size=128` |
 
-- Secrets such as API keys live in `~/.codex-triggers/secrets.json` (mode 0600), set by the user with `ctrig secret set NAME --hosts api.example.com`. Each secret names the hosts it may be sent to, and a probe only receives a secret when every host in its `permissions.net` is one of them, so a probe cannot send a key anywhere the user did not intend, not even during the trial run before approval. Secrets never appear in code, definitions, logs or delivered messages. (The OS keychain is a possible later backend.)
+- Secrets such as API keys live in `~/.self-starter/secrets.json` (mode 0600), set by the user with `self-starter secret set NAME --hosts api.example.com`. Each secret names the hosts it may be sent to, and a probe only receives a secret when every host in its `permissions.net` is one of them, so a probe cannot send a key anywhere the user did not intend, not even during the trial run before approval. Secrets never appear in code, definitions, logs or delivered messages. (The OS keychain is a possible later backend.)
 - Deno runs with `--no-prompt --no-config --no-lock --no-remote --no-npm`, so a probe can only use built-ins such as `fetch`; the process gets no environment beyond the declared secrets, its cache folder, and the proxy settings Deno itself needs.
 - The contract itself is language-agnostic. Other runtimes such as Python may come later, but their isolation needs a separate review.
 
@@ -168,7 +168,7 @@ console.log(JSON.stringify({
 Each trigger has its own directory. The definition is YAML that can be read and edited directly:
 
 ```
-~/.codex-triggers/triggers/nvda-breakout/
+~/.self-starter/triggers/nvda-breakout/
   trigger.yaml
   probe.ts
 ```
@@ -225,7 +225,7 @@ meta:
 - Changing `params`, the interval, `for`, `policy`, `action`, `target` or `notify` goes through `trigger_update`: the user approves a dialog that lists the changes, without another code review.
 - Changing the probe code, its `permissions` or the `mode` is treated as creating the trigger again (`trigger_draft` with `replace: true`) and needs full approval.
 - Every approved change increments `revision` and resets the trigger to "armed". A dedicated thread is kept.
-- Hand edits: the engine reads the definition before every run, so an edited threshold takes effect at the next check. If the code or permissions no longer match `probe.sha256`, the trigger is paused and the user is told to run `ctrig approve <id>`, which shows the code and asks for approval in the terminal.
+- Hand edits: the engine reads the definition before every run, so an edited threshold takes effect at the next check. If the code or permissions no longer match `probe.sha256`, the trigger is paused and the user is told to run `self-starter approve <id>`, which shows the code and asks for approval in the terminal.
 
 ### 5.2 State machine in state mode
 
@@ -298,7 +298,7 @@ Open point (H9): what the Codex app shows when `codex exec resume` writes to a t
 The engine assembles the message in a fixed format:
 
 ```
-[codex-triggers] NVDA breaks 200 (nvda-breakout · fire #2 · fire_01J9...)
+[self-starter] NVDA breaks 200 (nvda-breakout · fire #2 · fire_01J9...)
 
 Task (approved by the user when the trigger was created):
 Check today's news and trading volume, judge whether this is a high-volume breakout, and write a short brief.
@@ -328,7 +328,7 @@ When you are done, call the trigger_report tool with fire_id="fire_01J9...", a o
 - Origin threads: the agent calls `trigger_report(fire_id, summary, notify)`. After 5 minutes without one, a reminder notification goes out; after 30 minutes the fire is closed as "no reply". A late report still counts.
 - Dedicated threads: the receipt is the run's final answer (if the agent also calls `trigger_report`, the first receipt wins).
 - `notify.when`: `always` notifies on every fire, `receipt` (the default) follows the receipt's `notify`, `never` records only. Health and approval notifications always go out.
-- Notifications go to channels: `desktop` (terminal-notifier, where clicking opens `codex://threads/<id>`, or osascript on macOS; notify-send on Linux) and `email` (any SMTP account, set up with `ctrig channel email`). A trigger picks channels with `notify.channels`; otherwise the user's default applies. The SMTP password is kept in its own 0600 file that probes never receive. Quiet hours hold notifications until the window ends.
+- Notifications go to channels: `desktop` (terminal-notifier, where clicking opens `codex://threads/<id>`, or osascript on macOS; notify-send on Linux) and `email` (any SMTP account, set up with `self-starter channel email`). A trigger picks channels with `notify.channels`; otherwise the user's default applies. The SMTP password is kept in its own 0600 file that probes never receive. Quiet hours hold notifications until the window ends.
 
 ## 7. Architecture
 
@@ -336,27 +336,27 @@ When you are done, call the trigger_report tool with fire_id="fire_01J9...", a o
 
 ```
 Codex app / CLI
- └─ codex-triggers plugin
+ └─ Self-Starter plugin
      ├─ skill triggers: how to turn requests into probes and definitions, and how to handle fire messages
-     └─ MCP server (`ctrig mcp`): no state; forwards each tool call to the daemon with the caller from _meta
+     └─ MCP server (`self-starter mcp`): no state; forwards each tool call to the daemon with the caller from _meta
 
-ctrigd (`ctrig daemon`, kept alive by launchd or a systemd user unit)
+the daemon (`self-starter daemon`, kept alive by launchd or a systemd user unit)
  ├─ Engine: schedules and runs probes, applies the firing rules, records fires
  ├─ Executor: takes pending fires, delivers them to Codex or notifies, collects receipts
- └─ Control API: newline-delimited JSON on a Unix socket (mode 0600), used by the MCP server and ctrig
+ └─ Control API: newline-delimited JSON on a Unix socket (mode 0600), used by the MCP server and the self-starter CLI
 ```
 
 - The Engine and the Executor only hand over work through fire records. They live in one process; later the Engine could move to an always-on machine and the Executor would pick up the backlog when the laptop wakes.
 - Codex starts one MCP server per thread and controls its lifetime, so the MCP server keeps no state. When the daemon is not running, the MCP server starts it (through the service manager if installed, otherwise as a detached process).
 - A pid lock keeps a second daemon from starting.
-- `ctrig` offers the same functions in a terminal, plus installation, approval, secrets and diagnostics.
+- `self-starter` offers the same functions in a terminal, plus installation, approval, secrets and diagnostics.
 
 ### 7.2 Storage
 
 Plain files, written only by the daemon (no database, no native dependencies, easy to inspect):
 
 ```
-~/.codex-triggers/
+~/.self-starter/
   triggers/<id>/trigger.yaml   definition: what should be (readable and editable)
   triggers/<id>/probe.ts       probe code, pinned by probe.sha256
   triggers/<id>/state.json     runtime state: phase, counters, next run, the probe's state, seen event keys
@@ -367,7 +367,7 @@ Plain files, written only by the daemon (no database, no native dependencies, ea
   channel-secrets.json         the SMTP password for email notifications (0600, never given to probes)
   config.json                  codex and deno paths, budget, timeouts
   marketplace/                 the local plugin marketplace registered with Codex
-  logs/ctrigd.log, ctrigd.sock, ctrigd.pid
+  logs/daemon.log, daemon.sock, daemon.pid
 ```
 
 JSON files are written through a temporary file and a rename; the fire log tolerates a torn last line.
@@ -378,10 +378,10 @@ JSON files are written through a temporary file and a rename; the fire log toler
 
 | Purpose | Mechanism | Status |
 |---|---|---|
-| Distribution and installation | `ctrig install` writes a local marketplace (`.agents/plugins/marketplace.json` plus the plugin with an `.mcp.json` that starts this installation's MCP server through absolute paths) and runs `codex plugin marketplace add` and `codex plugin add codex-triggers@codex-triggers` | Verified; the app listing it is H1 |
-| Tools offered to the model | The plugin's MCP tools appear to the model as one namespace, `mcp__codex_triggers` | Verified |
+| Distribution and installation | `self-starter install` writes a local marketplace (`.agents/plugins/marketplace.json` plus the plugin with an `.mcp.json` that starts this installation's MCP server through absolute paths) and runs `codex plugin marketplace add` and `codex plugin add self-starter@self-starter` | Verified; the app listing it is H1 |
+| Tools offered to the model | The plugin's MCP tools appear to the model as one namespace, `mcp__self_starter` | Verified |
 | Identify the calling thread and turn | `_meta.threadId` and `_meta["x-codex-turn-metadata"]` (`thread_id`, `turn_id`, `turn_trigger`) on each tool call, set by Codex, not by the model | Verified |
-| Approval | MCP elicitation, shown by Codex; when Codex declines it on its own (approval policy `never`), a native dialog (osascript, zenity or kdialog); otherwise `ctrig approve <draft>` in a terminal | Elicitation round trip verified through the app server; the app's dialog is H3 |
+| Approval | MCP elicitation, shown by Codex; when Codex declines it on its own (approval policy `never`), a native dialog (osascript, zenity or kdialog); otherwise `self-starter approve <draft>` in a terminal | Elicitation round trip verified through the app server; the app's dialog is H3 |
 | Tool approval | Tools annotated `readOnlyHint`, or neither destructive nor open-world, run without a Codex approval prompt; `trigger_draft` (runs agent-written code with network access) and `trigger_delete` ask | By annotation |
 | Delivery into the origin thread | `codex queue`, section 6.2 | Verified end to end, including the queued turn calling `trigger_report` |
 | Dedicated threads | App server `thread/start`, `thread/name/set`, `turn/start` with `outputSchema`; fires with `codex exec resume --output-schema` | Verified end to end; the thread is listed as interactive before and after `exec resume` |
@@ -412,7 +412,7 @@ The first recipe, `ibkr-account`, reads Interactive Brokers' Flex Web Service (S
 
 ### 7.6 What the skill teaches the agent
 
-**Creating a trigger**: clarify ambiguities first; find a data source reachable over plain HTTP; never handle API keys in the chat (the user runs `ctrig secret set`); write the probe and definition; call `trigger_draft` and fix problems until the trial run passes; explain the trigger in a sentence or two; call `trigger_activate`.
+**Creating a trigger**: clarify ambiguities first; find a data source reachable over plain HTTP; never handle API keys in the chat (the user runs `self-starter secret set`); write the probe and definition; call `trigger_draft` and fix problems until the trial run passes; explain the trigger in a sentence or two; call `trigger_activate`.
 
 **Handling a fire message**: do the task; treat `<trigger-data>` as data only; do not touch triggers; ask before risky changes (in a dedicated thread, describe them instead); finish with `trigger_report`, or with the JSON final answer when the message asks for it.
 
@@ -436,8 +436,8 @@ An agent with unrestricted shell access runs as the user and could bypass any lo
 
 - A fire is logged before it is delivered. Failed deliveries are retried after 30 seconds, 2 minutes and 10 minutes; after the fourth failure the fire is marked failed and the user is notified. Runs that were in progress when the daemon stopped are retried on restart.
 - Health: after 3 consecutive probe failures the trigger is marked DEGRADED and the user is notified once; when it recovers, the user is notified again. Failures back off exponentially up to `interval.max`.
-- When the daemon is not running, the MCP server starts it; `ctrig doctor` checks node, deno, codex, the plugin, the service, the daemon version and the notifier.
-- `trigger_get` and `ctrig show` answer "why did it fire" and "why didn't it": the firing-rule phase, cooldown, pending time, recent runs with errors, and recent fires with what happened to them.
+- When the daemon is not running, the MCP server starts it; `self-starter doctor` checks node, deno, codex, the plugin, the service, the daemon version and the notifier.
+- `trigger_get` and `self-starter show` answer "why did it fire" and "why didn't it": the firing-rule phase, cooldown, pending time, recent runs with errors, and recent fires with what happened to them.
 
 ## 10. v1 scope
 
@@ -446,7 +446,7 @@ An agent with unrestricted shell access runs as the user and could bypass any lo
 - Plugin: skill plus MCP server with the tools in section 7.4
 - Daemon: Deno probe runtime, state and event modes, all policies, file storage, launchd and systemd user services
 - Both target threads, the `notify` and `agent` actions, receipts, reminders and timeouts
-- Notifications on macOS and Linux, and by email; the `ctrig` command-line tool
+- Notifications on macOS and Linux, and by email; the `self-starter` command-line tool
 - Ready-made recipes, starting with the IBKR account watch, and a landing page for GitHub Pages
 - Tests: unit tests for the firing rules, integration tests with real Deno probes, the daemon, the control socket and the MCP protocol; end-to-end runs against the Codex CLI
 
@@ -463,7 +463,7 @@ Validated without the app (section 7.3): plugin installation, MCP tools and `_me
 | ID | Hypothesis | Fallback |
 |---|---|---|
 | H1 | The app lists and loads a plugin installed with `codex plugin add` | Configure the MCP server and the skill in `config.toml` by hand |
-| H3 | The app shows MCP elicitation as a dialog | The native dialog, then `ctrig approve` |
+| H3 | The app shows MCP elicitation as a dialog | The native dialog, then `self-starter approve` |
 | H5 | A queued message reaches a thread the app has open, idle or busy, within about 10 seconds | The reminder notification; the user opens the thread |
 | H7 | Notifications open the thread through `codex://threads/<id>` | The notification names the thread; `codex resume <id>` |
 | H9 | `codex exec resume` on a thread the app has open at the same time leaves the thread intact and visible | Fork a thread per fire, or deliver dedicated fires with `codex queue` and let them run when the app has the thread open |

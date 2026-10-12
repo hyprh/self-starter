@@ -1,6 +1,6 @@
 // The operations behind the control API: drafts and approval, changes, queries
 // and receipts. Requests come from the plugin's MCP server on behalf of a Codex
-// thread, or from ctrig in a terminal.
+// thread, or from self-starter in a terminal.
 
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -217,7 +217,7 @@ export class TriggerService {
     }
   }
 
-  /** The ready-made recipes, for trigger_recipes and `ctrig recipes`. */
+  /** The ready-made recipes, for trigger_recipes and `self-starter recipes`. */
   listRecipes(): Recipe[] {
     return listRecipes(this.deps.recipesDir);
   }
@@ -384,7 +384,7 @@ export class TriggerService {
     return this.get({ triggerId: def.id });
   }
 
-  /** For `ctrig approve <id>`: what changed since the user approved this trigger. */
+  /** For `self-starter approve <id>`: what changed since the user approved this trigger. */
   approvalView(params: { triggerId?: unknown }): { triggerId: string; problem: string | null; approvalText: string } {
     const { definition, probeCode, dir } = this.load(params.triggerId);
     const problem = approvalProblem(definition, probeCode) ?? null;
@@ -394,7 +394,7 @@ export class TriggerService {
 
   /** Approves the code and permissions now on disk, after the user reviewed them in a terminal. */
   approveTrigger(params: { triggerId?: unknown }, caller: Caller) {
-    if (caller.via !== "cli") throw new ServiceError("refused", "only the user can approve this, by running `ctrig approve` in a terminal");
+    if (caller.via !== "cli") throw new ServiceError("refused", "only the user can approve this, by running `self-starter approve` in a terminal");
     const { definition, probeCode } = this.load(params.triggerId);
     definition.probe.sha256 = fingerprint(definition, probeCode);
     definition.meta.approved_at = this.now().toISOString();
@@ -580,7 +580,7 @@ export class TriggerService {
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {
         const settings = channelSettings(loadConfig(this.deps.paths));
-        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: ctrig channel email ...)" };
+        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: self-starter channel email ...)" };
       })(),
       budget: this.deps.config.budget,
       ...this.deps.executor.status(),

@@ -39,7 +39,7 @@ export class SystemNotifier implements Notifier {
     if (process.platform === "darwin") {
       const terminalNotifier = which("terminal-notifier");
       if (terminalNotifier) {
-        const args = ["-title", title, "-message", body, "-group", "codex-triggers"];
+        const args = ["-title", title, "-message", body, "-group", "self-starter"];
         if (threadId) args.push("-open", `codex://threads/${threadId}`);
         delivered = await runQuietly(terminalNotifier, args);
       }
@@ -49,7 +49,7 @@ export class SystemNotifier implements Notifier {
       }
     } else {
       const notifySend = which("notify-send");
-      if (notifySend) delivered = await runQuietly(notifySend, ["--app-name=codex-triggers", title, body + hint]);
+      if (notifySend) delivered = await runQuietly(notifySend, ["--app-name=Self-Starter", title, body + hint]);
     }
 
     this.log(`notification${delivered ? "" : " (no notifier available)"}: ${title}: ${body}`);

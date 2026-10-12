@@ -49,7 +49,7 @@ export function renderEnvelope(input: EnvelopeInput): string {
   const def = input.definition;
   const merged = input.merged && input.merged > 1 ? ` (${input.merged} fires merged)` : "";
   const lines = [
-    `[codex-triggers] ${def.name} (${def.id} · fire #${input.fireNumber} · ${input.fireId})`,
+    `[self-starter] ${def.name} (${def.id} · fire #${input.fireNumber} · ${input.fireId})`,
     "",
     "Task (approved by the user when the trigger was created):",
     def.action.prompt ?? "Tell the user what happened.",
@@ -79,12 +79,12 @@ export function renderEnvelope(input: EnvelopeInput): string {
 /** The first message of a dedicated thread. */
 export function renderDedicatedSeed(def: TriggerDefinition): string {
   return [
-    `[codex-triggers] This thread belongs to the trigger "${def.name}" (${def.id}).`,
+    `[self-starter] This thread belongs to the trigger "${def.name}" (${def.id}).`,
     "",
     `The user's words: ${def.intent}`,
     `What happens when it fires: ${def.action.prompt ?? "the user is notified"}`,
     "",
-    "Each time the trigger fires, a message starting with [codex-triggers] arrives here with the details.",
+    "Each time the trigger fires, a message starting with [self-starter] arrives here with the details.",
     'Reply now with only: {"summary": "ready", "notify": false}',
   ].join("\n");
 }

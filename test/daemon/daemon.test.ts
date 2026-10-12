@@ -109,8 +109,8 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   it("creates and approves a trigger through MCP elicitation, then delivers its fire", async () => {
     const mcp = new McpClient({ paths: home.paths, ensureDaemon: async () => undefined, dialog: async () => "unavailable" });
     const init = await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: { elicitation: {} }, clientInfo: { name: "test" } });
-    assert.equal(init.result.serverInfo.name, "codex-triggers");
-    assert.match(init.result.instructions, /\[codex-triggers\]/);
+    assert.equal(init.result.serverInfo.name, "self-starter");
+    assert.match(init.result.instructions, /\[self-starter\]/);
     const tools = await mcp.request("tools/list");
     assert.deepEqual(tools.result.tools.map((tool: Json) => tool.name), TOOLS.map((tool) => tool.name));
 
@@ -173,15 +173,15 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     const draft = await mcp.tool("trigger_draft", { definition: definition("watch-c"), code: STATE_PROBE }, meta("thread-c", "turn-1"));
     const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
     const result = await mcp.tool("trigger_activate", { draft_id: draftId }, meta("thread-c", "turn-1"));
-    assert.match(result.text, new RegExp(`ctrig approve ${draftId}`));
+    assert.match(result.text, new RegExp(`self-starter approve ${draftId}`));
     assert.equal(daemon.store.hasTrigger("watch-c"), false);
 
-    // What `ctrig approve` does after the user says yes in the terminal.
+    // What `self-starter approve` does after the user says yes in the terminal.
     await callDaemon(home.paths.socket, "draft.activate", { draftId }, { via: "cli" });
     assert.equal(daemon.store.hasTrigger("watch-c"), true);
 
     const declined = await mcp.tool("trigger_update", { trigger_id: "watch-c", changes: { probe: { params: { threshold: 300 } } } }, meta("thread-c", "turn-2"));
-    assert.match(declined.text, /ctrig approve draft-watch-c-/);
+    assert.match(declined.text, /self-starter approve draft-watch-c-/);
     await mcp.close();
   });
 });

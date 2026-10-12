@@ -174,7 +174,7 @@ describe("IBKR account watch recipe", { skip: deno ? false : "the deno npm packa
     assert.equal(bad.ok, false);
     assert.match(bad.ok ? "" : bad.error, /1015\): Token is invalid\. Generate a new token/);
     const missing = await run(definition({ trade_query_id: "TC1" }), "2026-10-12T14:20:00Z", null, null);
-    assert.match(missing.ok ? "" : missing.error, /IBKR_FLEX_TOKEN is not set; run: ctrig secret set/);
+    assert.match(missing.ok ? "" : missing.error, /IBKR_FLEX_TOKEN is not set; run: self-starter secret set/);
   });
 
   it("reports cash movements, unexplained position changes and large NAV moves from the daily report", async () => {

@@ -319,7 +319,7 @@ export class Executor {
 
     const codex = this.deps.codex();
     if (!codex) {
-      await this.failAttempt(definition, fire, "the codex CLI was not found; run `ctrig doctor`");
+      await this.failAttempt(definition, fire, "the codex CLI was not found; run `self-starter doctor`");
       return;
     }
 

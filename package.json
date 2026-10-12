@@ -1,11 +1,11 @@
 {
-  "name": "codex-triggers",
+  "name": "self-starter",
   "version": "0.1.0",
   "private": true,
   "description": "Let Codex act when conditions are met: agent-written probes, a background engine, and a Codex plugin.",
   "type": "module",
   "bin": {
-    "ctrig": "dist/src/cli/main.js"
+    "self-starter": "dist/src/cli/main.js"
   },
   "engines": {
     "node": ">=20"

@@ -202,7 +202,7 @@ export class Engine {
     const current = this.runtime(id);
     if (current.lifecycle === "active") return current;
     if (current.lifecycle === "paused" && current.pausedReason?.startsWith(APPROVAL_PAUSE)) {
-      throw new Error(`${id} ${current.pausedReason.replace(/^needs approval: /, "needs approval because ")}; ask the user to run: ctrig approve ${id}`);
+      throw new Error(`${id} ${current.pausedReason.replace(/^needs approval: /, "needs approval because ")}; ask the user to run: self-starter approve ${id}`);
     }
     if (current.lifecycle === "expired") throw new Error(`${id} has expired; change policy.expires_at with trigger_update to use it again`);
     if (current.lifecycle === "exhausted") throw new Error(`${id} reached policy.max_fires; raise it with trigger_update to use it again`);
@@ -309,7 +309,7 @@ export class Engine {
     if (evaluation.health === "degraded") {
       await this.deps.executor.notifyAbout(definition, {
         title: `${definition.name}: the probe keeps failing`,
-        body: `${record.error ?? "unknown error"} (checks continue; see: ctrig show ${id})`,
+        body: `${record.error ?? "unknown error"} (checks continue; see: self-starter show ${id})`,
       });
     } else if (evaluation.health === "recovered") {
       await this.deps.executor.notifyAbout(definition, {
@@ -325,7 +325,7 @@ export class Engine {
   async test(id: string): Promise<ProbeRunResult> {
     const { definition, probeCode, dir } = this.deps.store.loadTrigger(id);
     const problem = approvalProblem(definition, probeCode);
-    if (problem) throw new Error(`${id} will not run because ${problem}; ask the user to run: ctrig approve ${id}`);
+    if (problem) throw new Error(`${id} will not run because ${problem}; ask the user to run: self-starter approve ${id}`);
     return this.execute(definition, dir, this.runtime(id));
   }
 
@@ -336,7 +336,7 @@ export class Engine {
 
   private async execute(definition: TriggerDefinition, dir: string, runtime: RuntimeState | undefined): Promise<ProbeRunResult> {
     const denoBin = this.deps.deno();
-    if (!denoBin) return failure("deno was not found; run `ctrig doctor`");
+    if (!denoBin) return failure("deno was not found; run `self-starter doctor`");
     const { values, problems } = this.deps.secrets.pick(definition.probe.permissions.env, definition.probe.permissions.net);
     if (problems.length > 0) return failure(problems.join("; "));
     return runProbe({
@@ -354,7 +354,7 @@ export class Engine {
     this.log(`${definition.id} paused: ${problem}`);
     await this.deps.executor.notifyAbout(definition, {
       title: `${definition.name}: paused`,
-      body: `The trigger will not run because ${problem}. To review and resume it, run: ctrig approve ${definition.id}`,
+      body: `The trigger will not run because ${problem}. To review and resume it, run: self-starter approve ${definition.id}`,
     });
   }
 

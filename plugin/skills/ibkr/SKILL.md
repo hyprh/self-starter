@@ -5,7 +5,7 @@ description: Keep an eye on an Interactive Brokers (IBKR) account and speak up w
 
 # Watch an IBKR account
 
-This sets up a trigger from the ready-made recipe `ibkr-account`. Read the skill `codex-triggers:triggers` first for how triggers, approval and fire messages work.
+This sets up a trigger from the ready-made recipe `ibkr-account`. Read the skill `self-starter:triggers` first for how triggers, approval and fire messages work.
 
 The recipe reads Interactive Brokers' Flex Web Service with a read-only token: it can read reports, it cannot trade or move money.
 
@@ -17,8 +17,8 @@ Walk the user through these steps; they happen in the IBKR Client Portal and a t
 2. Create a **Trade Confirmation Flex Query**: section Trade Confirmations, format XML, period Today. Note its Query ID. This reports new executions 5 to 10 minutes after they happen.
 3. Optional, recommended: create an **Activity Flex Query** with Open Positions, Cash Transactions, Net Asset Value (NAV) in Base, Change in NAV and Trades; format XML; period Last Business Day. Note its Query ID. This adds deposits and withdrawals, position changes and NAV moves, once a day after the close.
 4. On the Flex Queries page, open Flex Web Service Configuration, enable it and generate a token.
-5. In a terminal: `ctrig secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com` and paste the token when asked. The token must never be pasted into the chat; if the user offers it, tell them to use the command instead.
-6. Optional: `ctrig channel email ...` to also get the results by email (see `ctrig help`).
+5. In a terminal: `self-starter secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com` and paste the token when asked. The token must never be pasted into the chat; if the user offers it, tell them to use the command instead.
+6. Optional: `self-starter channel email ...` to also get the results by email (see `self-starter help`).
 
 Query IDs are not secret; the user can tell you them in the chat.
 
@@ -39,7 +39,7 @@ Call `trigger_recipes` to see the recipe's parameters, then `trigger_draft` with
 ```
 
 - Parameters: `trade_query_id` and/or `activity_query_id` (at least one), `nav_move_pct` (default 3), `large_trade_value` (only report executions worth at least this much; default 0 = all), `cash_types` (default `["Deposits/Withdrawals"]`; add `"Dividends"` if the user wants those), `watch` (default all of `trades`, `cash`, `positions`, `nav`).
-- Leave `channels` out unless the user asked for email; `"email"` only works after `ctrig channel email` (`service_status` shows which channels are set up).
+- Leave `channels` out unless the user asked for email; `"email"` only works after `self-starter channel email` (`service_status` shows which channels are set up).
 - If the user only wants to be told, use `"action": {"type": "notify"}`: every change becomes a notification, without Codex.
 - A good `action.prompt` (adapt it to what the user asked): "Something changed in my IBKR account. For each change, say what it is (my own order filling, an option assignment or exercise, a dividend, a transfer), whether it looks expected or unusual, and what I should check. Put anything that could be unauthorized, such as a trade or withdrawal I did not make, first. Do not place orders or change anything. Keep it short."
 - Checks run every 15 minutes around US market hours and every 2 hours otherwise; IBKR asks clients not to poll more often. The first check only records what is there; changes after that fire.

@@ -11,8 +11,8 @@ import type { Paths } from "../engine/paths.js";
 import { CLI_SCRIPT } from "../runtime.js";
 import { isDaemonRunning, waitForDaemon } from "../client/client.js";
 
-export const LAUNCHD_LABEL = "dev.codex-triggers.daemon";
-export const SYSTEMD_UNIT = "codex-triggers.service";
+export const LAUNCHD_LABEL = "dev.self-starter.daemon";
+export const SYSTEMD_UNIT = "self-starter.service";
 
 export interface ServiceSpec {
   node: string;
@@ -91,7 +91,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     .map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`)
     .join("\n");
   return `[Unit]
-Description=codex-triggers: runs trigger probes and hands fires to Codex
+Description=Self-Starter: runs trigger probes and hands fires to Codex
 
 [Service]
 ExecStart=${systemdQuote(spec.node)} ${systemdQuote(spec.script)} daemon
@@ -184,7 +184,7 @@ class NoManager implements ServiceManager {
   }
   install(): void {
     throw new Error(
-      "no supported service manager (launchd or a systemd user session) was found; keep `ctrig daemon` running some other way, for example from your login items",
+      "no supported service manager (launchd or a systemd user session) was found; keep `self-starter daemon` running some other way, for example from your login items",
     );
   }
   uninstall(): void {}
@@ -213,7 +213,7 @@ export function servicePath(codexBin: string | undefined): string {
 
 export function serviceSpec(paths: Paths, codexBin: string | undefined): ServiceSpec {
   const env: Record<string, string> = { PATH: servicePath(codexBin) };
-  if (process.env.CODEX_TRIGGERS_HOME) env.CODEX_TRIGGERS_HOME = paths.home;
+  if (process.env.SELF_STARTER_HOME) env.SELF_STARTER_HOME = paths.home;
   if (process.env.CODEX_HOME) env.CODEX_HOME = process.env.CODEX_HOME;
   return { node: process.execPath, script: CLI_SCRIPT, env, logFile: join(paths.logs, "service.log") };
 }
@@ -225,7 +225,7 @@ export function spawnDetachedDaemon(paths: Paths): void {
   const child = spawn(process.execPath, [CLI_SCRIPT, "daemon"], {
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, CODEX_TRIGGERS_HOME: paths.home },
+    env: { ...process.env, SELF_STARTER_HOME: paths.home },
   });
   child.unref();
 }
@@ -237,5 +237,5 @@ export async function ensureDaemon(paths: Paths): Promise<"running" | "started">
   if (manager.installed() && manager.start() && (await waitForDaemon(paths.socket, 8000))) return "started";
   spawnDetachedDaemon(paths);
   if (await waitForDaemon(paths.socket, 10_000)) return "started";
-  throw new Error(`could not start the codex-triggers daemon; see ${join(paths.logs, "service.log")} or run \`ctrig doctor\``);
+  throw new Error(`could not start the self-starter daemon; see ${join(paths.logs, "service.log")} or run \`self-starter doctor\``);
 }

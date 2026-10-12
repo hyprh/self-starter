@@ -74,7 +74,7 @@ export class Secrets {
     for (const name of names) {
       const entry = all[name];
       if (!entry) {
-        problems.push(`secret ${name} is not set (ask the user to run: ctrig secret set ${name} --hosts ${reachable.join(",") || "<host>"})`);
+        problems.push(`secret ${name} is not set (ask the user to run: self-starter secret set ${name} --hosts ${reachable.join(",") || "<host>"})`);
         continue;
       }
       const outside = entry.hosts === "*" ? [] : reachable.filter((host) => !(entry.hosts as string[]).includes(host));
