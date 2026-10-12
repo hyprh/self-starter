@@ -19,6 +19,12 @@ These were verified on Linux with Codex CLI 0.162.1 and its app-server, so there
 - The first line of `codex exec --json` output is `thread.started` with the thread ID.
 - `codex queue` stores messages in the queue even when no background daemon is running.
 
+The MVP's end-to-end runs (with a stand-in model endpoint so that turns complete) settled more:
+
+- A queued message reaches a thread loaded in the app server within about 10 seconds and runs as a turn; the turn can call the plugin's tools, and `_meta["x-codex-turn-metadata"]` carries `turn_trigger: "queue"`. `codex queue` needs a thread that already had a turn.
+- H6, answered at the protocol level: threads created by `codex exec` have source `exec`, which the app server leaves out of its default thread list. codex-triggers therefore creates dedicated threads through the app server (`thread/start`, then `thread/name/set`), which records them as interactive; they stay that way after `codex exec resume`.
+- The plugin's tools reach the model as one namespace, `mcp__codex_triggers`.
+
 Every script has also been run end to end with scripted answers. What the Codex app actually does can only be seen on your machine.
 
 ## What to check
@@ -30,7 +36,7 @@ Every script has also been run end to end with scripted answers. What the Codex 
 | H3 | The app shows the MCP confirmation dialog (elicitation) | Skill step 5 |
 | H4 | Commands run in the app can read `CODEX_THREAD_ID` | Skill step 1 |
 | H5 | What `codex queue` does with a thread that is idle, busy, or whose app is closed | `02-queue.sh` |
-| H6 | Threads created by `codex exec` show up in the app and accept queued messages | `03-dedicated-thread.sh` |
+| H6 | Threads created by `codex exec` show up in the app and accept queued messages (expected: not listed by default; see above) | `03-dedicated-thread.sh` |
 | H7 | Deep links open a given thread, and open a new thread with a prefilled prompt | `04-deeplink.sh` |
 | H8 | `_meta` of MCP tool calls carries `threadId` | Skill step 2 |
 | H9 | How the app shows a thread it has open while another process writes to it | `03-dedicated-thread.sh` |
