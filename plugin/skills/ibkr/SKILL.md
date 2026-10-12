@@ -1,15 +1,47 @@
 ---
 name: ibkr
-description: Keep an eye on an Interactive Brokers (IBKR) account and speak up when something changes - new executions, option assignments and exercises, deposits and withdrawals, positions that changed without a trade, big moves in net asset value. Use when the user wants Codex to watch their IBKR account, and when handling a fire of an IBKR trigger.
+description: Keep an eye on an Interactive Brokers (IBKR) account or prices and speak up when something changes - new executions, prices crossing a level, option assignments and exercises, deposits and withdrawals, big moves in net asset value. Use when the user wants Codex to watch their IBKR account or IBKR market data, and when handling a fire of an IBKR trigger.
 ---
 
-# Watch an IBKR account
+# Watch IBKR
 
-This sets up a trigger from the ready-made recipe `ibkr-account`. Read the skill `self-starter:triggers` first for how triggers and fire messages work.
+Read the skill `self-starter:triggers` first for how triggers and fire messages work. There are two ways to watch IBKR; pick by what the user has.
 
-The recipe reads Interactive Brokers' Flex Web Service with a read-only token: it can read reports, it cannot trade or move money.
+## With IB Gateway and the ibkr skill (real time)
 
-## What the user sets up once (about 5 minutes, in IBKR)
+If the user runs IB Gateway or TWS on this machine and has the `ibkr` skill installed (Python scripts on `ib_async`, usually in a skills folder such as `~/.codex/skills/ibkr`; look for `scripts/trade/get_executions.py`), write a probe that runs its read-only scripts with `--json`. Probes run as the user, so they can call Python and reach the Gateway on 127.0.0.1.
+
+- New executions (event mode): `python3 <skill>/scripts/trade/get_executions.py --json` prints `{"account", "count", "fills": [{"time", "contract", "side", "shares", "price", "exec_id", ...}]}` for today. Use `exec_id` as the event key.
+- A price level (state mode): `python3 <skill>/scripts/quote/get_snapshot.py NVDA --json` prints `{"data": [{"symbol", "last", "close", "bid", "ask", ...}]}`.
+- Positions and P&L: `scripts/trade/get_portfolio.py --json`, `scripts/trade/get_pnl.py --json`.
+- Pass `IB_CLIENT_ID` in the command's environment with a number of its own (such as 2061), so the probe does not disconnect the user's own session, which uses the default. `IB_GATEWAY_PORT` picks paper (4002, the default) or live (4001); ask which one.
+- On failure the scripts print `{"error": "..."}` and exit non-zero; throw it, so the user hears when the Gateway is down or logged out.
+- A probe only reads. Never call `place_order.py`, `modify_order.py`, `cancel_order.py` or other trading scripts from a probe. If the user wants Codex to trade when the trigger fires, say that a fire in a background thread cannot ask for the confirmation live orders need, and make the task prepare the order and ask in the origin thread instead.
+- Check every 1 to 5 minutes during market hours and slow down outside them (return `next_check_in`).
+
+```ts
+// New IBKR executions, through the ibkr skill's read-only script.
+const input = JSON.parse(await new Response(Deno.stdin.readable).text());
+const { skill_dir, account } = input.params; // absolute path of the ibkr skill
+const args = [`${skill_dir}/scripts/trade/get_executions.py`, "--json", ...(account ? ["--acc-id", account] : [])];
+const out = await new Deno.Command("python3", { args, env: { IB_CLIENT_ID: "2061" } }).output();
+const result = JSON.parse(new TextDecoder().decode(out.stdout) || "{}");
+if (!out.success || result.error) throw new Error(result.error ?? (new TextDecoder().decode(out.stderr).trim() || "get_executions.py failed"));
+console.log(JSON.stringify({
+  events: result.fills.map((fill: { exec_id: string; side: string; shares: number; contract: string; price: number }) => ({
+    key: fill.exec_id,
+    summary: `${fill.side === "BOT" ? "Bought" : "Sold"} ${fill.shares} ${fill.contract} at ${fill.price}`,
+    data: fill,
+  })),
+  summary: `${result.count} fill(s) today in ${result.account}`,
+}));
+```
+
+## Without a Gateway: the Flex Web Service recipe
+
+This sets up a trigger from the ready-made recipe `ibkr-account`. It reads Interactive Brokers' Flex Web Service with a read-only token: it can read reports, it cannot trade or move money, and nothing needs to run on this machine. It is not real time (see the limits below).
+
+### What the user sets up once (about 5 minutes, in IBKR)
 
 Walk the user through these steps; they happen in the IBKR Client Portal and a terminal, not in the chat.
 
@@ -22,7 +54,7 @@ Walk the user through these steps; they happen in the IBKR Client Portal and a t
 
 Query IDs are not secret; the user can tell you them in the chat.
 
-## Create the trigger
+### Create the trigger
 
 Call `trigger_recipes` to see the recipe's parameters, then `trigger_draft` with `recipe: "ibkr-account"` and a definition like this (no code, no permissions: the recipe supplies them):
 
@@ -48,7 +80,7 @@ Tell the user, before `trigger_activate`: what is watched, how quickly they hear
 
 ## Handling a fire
 
-The `<trigger-data>` block lists events with keys such as `trade:U1234567:...`, `cash:...`, `position:...`, `nav:...`.
+With the Flex recipe, the `<trigger-data>` block lists events with keys such as `trade:U1234567:...`, `cash:...`, `position:...`, `nav:...`; with a Gateway probe, whatever that probe reports.
 
 - Group by account. Lead with anything that could be unauthorized or risky: a trade or withdrawal the user may not have made, an option assignment, a large NAV drop.
 - For each event, say in plain words what happened and whether it looks expected. If the action prompt mentions the user's notes or plans, compare with them.
@@ -57,5 +89,5 @@ The `<trigger-data>` block lists events with keys such as `trade:U1234567:...`, 
 
 ## Limits to mention when relevant
 
-- Not real time: executions arrive 5 to 10 minutes late, and positions, cash and NAV once a day. Intraday margin or price alerts need another source (a price trigger, or IBKR's own alerts).
-- Accounts with more than 100 changes in one check report the latest 100.
+- Flex recipe: not real time. Executions arrive 5 to 10 minutes late, and positions, cash and NAV once a day; intraday prices need the Gateway way. Accounts with more than 100 changes in one check report the latest 100.
+- Gateway probes: only work while this machine is on and the Gateway is running and logged in (IB Gateway logs out once a day unless set to restart automatically). Market data needs the matching IBKR subscriptions.
