@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // trigger-spike MCP server: a zero-dependency stdio MCP server used only to
-// verify how Codex Desktop hosts plugin MCP servers (see spike/README.md).
+// verify how the Codex app hosts plugin MCP servers (see spike/README.md).
 // Everything it observes is appended to ~/.codex-triggers-spike/mcp.log.jsonl.
 //
 // The plugin registers this file twice (see 01-install.sh):
 //   variant "absolute-node": launched with an absolute path to node; exposes the spike tools.
-//   variant "path-node":     launched as bare `node`, to learn whether Desktop's PATH finds it;
+//   variant "path-node":     launched as bare `node`, to learn whether the app's PATH finds it;
 //                            exposes only spike_path_check.
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";

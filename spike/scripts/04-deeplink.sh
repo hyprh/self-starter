@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 4 (H7): deep links into Codex Desktop.
+# Step 4 (H7): deep links into the Codex app.
 #   a) codex://threads/<id>                      opens an existing thread
 #   b) codex://threads/new?prompt=...&path=...   opens a new thread with a prefilled prompt
 set -euo pipefail
@@ -10,9 +10,19 @@ thread_id="${1:-$(last_thread_id)}"
 
 echo "## H7 deep links" >>"$RESULTS_FILE"
 
+if [ "$OS" != "Darwin" ] && [ -z "$(codex_link_handler)" ]; then
+  warn "No app is registered for codex:// links on this system, so deep links cannot be tested."
+  record "H7 deep links: no codex:// handler registered"
+  exit 0
+fi
+
 info "a) Opening codex://threads/$thread_id"
-open "codex://threads/$thread_id"
-answer="$(ask_yes_no "Did Codex Desktop open that exact thread?")"
+if open_url "codex://threads/$thread_id"; then
+  answer="$(ask_yes_no "Did the Codex app open that exact thread?")"
+else
+  warn "The link could not be opened."
+  answer="no"
+fi
 record "H7a open existing thread via codex://threads/<id>: $answer"
 
 project="$(cd "$SPIKE_ROOT/.." && pwd)"
@@ -21,10 +31,14 @@ url="codex://threads/new?prompt=$(urlencode "$prompt")&path=$(urlencode "$projec
 
 info "b) Opening a new thread with a prefilled prompt"
 echo "   $url"
-open "$url"
-answer="$(ask_yes_no "Did a new thread open with the prompt prefilled (not sent)?")"
-record "H7b new thread with prefilled prompt: $answer"
-answer="$(ask_yes_no "Was the new thread's workspace $project?")"
-record "H7b path parameter selects the workspace: $answer"
+if open_url "$url"; then
+  answer="$(ask_yes_no "Did a new thread open with the prompt prefilled (not sent)?")"
+  record "H7b new thread with prefilled prompt: $answer"
+  answer="$(ask_yes_no "Was the new thread's workspace $project?")"
+  record "H7b path parameter selects the workspace: $answer"
+else
+  warn "The link could not be opened."
+  record "H7b new thread with prefilled prompt: could not open the link"
+fi
 
 ok "Deep link results recorded."

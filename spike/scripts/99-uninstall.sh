@@ -18,4 +18,4 @@ fi
 if [ "$(ask_yes_no "Delete $SPIKE_DIR (results and logs)?")" = "yes" ]; then
   rm -rf "$SPIKE_DIR"
 fi
-ok "Spike removed. Restart Codex Desktop to unload the plugin."
+ok "Spike removed. Restart the Codex app to unload the plugin."

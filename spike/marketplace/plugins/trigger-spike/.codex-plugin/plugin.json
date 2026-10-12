@@ -1,7 +1,7 @@
 {
   "name": "trigger-spike",
   "version": "0.1.0",
-  "description": "Feasibility checks for codex-triggers on Codex Desktop. Creates no real triggers.",
+  "description": "Feasibility checks for codex-triggers in the Codex app. Creates no real triggers.",
   "skills": "./skills",
   "mcpServers": "./.mcp.json",
   "interface": {

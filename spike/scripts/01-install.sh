@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Step 1 (H1, H2): install the trigger-spike plugin from the local marketplace,
-# then check that Codex Desktop picks it up.
+# then check that the Codex app picks it up.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -13,7 +13,7 @@ PLUGIN_ID="trigger-spike@$MARKETPLACE_NAME"
 echo "## H1/H2 plugin install" >>"$RESULTS_FILE"
 
 # Two copies of the same server: one launched with an absolute node path, one
-# with bare `node`, to learn whether Desktop's PATH can find node (H2b).
+# with bare `node`, to learn whether the app's PATH can find node (H2b).
 # cwd "." makes Codex start the server in the installed plugin folder.
 info "Writing $PLUGIN_DIR/.mcp.json (node: $NODE)"
 cat >"$PLUGIN_DIR/.mcp.json" <<EOF
@@ -55,23 +55,25 @@ info "Installing $PLUGIN_ID"
 "$CODEX" plugin list --marketplace "$MARKETPLACE_NAME"
 record "H1a CLI install of $PLUGIN_ID: ok"
 
-cat <<'EOF'
+cat <<EOF
 
-Next, in Codex Desktop:
-  1. Quit it completely (Cmd+Q) and open it again, so it reloads plugins.
-  2. Look for "Trigger Spike" in Desktop's plugin list.
+Next, in the Codex app:
+  1. $QUIT_APP. Then start it again, so it reloads plugins.
+  2. Look for "Trigger Spike" in the app's plugin list (in the terminal UI, type /plugins).
 EOF
-printf 'Press Enter once Desktop has restarted... '
+printf 'Press Enter once the app has restarted... '
 read -r _
-answer="$(ask_yes_no "Does Desktop list the Trigger Spike plugin as installed?")"
-record "H1b Desktop lists the plugin installed via CLI: $answer"
+answer="$(ask_yes_no "Does the app list the Trigger Spike plugin as installed?")"
+record "H1b app lists the plugin installed via CLI: $answer"
 
 cat <<'EOF'
 
 Now run the in-app checks (H2, H3, H4, H8):
-  1. Open any project folder in Desktop and start a new thread.
+  1. Open any project folder in the app and start a new thread
+     (terminal UI: run `codex` inside a project folder).
   2. Send:  $trigger-spike:run
      (or just say: run the trigger spike)
-  3. Approve what it asks, and click "Allow" if a confirmation dialog appears.
+  3. Approve what it asks, and choose "Allow" if a confirmation dialog appears.
   4. Keep that thread open, then come back here and run:  spike/scripts/02-queue.sh
+     (terminal UI: run it from a second terminal)
 EOF

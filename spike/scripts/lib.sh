@@ -1,10 +1,11 @@
 # Shared helpers for the spike scripts. Sourced, not executed.
-# Written for the bash 3.2 that ships with macOS.
+# Works with the bash 3.2 that ships with macOS and with bash on Linux.
 
 SPIKE_DIR="${CODEX_TRIGGERS_SPIKE_DIR:-$HOME/.codex-triggers-spike}"
 SPIKE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKETPLACE_DIR="$SPIKE_ROOT/marketplace"
 RESULTS_FILE="$SPIKE_DIR/results.md"
+OS="$(uname -s)"
 
 mkdir -p "$SPIKE_DIR"
 
@@ -40,7 +41,15 @@ ask_yes_no() {
   done
 }
 
-# Finds a codex binary: $CODEX_BIN, then PATH, then inside Codex.app.
+# macOS app bundles that may ship Codex: the Codex app, or the ChatGPT app.
+mac_app_bundles() {
+  echo "/Applications/Codex.app"
+  echo "$HOME/Applications/Codex.app"
+  echo "/Applications/ChatGPT.app"
+  echo "$HOME/Applications/ChatGPT.app"
+}
+
+# Finds a codex binary: $CODEX_BIN, then PATH, then inside a macOS app bundle.
 find_codex() {
   if [ -n "${CODEX_BIN:-}" ]; then
     [ -x "$CODEX_BIN" ] || die "CODEX_BIN=$CODEX_BIN is not executable"
@@ -51,26 +60,102 @@ find_codex() {
     command -v codex
     return
   fi
-  local app candidate
-  for app in "/Applications/Codex.app" "$HOME/Applications/Codex.app"; do
-    [ -d "$app" ] || continue
-    candidate="$(find "$app/Contents" -maxdepth 4 -type f -name codex -perm -u+x 2>/dev/null | head -n 1)"
-    if [ -n "$candidate" ]; then
-      echo "$candidate"
-      return
-    fi
-  done
+  if [ "$OS" = "Darwin" ]; then
+    local app candidate
+    for app in $(mac_app_bundles); do
+      [ -d "$app" ] || continue
+      candidate="$(find "$app/Contents" -maxdepth 4 -type f -name codex -perm -u+x 2>/dev/null | head -n 1)"
+      if [ -n "$candidate" ]; then
+        echo "$candidate"
+        return
+      fi
+    done
+  fi
   die "codex not found. Install the CLI (npm i -g @openai/codex) or set CODEX_BIN."
 }
 
-# Percent-encodes $1. Uses JavaScript for Automation, which every macOS has.
-urlencode() {
-  osascript -l JavaScript -e 'function run(argv) { return encodeURIComponent(argv[0]); }' "$1"
+# Describes the installed Codex app, or prints nothing.
+#   macOS: Codex.app, or ChatGPT.app, which also ships Codex.
+#   Linux: the ChatGPT desktop app, which ships Codex as a preview since August 2026.
+find_app() {
+  local app version entry
+  if [ "$OS" = "Darwin" ]; then
+    for app in $(mac_app_bundles); do
+      [ -d "$app" ] || continue
+      version="$(defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo unknown)"
+      echo "$app ($version)"
+      return
+    done
+    return
+  fi
+  for entry in /usr/share/applications/*.desktop "$HOME/.local/share/applications"/*.desktop; do
+    [ -f "$entry" ] || continue
+    if grep -qiE '^Name=.*(chatgpt|codex)' "$entry"; then
+      echo "$entry"
+      return
+    fi
+  done
 }
+
+# Opens a URL with the system handler; returns non-zero if it could not.
+open_url() {
+  if [ "$OS" = "Darwin" ]; then
+    open "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$1" >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+# Names the app registered for codex:// links. Linux only; prints nothing on
+# macOS, which has no simple way to ask.
+codex_link_handler() {
+  if [ "$OS" != "Darwin" ] && command -v xdg-mime >/dev/null 2>&1; then
+    xdg-mime query default x-scheme-handler/codex 2>/dev/null || true
+  fi
+}
+
+# Percent-encodes $1.
+urlencode() {
+  node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$1"
+}
+
+# Copies stdin to the clipboard; returns non-zero when no clipboard tool exists.
+copy_to_clipboard() {
+  if command -v pbcopy >/dev/null 2>&1; then
+    pbcopy
+  elif command -v wl-copy >/dev/null 2>&1; then
+    wl-copy
+  elif command -v xclip >/dev/null 2>&1; then
+    xclip -selection clipboard
+  elif command -v xsel >/dev/null 2>&1; then
+    xsel --clipboard --input
+  else
+    return 1
+  fi
+}
+
+# Lists running processes with their parent and full command line.
+list_processes() {
+  if [ "$OS" = "Darwin" ]; then
+    ps -axo pid,ppid,command
+  else
+    ps -eo pid,ppid,args
+  fi
+}
+
+# How to fully quit the Codex app on this system, for prompts.
+if [ "$OS" = "Darwin" ]; then
+  QUIT_APP="Quit the Codex app completely (Cmd+Q)"
+else
+  QUIT_APP="Quit the Codex app completely (also from the system tray, if it stays there)"
+fi
+QUIT_APP="$QUIT_APP; if you use the codex terminal UI instead, exit it"
 
 # Reads the thread id recorded by the spike_record_thread tool. Falls back to
 # the threadId Codex attached to the latest MCP tool call (_meta), in case the
-# Desktop shell did not expose CODEX_THREAD_ID.
+# app's shell did not expose CODEX_THREAD_ID.
 last_thread_id() {
   if [ -f "$SPIKE_DIR/last_thread_id" ]; then
     tr -d '[:space:]' <"$SPIKE_DIR/last_thread_id"

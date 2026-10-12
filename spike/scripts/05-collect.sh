@@ -14,8 +14,10 @@ report="$SPIKE_DIR/report.md"
   echo '```'
 } >"$report"
 
-if pbcopy <"$report" 2>/dev/null; then
+if copy_to_clipboard <"$report" 2>/dev/null; then
   ok "Report copied to the clipboard."
+else
+  warn "No clipboard tool found; copy the report from the file below."
 fi
 ok "Report: $report"
 echo "Paste it back into the conversation. Paths under your home folder are shown as ~."
