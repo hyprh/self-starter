@@ -1,10 +1,12 @@
 # Self-Starter
 
-Let Codex act when something happens.
+Give Codex eyes: it notices when something changes, and comes back to your conversation with what it found and what it did.
 
-Codex works when you talk to it, and its Automations run on a clock. Many things you want done are "when X happens, do Y": when NVDA breaks 200, find out why; when CI on main fails, investigate; when a dependency ships a release, check it for breaking changes. Self-Starter is a Codex plugin for exactly that.
+Codex works when you talk to it, and its Automations run on a clock. Many things you want done are "when X happens, do Y": when the training run finishes, compare it with the last one; when CI on main fails, find the cause; when NVDA closes above 235, give me the numbers. Self-Starter is a Codex plugin for exactly that.
 
-You tell Codex in one sentence what to watch and what to do. Codex writes a small **probe** (a few lines of TypeScript) that checks the condition, and a background service keeps running it. No model is called while waiting. When the condition is met, the task goes back to Codex: into the thread where you asked, or into a thread dedicated to the trigger, which Codex works on in the background. You get a notification with the result.
+You tell Codex in one sentence what to watch and what to do. Codex writes a small **probe** (a few lines of TypeScript) that checks the condition, and a background service keeps running it. No model is called while waiting. When the condition is met, the task goes back to Codex, in the conversation where you asked, even if the Codex app is closed, or in a thread of its own. You get a notification or an email with the result.
+
+Landing page: [site/index.html](site/index.html), published to GitHub Pages.
 
 ```
 You:    When the training run in runs/exp42 finishes, compare its metrics with exp41

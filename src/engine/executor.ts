@@ -162,7 +162,9 @@ export class Executor {
   async tick(): Promise<void> {
     const now = this.now().getTime();
     const timeoutMs = this.deps.config.receiptTimeoutMinutes * 60_000;
-    for (const fire of this.deps.fires.withStatus("delivered")) {
+    const open = this.deps.fires.withStatus("delivered");
+    this.forgetClosed(new Set(open.map((fire) => fire.fireId)));
+    for (const fire of open) {
       if (!fire.deliveredAt) continue;
       const age = now - Date.parse(fire.deliveredAt);
       if (age > timeoutMs) {
@@ -180,6 +182,13 @@ export class Executor {
     }
     await this.flushDeferred();
     this.kick();
+  }
+
+  /** Drops what was kept about fires that are no longer waiting for a receipt. */
+  private forgetClosed(open: Set<string>): void {
+    for (const id of this.reminded) if (!open.has(id)) this.reminded.delete(id);
+    for (const id of this.originOutcome.keys()) if (!open.has(id) && this.originOutcome.get(id) !== "waking") this.originOutcome.delete(id);
+    for (const id of this.nextOriginCheck.keys()) if (!open.has(id)) this.nextOriginCheck.delete(id);
   }
 
   /** A fire queued into the origin thread is still open: wake the thread if nobody has it open, or remind the user. */
