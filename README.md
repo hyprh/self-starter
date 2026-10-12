@@ -45,6 +45,15 @@ self-starter doctor    # checks everything
 
 For notifications that open the right thread when clicked on macOS, install `terminal-notifier` (`brew install terminal-notifier`). On Linux, notifications use `notify-send`.
 
+## Try it in two minutes
+
+No API keys needed. This also shows a conversation answering while the Codex app is closed.
+
+1. In a Codex conversation, say: "Tell me when the file /tmp/self-starter-demo/done appears, and what it says."
+2. Codex sets up the trigger (it may ask first). Close the Codex app if you like.
+3. In a terminal: `mkdir -p /tmp/self-starter-demo && echo "build finished in 4m12s" > /tmp/self-starter-demo/done`
+4. At the next check (Codex picks how often; ask for "every 30 seconds" if you are impatient), Codex answers in that same conversation and you get a notification. If the app was closed, this takes about a minute longer, and the answer is there when you open the conversation again. `self-starter history` shows what happened.
+
 ## Use
 
 Just ask Codex, for example:

@@ -217,7 +217,9 @@ export async function doctor(paths: Paths): Promise<Check[]> {
     const version = runCodex(codexBin, ["--version"]);
     add(version.ok, "codex", `${version.output.split("\n")[0] ?? ""} (${codexBin})`);
     const queue = runCodex(codexBin, ["queue", "--help"]);
-    add(queue.ok, "codex queue", queue.ok ? "available" : "missing; update the Codex CLI");
+    add(queue.ok, "codex queue", queue.ok ? "available (fires reach the thread where a trigger was made)" : "missing; update the Codex CLI");
+    const appServer = runCodex(codexBin, ["app-server", "--help"]);
+    add(appServer.ok, "app server", appServer.ok ? "available (dedicated threads, and waking threads no Codex app has open)" : "missing; update the Codex CLI");
     const plugins = runCodex(codexBin, ["plugin", "list", "--marketplace", MARKETPLACE_NAME]);
     add(plugins.ok && plugins.output.includes(PLUGIN_NAME), "plugin", plugins.ok ? `${PLUGIN_ID} registered` : "not installed; run `self-starter install`");
   } else {

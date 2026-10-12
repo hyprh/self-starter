@@ -2,6 +2,8 @@
 
 Purpose: check, on your own machine, the hypotheses listed in section 11 of the [design](../docs/design.md). Nothing here creates a real trigger, and `99-uninstall.sh` removes everything afterwards.
 
+This kit predates the plugin and its current name (it still says codex-triggers in places). Most of what it checks is settled now (section 7.3 of the design); for a quick check of the real thing on your machine, use "Try it in two minutes" in the [README](../README.md).
+
 Runs on macOS and Linux, with any of these as "the Codex app":
 
 - Codex Desktop on macOS (or the ChatGPT desktop app, which also ships Codex)
