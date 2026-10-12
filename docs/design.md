@@ -328,7 +328,7 @@ When you are done, call the trigger_report tool with fire_id="fire_01J9...", a o
 - Origin threads: the agent calls `trigger_report(fire_id, summary, notify)`. After 5 minutes without one, a reminder notification goes out; after 30 minutes the fire is closed as "no reply". A late report still counts.
 - Dedicated threads: the receipt is the run's final answer (if the agent also calls `trigger_report`, the first receipt wins).
 - `notify.when`: `always` notifies on every fire, `receipt` (the default) follows the receipt's `notify`, `never` records only. Health and approval notifications always go out.
-- Notifications use terminal-notifier (clicking opens `codex://threads/<id>`) or osascript on macOS, and notify-send on Linux. Quiet hours hold them until the window ends.
+- Notifications go to channels: `desktop` (terminal-notifier, where clicking opens `codex://threads/<id>`, or osascript on macOS; notify-send on Linux) and `email` (any SMTP account, set up with `ctrig channel email`). A trigger picks channels with `notify.channels`; otherwise the user's default applies. The SMTP password is kept in its own 0600 file that probes never receive. Quiet hours hold notifications until the window ends.
 
 ## 7. Architecture
 
@@ -364,6 +364,7 @@ Plain files, written only by the daemon (no database, no native dependencies, ea
   fires.jsonl                  append-only fire log: created, merged, delivered, receipt, ... (folded into memory at start)
   runs.jsonl                   every probe run (rotated at 5 MB)
   secrets.json                 probe secrets and their allowed hosts (0600)
+  channel-secrets.json         the SMTP password for email notifications (0600, never given to probes)
   config.json                  codex and deno paths, budget, timeouts
   marketplace/                 the local plugin marketplace registered with Codex
   logs/ctrigd.log, ctrigd.sock, ctrigd.pid
@@ -391,7 +392,8 @@ JSON files are written through a temporary file and a rename; the fire log toler
 
 | Tool | Purpose | Codex asks before running it |
 |---|---|---|
-| `trigger_draft` | Submit probe code and a definition (or a new version with `replace`). The engine validates, saves a draft and runs the probe once | Yes |
+| `trigger_draft` | Submit probe code, or a recipe, and a definition (or a new version with `replace`). The engine validates, saves a draft and runs the probe once | Yes |
+| `trigger_recipes` | List the ready-made recipes with their parameters, required secrets and setup steps | No |
 | `trigger_activate` | Ask the user to approve a draft in a dialog; activate it when approved | No (it shows its own dialog) |
 | `trigger_update` | Change params, interval, `for`, policy, action, target or notifications; the user approves the listed changes | No (own dialog) |
 | `trigger_list` / `trigger_get` | State, last and next check, fires; `get` adds the definition, firing-rule state, recent runs and fires | No |
@@ -402,7 +404,13 @@ JSON files are written through a temporary file and a rename; the fire log toler
 | `trigger_report` | Submit the receipt after handling a fire | No |
 | `service_status` | Daemon version, deno and codex paths, counts, today's agent runs | No |
 
-### 7.5 What the skill teaches the agent
+### 7.5 Recipes
+
+A recipe is a probe that ships with the plugin (`recipes/<id>/recipe.json` and its code): what it watches, its parameters with types and defaults, the secrets it needs with the hosts they may go to, and setup steps for the user. `trigger_draft` with `recipe: "<id>"` takes the code, the permissions and the mode from the recipe and only the parameters, action, target and notifications from the agent; unknown or mistyped parameters are rejected, and so are later updates that do not fit the recipe. The approval dialog says that the probe is a recipe from the plugin.
+
+The first recipe, `ibkr-account`, reads Interactive Brokers' Flex Web Service (SendRequest, then GetStatement, protocol version 3) with a read-only token bound to IBKR's hosts. It reports new executions, including option assignments and exercises, from a Trade Confirmation query (IBKR publishes them 5 to 10 minutes after the fill), and from a daily Activity query deposits and withdrawals, positions that changed without a trade in the same report, and day-over-day moves in net asset value. IBKR limits tokens to one request a second and ten a minute and asks clients not to poll actively, so the recipe checks every 15 minutes around US market hours and every 2 hours otherwise, fetches the Activity report at most twice a day, and keeps the reference of a report that is still being generated for the next run instead of asking again. A scenario skill, `ibkr`, walks the user through creating the queries and storing the token, and tells the agent how to handle its fires.
+
+### 7.6 What the skill teaches the agent
 
 **Creating a trigger**: clarify ambiguities first; find a data source reachable over plain HTTP; never handle API keys in the chat (the user runs `ctrig secret set`); write the probe and definition; call `trigger_draft` and fix problems until the trial run passes; explain the trigger in a sentence or two; call `trigger_activate`.
 
@@ -438,7 +446,8 @@ An agent with unrestricted shell access runs as the user and could bypass any lo
 - Plugin: skill plus MCP server with the tools in section 7.4
 - Daemon: Deno probe runtime, state and event modes, all policies, file storage, launchd and systemd user services
 - Both target threads, the `notify` and `agent` actions, receipts, reminders and timeouts
-- Notifications on macOS and Linux; the `ctrig` command-line tool
+- Notifications on macOS and Linux, and by email; the `ctrig` command-line tool
+- Ready-made recipes, starting with the IBKR account watch, and a landing page for GitHub Pages
 - Tests: unit tests for the firing rules, integration tests with real Deno probes, the daemon, the control socket and the MCP protocol; end-to-end runs against the Codex CLI
 
 **Out**

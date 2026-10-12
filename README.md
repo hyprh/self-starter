@@ -60,6 +60,23 @@ ctrig secret set QUOTE_API_KEY --hosts api.example.com
 
 The secret is only given to probes that cannot reach any other host.
 
+### Ready-made recipes
+
+Some things to watch come with a probe already written and tested, so Codex only fills in your settings. `ctrig recipes` lists them.
+
+- **IBKR account watch** (`ibkr-account`): new executions and option assignments within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a trade, and large moves in net asset value. It uses Interactive Brokers' Flex Web Service with a read-only token; ask Codex "watch my IBKR account" and it walks you through the five-minute setup.
+
+### Email
+
+Notifications go to the desktop by default. To get them by email too:
+
+```sh
+ctrig channel email --to you@example.com --host smtp.example.com --user you@example.com
+ctrig channel test email
+```
+
+Then ask Codex to email you about a trigger, or make email a default with `ctrig channel default desktop,email`. The SMTP password is kept in a file only you can read and is never given to probes.
+
 ## Command line
 
 ```
@@ -69,7 +86,9 @@ ctrig test <id>                    run the probe once, without firing
 ctrig pause|resume|delete <id>
 ctrig history [<id>]               recent fires and what came of them
 ctrig approve <draft-id|id>        review and approve in the terminal
+ctrig recipes                      ready-made recipes
 ctrig secret set|list|rm
+ctrig channel list|email|default|test|rm
 ctrig service install|uninstall|start|stop|restart|status
 ctrig logs
 ctrig uninstall [--purge]
@@ -84,6 +103,8 @@ npm test               # builds, then runs unit and integration tests (real Deno
 ```
 
 - [docs/design.md](docs/design.md): design and the verified Codex integration points
-- [plugin/](plugin): the Codex plugin (manifest and skill)
+- [plugin/](plugin): the Codex plugin (manifest and skills)
+- [recipes/](recipes): ready-made probes, such as the IBKR account watch
+- [site/](site): the landing page, published to GitHub Pages by `.github/workflows/pages.yml` (Settings > Pages > Source: GitHub Actions)
 - [src/](src): `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`
 - [spike/](spike/README.md): scripts that check the remaining assumptions in the Codex app

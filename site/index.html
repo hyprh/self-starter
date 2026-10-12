@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Self-Starter for Codex</title>
+<meta name="description" content="An open-source Codex plugin that makes Codex proactive: it watches what you care about without spending tokens, and when something changes it takes the first step and comes back to you.">
+<meta property="og:title" content="Self-Starter for Codex">
+<meta property="og:description" content="Codex, unprompted. It watches quietly, then takes the first step and comes back to you.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,500..900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column that opens on a night of quiet checks ending in a single message; sections stack with a steady rhythm; the catalog is a wrapping grid. */
+:root {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --ink: #121a2c;
+  --muted: #566078;
+  --line: #d8deea;
+  --watch: #2b6a8a;
+  --fire: #b86c00;
+  --fire-mark: #f0a92a;
+  --fire-soft: #fff1d6;
+  --night: #0e1424;
+  --night-ink: #dbe2f0;
+  --night-muted: #8592ad;
+  --night-line: #26324c;
+  --focus: #2b6a8a;
+  --display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --step--1: 0.875rem;
+  --step-0: 1rem;
+  --step-1: 1.25rem;
+  --step-2: 1.6rem;
+  --step-3: clamp(2rem, 1.4rem + 2.4vw, 3rem);
+  --step-4: clamp(2.6rem, 1.6rem + 5vw, 5.4rem);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0f1b;
+    --surface: #111a2c;
+    --ink: #e6ebf5;
+    --muted: #9ba5ba;
+    --line: #232f47;
+    --watch: #7ab5d6;
+    --fire: #f2b33d;
+    --fire-mark: #f2b33d;
+    --fire-soft: #33270f;
+    --night: #070b14;
+    --night-ink: #dbe2f0;
+    --night-muted: #7f8ca7;
+    --night-line: #1f2a42;
+    --focus: #7ab5d6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0f1b;
+  --surface: #111a2c;
+  --ink: #e6ebf5;
+  --muted: #9ba5ba;
+  --line: #232f47;
+  --watch: #7ab5d6;
+  --fire: #f2b33d;
+  --fire-mark: #f2b33d;
+  --fire-soft: #33270f;
+  --night: #070b14;
+  --night-ink: #dbe2f0;
+  --night-muted: #7f8ca7;
+  --night-line: #1f2a42;
+  --focus: #7ab5d6;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: var(--step-0);
+  line-height: 1.6;
+}
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+
+.wrap { width: 100%; max-width: 1120px; margin-inline: auto; padding-inline: max(16px, 4vw); }
+section { padding-block: clamp(3.5rem, 2rem + 5vw, 6.5rem); border-top: 1px solid var(--line); }
+
+/* ---- top bar ---- */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-block: 1.25rem; }
+.wordmark { font-family: var(--display); font-stretch: 125%; font-weight: 800; letter-spacing: -0.01em; font-size: 1.05rem; text-decoration: none; }
+.wordmark span { color: var(--fire); }
+.bar nav { display: flex; gap: 1.25rem; font-size: var(--step--1); color: var(--muted); }
+.bar nav a { text-decoration: none; }
+.bar nav a:hover { color: var(--ink); }
+
+/* ---- hero ---- */
+.hero { padding-block: clamp(2rem, 1rem + 4vw, 4.5rem) clamp(3rem, 2rem + 4vw, 5rem); }
+.eyebrow { font-family: var(--mono); font-size: var(--step--1); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin: 0 0 1rem; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: var(--step-4); font-stretch: 125%; font-weight: 900; line-height: 0.98; letter-spacing: -0.03em; }
+h1 em { font-style: normal; color: var(--fire); }
+.lede { font-size: var(--step-1); max-width: 40rem; color: var(--muted); margin: 1.5rem 0 2rem; }
+.lede strong { color: var(--ink); font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.button {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.8rem 1.2rem; border-radius: 999px; font-weight: 600; text-decoration: none;
+  border: 1px solid var(--ink); background: var(--ink); color: var(--bg);
+}
+.button.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
+.button:hover { transform: translateY(-1px); }
+
+/* ---- the night ---- */
+.night {
+  position: relative; margin: clamp(2.5rem, 1.5rem + 3vw, 4rem) 0 0;
+  background: var(--night); color: var(--night-ink); border-radius: 22px;
+  padding: clamp(1rem, 0.6rem + 1.5vw, 1.75rem);
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 19rem); gap: clamp(1rem, 0.5rem + 2vw, 2rem); align-items: end;
+  overflow: hidden;
+}
+.night-head { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem 1.5rem; font-family: var(--mono); font-size: var(--step--1); color: var(--night-muted); }
+.night-head b { color: var(--night-ink); font-weight: 500; }
+.chart { min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .axis { fill: var(--night-muted); font: 500 11px var(--mono); }
+.chart .grid { stroke: var(--night-line); stroke-width: 1; }
+.chart .threshold { stroke: var(--fire-mark); stroke-width: 1.2; stroke-dasharray: 5 6; opacity: 0.7; }
+.chart .value { fill: none; stroke: var(--watch); stroke-width: 2; stroke-linejoin: round; }
+.chart .check { fill: var(--night); stroke: var(--watch); stroke-width: 1.6; }
+.chart .fire { fill: var(--fire-mark); }
+.chart .ring { fill: none; stroke: var(--fire-mark); stroke-width: 1.5; transform-origin: 862px 53.8px; animation: ring 2.4s ease-out infinite; }
+.chart .scan { stroke: var(--night-ink); stroke-width: 1; opacity: 0.18; animation: scan 9s linear infinite; }
+.chart .label-fire { fill: var(--fire-mark); font: 500 11px var(--mono); }
+@keyframes ring { from { transform: scale(1); opacity: 0.9; } to { transform: scale(3.2); opacity: 0; } }
+@keyframes scan { from { transform: translateX(0); } to { transform: translateX(830px); } }
+
+.message {
+  background: var(--surface); color: var(--ink); border-radius: 16px 16px 16px 4px;
+  padding: 1rem 1.1rem; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  animation: arrive 900ms 300ms cubic-bezier(.2,.8,.2,1) both;
+}
+.message .meta { display: flex; justify-content: space-between; gap: 0.75rem; font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+.message .from { color: var(--fire); font-weight: 500; }
+.message p { margin: 0.5rem 0 0.75rem; font-size: 0.95rem; line-height: 1.5; }
+.message .where { font-size: 0.75rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.1rem 0.45rem; border-radius: 4px; background: var(--fire-soft); color: var(--fire); }
+@keyframes arrive { from { transform: translateY(10px); } to { transform: translateY(0); } }
+
+/* ---- sections ---- */
+.section-head { display: grid; gap: 0.75rem; margin-bottom: 2.5rem; max-width: 46rem; }
+h2 { font-size: var(--step-3); font-stretch: 112%; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; }
+.section-head p { margin: 0; color: var(--muted); font-size: var(--step-1); }
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(1.25rem, 0.5rem + 2vw, 2.5rem); counter-reset: step; }
+.step { display: grid; gap: 0.6rem; align-content: start; }
+.step::before { counter-increment: step; content: counter(step); font-family: var(--display); font-stretch: 125%; font-weight: 900; font-size: 2.6rem; line-height: 1; color: var(--fire); }
+.step h3 { font-size: var(--step-1); font-stretch: 112%; font-weight: 700; }
+.step p { margin: 0; color: var(--muted); }
+.quote { font-family: var(--mono); font-size: 0.85rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.85rem; }
+.dialog { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0.8rem 0.9rem; font-size: 0.82rem; display: grid; gap: 0.2rem; }
+.dialog dl { margin: 0; display: grid; gap: 0.2rem; }
+.dialog dt { font-family: var(--mono); color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.dialog dd { margin: 0 0 0.35rem; }
+.dialog .approve { justify-self: start; margin-top: 0.3rem; font-weight: 600; font-size: 0.8rem; padding: 0.35rem 0.8rem; border-radius: 999px; background: var(--ink); color: var(--bg); }
+
+.catalog { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+@media (max-width: 1000px) { .catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .catalog { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem; display: grid; gap: 0.6rem; grid-template-rows: auto auto 1fr auto; min-width: 0; }
+.card.featured { border-color: var(--fire); box-shadow: inset 0 0 0 1px var(--fire); }
+.card h3 { font-size: 1.05rem; font-stretch: 112%; font-weight: 700; display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+.card p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+.card .prompt { font-family: var(--mono); font-size: 0.8rem; line-height: 1.5; background: var(--bg); border-radius: 8px; padding: 0.6rem 0.7rem; margin: 0; overflow-wrap: anywhere; }
+.copy {
+  justify-self: start; font: 600 0.8rem var(--body); color: var(--ink); background: transparent;
+  border: 1px solid var(--line); border-radius: 999px; padding: 0.35rem 0.8rem; cursor: pointer;
+}
+.copy:hover { border-color: var(--ink); }
+.copy[data-done] { border-color: var(--fire); color: var(--fire); }
+
+.guards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.75rem 2.5rem; }
+@media (max-width: 860px) { .guards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .guards { grid-template-columns: minmax(0, 1fr); } }
+.guard { display: grid; gap: 0.4rem; align-content: start; padding-top: 1rem; border-top: 2px solid var(--ink); }
+.guard h3 { font-size: 1.05rem; font-stretch: 112%; font-weight: 700; }
+.guard p { margin: 0; color: var(--muted); }
+
+.channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 1rem; }
+.channel { border-left: 3px solid var(--watch); padding: 0.2rem 0 0.2rem 0.9rem; }
+.channel b { display: block; font-weight: 600; }
+.channel span { color: var(--muted); font-size: 0.92rem; }
+
+.install { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(1.5rem, 1rem + 3vw, 3.5rem); align-items: start; }
+pre.terminal { margin: 0; background: var(--night); color: var(--night-ink); border-radius: 14px; padding: 1.1rem 1.2rem; overflow-x: auto; font: 0.85rem/1.7 var(--mono); }
+pre.terminal .c { color: var(--night-muted); }
+.install ul { margin: 0; padding-left: 1.1rem; color: var(--muted); display: grid; gap: 0.4rem; }
+
+footer { border-top: 1px solid var(--line); padding-block: 2.5rem; color: var(--muted); font-size: var(--step--1); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1rem; }
+
+@media (max-width: 860px) {
+  .night { grid-template-columns: minmax(0, 1fr); }
+  .steps, .install { grid-template-columns: minmax(0, 1fr); }
+  .bar nav { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chart .ring, .chart .scan, .message { animation: none; }
+  .button:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="wrap bar">
+  <a class="wordmark" href="#top">Self<span>‑</span>Starter</a>
+  <nav aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#ideas">Ideas</a>
+    <a href="#safety">Safety</a>
+    <a href="#install">Install</a>
+  </nav>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <p class="eyebrow">An open-source plugin for Codex</p>
+    <h1>Codex,<br><em>unprompted.</em></h1>
+    <p class="lede">Tell Codex what to keep an eye on: a price, your brokerage account, a CI pipeline, a release feed. It writes a small watcher, you approve it, and from then on it checks quietly <strong>without spending a token</strong>. When something changes, Codex takes the first step and comes back to you.</p>
+    <div class="actions">
+      <a class="button" href="#install">Install it</a>
+      <a class="button secondary" href="https://github.com/hyprh/SelfReflection">View on GitHub</a>
+    </div>
+
+    <figure class="night" aria-label="Example: a night of quiet checks, then one message from Codex">
+      <figcaption class="night-head">
+        <span><b>NVDA above 200</b> · checked every 15 min overnight</span>
+        <span>35 checks · 0 tokens · fired once</span>
+      </figcaption>
+      <div class="chart">
+        <svg viewBox="0 18 960 212" role="img" aria-label="The price stays under 200 all night and crosses it at 06:30">
+          <line class="grid" x1="40" y1="190" x2="920" y2="190"/>
+          <line class="threshold" x1="40" y1="56" x2="920" y2="56"/>
+          <text class="axis" x="920" y="46" text-anchor="end">200</text>
+          <text class="axis" x="40" y="215">22:00</text>
+          <text class="axis" x="235.6" y="215" text-anchor="middle">00:00</text>
+          <text class="axis" x="431.1" y="215" text-anchor="middle">02:00</text>
+          <text class="axis" x="626.7" y="215" text-anchor="middle">04:00</text>
+          <text class="axis" x="822.2" y="215" text-anchor="middle">06:00</text>
+          <line class="scan" x1="40" y1="30" x2="40" y2="190"/>
+          <path class="value" d="M40.0 163.3 L64.4 149.9 L88.9 158.8 L113.3 143.2 L137.8 154.4 L162.2 170.0 L186.7 161.1 L211.1 145.4 L235.6 136.5 L260.0 147.6 L284.4 156.6 L308.9 140.9 L333.3 129.8 L357.8 138.7 L382.2 149.9 L406.7 134.2 L431.1 123.1 L455.6 132.0 L480.0 143.2 L504.4 127.5 L528.9 118.6 L553.3 125.3 L577.8 136.5 L602.2 120.8 L626.7 109.6 L651.1 116.4 L675.6 127.5 L700.0 107.4 L724.4 98.5 L748.9 105.2 L773.3 94.0 L797.8 85.1 L822.2 91.8 L846.7 73.9 L862 53.8"/>
+          <g><circle class="check" cx="40.0" cy="163.3" r="3"/><circle class="check" cx="64.4" cy="149.9" r="3"/><circle class="check" cx="88.9" cy="158.8" r="3"/><circle class="check" cx="113.3" cy="143.2" r="3"/><circle class="check" cx="137.8" cy="154.4" r="3"/><circle class="check" cx="162.2" cy="170.0" r="3"/><circle class="check" cx="186.7" cy="161.1" r="3"/><circle class="check" cx="211.1" cy="145.4" r="3"/><circle class="check" cx="235.6" cy="136.5" r="3"/><circle class="check" cx="260.0" cy="147.6" r="3"/><circle class="check" cx="284.4" cy="156.6" r="3"/><circle class="check" cx="308.9" cy="140.9" r="3"/><circle class="check" cx="333.3" cy="129.8" r="3"/><circle class="check" cx="357.8" cy="138.7" r="3"/><circle class="check" cx="382.2" cy="149.9" r="3"/><circle class="check" cx="406.7" cy="134.2" r="3"/><circle class="check" cx="431.1" cy="123.1" r="3"/><circle class="check" cx="455.6" cy="132.0" r="3"/><circle class="check" cx="480.0" cy="143.2" r="3"/><circle class="check" cx="504.4" cy="127.5" r="3"/><circle class="check" cx="528.9" cy="118.6" r="3"/><circle class="check" cx="553.3" cy="125.3" r="3"/><circle class="check" cx="577.8" cy="136.5" r="3"/><circle class="check" cx="602.2" cy="120.8" r="3"/><circle class="check" cx="626.7" cy="109.6" r="3"/><circle class="check" cx="651.1" cy="116.4" r="3"/><circle class="check" cx="675.6" cy="127.5" r="3"/><circle class="check" cx="700.0" cy="107.4" r="3"/><circle class="check" cx="724.4" cy="98.5" r="3"/><circle class="check" cx="748.9" cy="105.2" r="3"/><circle class="check" cx="773.3" cy="94.0" r="3"/><circle class="check" cx="797.8" cy="85.1" r="3"/><circle class="check" cx="822.2" cy="91.8" r="3"/><circle class="check" cx="846.7" cy="73.9" r="3"/></g>
+          <circle class="ring" cx="862" cy="53.8" r="6"/>
+          <circle class="fire" cx="862" cy="53.8" r="6"/>
+          <text class="label-fire" x="846" y="36" text-anchor="end">06:30 crosses 200</text>
+        </svg>
+      </div>
+      <div class="message">
+        <div class="meta"><span class="from">Codex</span><span>06:31 · <span class="tag">example</span></span></div>
+        <p>NVDA crossed 200 at 06:30 in pre-market trading, on about three times its usual volume. It follows overnight news about a new supply deal. Nothing in your notes calls for action before the open.</p>
+        <div class="where">Sent to the thread where you asked · desktop · email</div>
+      </div>
+    </figure>
+  </div>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Hand it off in one sentence</h2>
+        <p>You describe what matters. Codex turns it into a watcher, asks you once, and takes it from there.</p>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <h3>Say what to watch</h3>
+          <p class="quote">“When NVDA closes above 200, find out why and brief me.”</p>
+          <p>Codex asks what it needs to know first: the close or any trade, once or every time.</p>
+        </div>
+        <div class="step">
+          <h3>Approve what it will do</h3>
+          <div class="dialog" role="group" aria-label="Example approval">
+            <dl>
+              <dt>Network</dt><dd>api.example-quotes.com</dd>
+              <dt>Checks</dt><dd>every 5 min, faster near 200</dd>
+              <dt>Then</dt><dd>Codex writes a brief in this thread</dd>
+              <dt>Trial run</dt><dd>ok: NVDA 196.40, below 200</dd>
+            </dl>
+            <span class="approve">Approve</span>
+          </div>
+          <p>Codex writes the watcher and runs it once. You see what it may reach and do, and approve it in one dialog.</p>
+        </div>
+        <div class="step">
+          <h3>It acts on its own</h3>
+          <p>The watcher runs in the background without calling a model. It fires once when the condition becomes true, not on every check, and waits for it to clear before it can fire again.</p>
+          <p>Codex picks the task back up in your thread, or works in a thread of its own while you are away, and tells you what it found.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ideas">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Things people hand off</h2>
+        <p>Copy a prompt into Codex. Ready-made watchers need only your settings; for anything else, Codex writes one for you.</p>
+      </div>
+      <div class="catalog">
+        <article class="card featured">
+          <h3>IBKR account watch <span class="tag">ready-made</span></h3>
+          <p>New fills, option assignments, deposits and withdrawals, positions that changed without a trade, and big moves in net asset value. Read-only.</p>
+          <p class="prompt" id="p-ibkr">Watch my IBKR account and tell me about anything unusual. Email me too.</p>
+          <button class="copy" type="button" data-target="p-ibkr">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Price breakout</h3>
+          <p>Fire when a price crosses a level and stays there, then look into why.</p>
+          <p class="prompt" id="p-price">When BTC stays above 100,000 for 10 minutes, check the news and give me a three-line brief.</p>
+          <button class="copy" type="button" data-target="p-price">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>CI breaks on main</h3>
+          <p>Investigate failures as they happen instead of the next morning.</p>
+          <p class="prompt" id="p-ci">Whenever CI fails on main in this repo, find the failing test and suggest a fix.</p>
+          <button class="copy" type="button" data-target="p-ci">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Dependency releases</h3>
+          <p>Read release notes so you do not have to, and flag what affects you.</p>
+          <p class="prompt" id="p-release">When a new version of react ships, read the release notes and tell me if anything affects this project.</p>
+          <button class="copy" type="button" data-target="p-release">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Site down</h3>
+          <p>A plain health check that only speaks up when the status changes.</p>
+          <p class="prompt" id="p-site">Check https://status.example.com every minute and tell me if it stops returning 200.</p>
+          <button class="copy" type="button" data-target="p-site">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Company filings</h3>
+          <p>Know when a company you follow files with the SEC, with the gist.</p>
+          <p class="prompt" id="p-filing">When Apple files an 8-K, summarize what changed and whether it matters for my position.</p>
+          <button class="copy" type="button" data-target="p-filing">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Review comments</h3>
+          <p>Draft replies while the discussion is still fresh.</p>
+          <p class="prompt" id="p-review">When someone comments on my open pull requests, draft replies for me to review.</p>
+          <button class="copy" type="button" data-target="p-review">Copy prompt</button>
+        </article>
+        <article class="card">
+          <h3>Mentions</h3>
+          <p>Hear when your project comes up, with the thread summarized.</p>
+          <p class="prompt" id="p-hn">When this repo is mentioned on Hacker News, summarize the discussion for me.</p>
+          <button class="copy" type="button" data-target="p-hn">Copy prompt</button>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="safety">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Proactive, within limits you set</h2>
+        <p>An agent that acts on its own has to earn it. These rules hold for every watcher.</p>
+      </div>
+      <div class="guards">
+        <div class="guard">
+          <h3>Sandboxed watchers</h3>
+          <p>Watchers run in Deno with network access only to the sites they declare. No files, no programs, no imports from the internet.</p>
+        </div>
+        <div class="guard">
+          <h3>Nothing runs without you</h3>
+          <p>You approve the code and its permissions before anything is scheduled. If either changes later, the watcher stops until you approve again.</p>
+        </div>
+        <div class="guard">
+          <h3>Data is never instructions</h3>
+          <p>What a watcher sees reaches Codex as quoted data, and a task handling an alert cannot create or change alerts.</p>
+        </div>
+        <div class="guard">
+          <h3>Keys stay with you</h3>
+          <p>API keys and your email password live in files only you can read. A key goes only to watchers that cannot reach any other site.</p>
+        </div>
+        <div class="guard">
+          <h3>No runaway costs</h3>
+          <p>No model runs while waiting. Codex runs at most 20 times a day by default, one at a time.</p>
+        </div>
+        <div class="guard">
+          <h3>Every alert is on record</h3>
+          <p>Ask why something fired, or why it did not: each check, each alert and what Codex did about it is kept, and readable from Codex or the terminal.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="where">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Where it finds you</h2>
+        <p>Each watcher reports where you asked it to.</p>
+      </div>
+      <div class="channels">
+        <div class="channel"><b>Your thread</b><span>The task comes back to the conversation where you asked, as soon as you are there.</span></div>
+        <div class="channel"><b>Its own thread</b><span>Long-running watches get a thread named after them that Codex works in while you are away.</span></div>
+        <div class="channel"><b>Desktop</b><span>A notification on macOS or Linux that opens the thread.</span></div>
+        <div class="channel"><b>Email</b><span>Any SMTP account, for the things you want to read on your phone.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap install">
+      <div class="section-head">
+        <h2>Install</h2>
+        <p>Two minutes, then ask Codex to watch something.</p>
+        <ul>
+          <li>macOS or Linux</li>
+          <li>Node.js 20 or newer</li>
+          <li>The Codex CLI or the Codex app</li>
+        </ul>
+      </div>
+      <pre class="terminal"><span class="c"># get it</span>
+git clone https://github.com/hyprh/SelfReflection.git self-starter
+cd self-starter
+npm install &amp;&amp; npm link
+
+<span class="c"># add the plugin to Codex and start the background service</span>
+ctrig install
+ctrig doctor
+
+<span class="c"># optional: email notifications</span>
+ctrig channel email --to you@example.com --host smtp.example.com --user you@example.com</pre>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Self‑Starter is an independent open-source project, not affiliated with OpenAI or Interactive Brokers.</span>
+    <a href="https://github.com/hyprh/SelfReflection">Source on GitHub</a>
+  </div>
+</footer>
+
+<script>
+  for (const button of document.querySelectorAll(".copy")) {
+    button.addEventListener("click", async () => {
+      const source = document.getElementById(button.dataset.target);
+      const text = source.textContent.trim();
+      const done = () => {
+        button.textContent = "Copied";
+        button.dataset.done = "";
+        setTimeout(() => {
+          button.textContent = "Copy prompt";
+          delete button.dataset.done;
+        }, 1800);
+      };
+      try {
+        await navigator.clipboard.writeText(text);
+        done();
+      } catch {
+        const range = document.createRange();
+        range.selectNodeContents(source);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        button.textContent = "Selected: copy it with your keyboard";
+      }
+    });
+  }
+</script>
+</body>
+</html>
