@@ -1,0 +1,83 @@
+{
+  "id": "ibkr-account",
+  "version": 1,
+  "title": "IBKR account watch",
+  "summary": "Watches an Interactive Brokers account through the Flex Web Service and reports what changed: new executions (including option assignments and exercises) within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a matching trade, and large moves in net asset value. Read-only: a Flex token can read reports but cannot trade.",
+  "entry": "probe.ts",
+  "mode": "event",
+  "permissions": {
+    "net": ["ndcdyn.interactivebrokers.com", "gdcdyn.interactivebrokers.com"],
+    "env": ["IBKR_FLEX_TOKEN"]
+  },
+  "interval": { "min": "5m", "max": "6h", "default": "15m" },
+  "timeout": "2m",
+  "params": {
+    "trade_query_id": {
+      "type": "string",
+      "description": "Query ID of a Trade Confirmation Flex Query (period: Today). Reports new executions within 5 to 10 minutes."
+    },
+    "activity_query_id": {
+      "type": "string",
+      "description": "Query ID of an Activity Flex Query (period: Last Business Day) with Open Positions, Cash Transactions, Net Asset Value (NAV) in Base and Change in NAV. Updated once a day after the close."
+    },
+    "nav_move_pct": {
+      "type": "number",
+      "default": 3,
+      "description": "Report a day-over-day change in net asset value of at least this many percent."
+    },
+    "large_trade_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Only report executions worth at least this much (in the trade's currency); 0 reports every execution."
+    },
+    "cash_types": {
+      "type": "string[]",
+      "default": ["Deposits/Withdrawals"],
+      "description": "Cash transaction types to report, as IBKR names them, such as Deposits/Withdrawals or Dividends."
+    },
+    "watch": {
+      "type": "string[]",
+      "default": ["trades", "cash", "positions", "nav"],
+      "description": "Which kinds of change to report: trades, cash, positions, nav."
+    },
+    "activity_every_hours": {
+      "type": "number",
+      "default": 12,
+      "advanced": true,
+      "description": "How often to fetch the Activity report; it only changes once a day."
+    },
+    "base_url": {
+      "type": "string",
+      "default": "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService",
+      "advanced": true,
+      "description": "Flex Web Service address."
+    },
+    "retry_delays_ms": {
+      "type": "number[]",
+      "default": [2000, 4000, 8000],
+      "advanced": true,
+      "description": "Waits before asking again for a report that is still being generated."
+    },
+    "request_spacing_ms": {
+      "type": "number",
+      "default": 1100,
+      "advanced": true,
+      "description": "Pause between requests; IBKR allows one request per second per token."
+    }
+  },
+  "secrets": [
+    {
+      "name": "IBKR_FLEX_TOKEN",
+      "hosts": ["ndcdyn.interactivebrokers.com", "gdcdyn.interactivebrokers.com"],
+      "howToGet": "IBKR Client Portal > Performance & Reports > Flex Queries > Flex Web Service Configuration: enable the service and generate a token."
+    }
+  ],
+  "setup": [
+    "In the IBKR Client Portal, open Performance & Reports > Flex Queries.",
+    "Create a Trade Confirmation Flex Query: section Trade Confirmations, format XML, period Today. Note its Query ID.",
+    "Optional: create an Activity Flex Query with Open Positions, Cash Transactions, Net Asset Value (NAV) in Base and Change in NAV (Trades too, so position changes explained by trades are not reported twice); format XML, period Last Business Day. Note its Query ID.",
+    "Open Flex Web Service Configuration on the same page, enable it and generate a token.",
+    "In a terminal (not in the chat): ctrig secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com"
+  ],
+  "suggestedPrompt": "Something changed in my IBKR account. For each change, say what it is (my own order filling, an option assignment or exercise, a dividend, a transfer), whether it looks expected or unusual, and what I should check. Put anything that could be unauthorized, such as a trade or withdrawal I did not make, first. Do not place orders or change anything. Keep it short."
+}

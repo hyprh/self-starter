@@ -88,6 +88,7 @@ export function approvalText(input: ApprovalInput): string {
   lines.push(`Then: ${describeAction(def)}`);
   lines.push(`Notifications: ${describeNotify(def)}`);
   if (input.trial || !input.changes) lines.push(`Trial run: ${describeTrial(input.trial, def.mode)}`);
+  if (def.meta.recipe) lines.push(`Probe: the ready-made recipe ${def.meta.recipe}, shipped with the plugin`);
   lines.push(`Probe code${input.codeChanged ? "" : " (unchanged)"}: ${input.codePath}`);
   return lines.join("\n");
 }

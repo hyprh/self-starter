@@ -310,7 +310,7 @@ export class Executor {
     const limit = this.deps.config.budget.maxAgentRunsPerDay;
     if (this.agentRunsToday() >= limit) {
       this.deps.fires.record({ type: "skipped", fireId: fire.fireId, why: "the daily agent budget is used up", at: this.now().toISOString() });
-      await this.sendNotification(definition.policy.quiet_hours, fire.fireId, {
+      await this.sendNotification(definition, fire.fireId, {
         title: definition.name,
         body: `${this.describe(fire)} (not handed to Codex: the daily limit of ${limit} runs is used up)`,
       });
@@ -342,7 +342,7 @@ export class Executor {
       this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target, at: this.now().toISOString() });
       this.log(`fire ${fire.fireId} queued into thread ${originThread}`);
       if (definition.notify.when === "always") {
-        await this.sendNotification(definition.policy.quiet_hours, fire.fireId, {
+        await this.sendNotification(definition, fire.fireId, {
           title: definition.name,
           body: `${this.describe(fire)} (sent to your Codex thread)`,
           threadId: originThread,
@@ -457,7 +457,7 @@ export class Executor {
     if (failures >= MAX_FAILURES) {
       this.deps.fires.record({ type: "failed", fireId: fire.fireId, error, at });
       this.log(`fire ${fire.fireId} failed: ${error}`);
-      await this.sendNotification(definition.policy.quiet_hours, fire.fireId, {
+      await this.sendNotification(definition, fire.fireId, {
         title: `${definition.name}: could not hand the fire to Codex`,
         body: `${fire.summary}. ${error}`,
       });
@@ -484,7 +484,7 @@ export class Executor {
     if (definition.notify.when === "never") return;
     const notification: Notification = { title: definition.name, body: `${this.describe(fire)} (waiting for Codex in your thread)` };
     if (fire.target?.threadId) notification.threadId = fire.target.threadId;
-    await this.sendNotification(definition.policy.quiet_hours, fire.fireId, notification);
+    await this.sendNotification(definition, fire.fireId, notification);
   }
 
   private async afterReceipt(fireId: string, receipt: Receipt): Promise<void> {
@@ -498,10 +498,13 @@ export class Executor {
     if (when === "receipt" && !receipt.notify) return;
     const notification: Notification = { title: definition.name, body: receipt.summary };
     if (fire.target?.threadId) notification.threadId = fire.target.threadId;
-    await this.sendNotification(definition.policy.quiet_hours, fireId, notification);
+    await this.sendNotification(definition, fireId, notification);
   }
 
-  private async sendNotification(quiet: QuietHours | undefined, fireId: string | undefined, notification: Notification): Promise<void> {
+  /** Sends a notification about a trigger to the trigger's channels, holding it during the trigger's quiet hours. */
+  private async sendNotification(definition: TriggerDefinition | undefined, fireId: string | undefined, notification: Notification): Promise<void> {
+    const quiet = definition?.policy.quiet_hours;
+    if (definition?.notify.channels && !notification.channels) notification = { ...notification, channels: definition.notify.channels };
     if (isQuietTime(this.now(), quiet)) {
       this.deferred.push({ fireId, notification, quiet });
       return;
@@ -511,8 +514,8 @@ export class Executor {
   }
 
   /** Notifications about a trigger itself (health, approval), outside any fire. */
-  async notifyAbout(quiet: QuietHours | undefined, notification: Notification): Promise<void> {
-    await this.sendNotification(quiet, undefined, notification);
+  async notifyAbout(definition: TriggerDefinition | undefined, notification: Notification): Promise<void> {
+    await this.sendNotification(definition, undefined, notification);
   }
 
   private async flushDeferred(): Promise<void> {

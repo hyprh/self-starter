@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { bundledDeno, DEFAULT_CONFIG, type Config } from "../../src/engine/config.js";
@@ -31,7 +31,8 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
   const log = (line: string) => logs.push(line);
   const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
-  const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", deno: () => deno, codex: () => "/fake/codex", log, now });
+  const recipesDir = join(paths.home, "recipes");
+  const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codex: () => "/fake/codex", log, now });
 
   const definition = (overrides: Record<string, unknown> = {}) => ({
     id: "price-alert",
@@ -49,7 +50,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
     return { view, trigger: service.activateDraft({ draftId: view.draftId }, caller) };
   };
 
-  return { home, paths, store, fires, secrets, notifier, codex, logs, clock, executor, engine, service, definition, activate, cleanup: home.cleanup };
+  return { home, paths, store, fires, secrets, notifier, codex, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
 }
 
 describe("triggers end to end", { skip: deno ? false : "the deno npm package is not installed" }, () => {
@@ -353,6 +354,19 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     }
   });
 
+  it("sends fire notifications to the channels the trigger chose", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ action: { type: "notify" }, notify: { when: "always", channels: ["email"] } });
+      server.price = 200;
+      await t.engine.runNow("price-alert");
+      const sent = await eventually(() => t.notifier.sent[0]);
+      assert.deepEqual(sent.channels, ["email"]);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it("holds notifications during quiet hours", async () => {
     const t = setup(server);
     try {
@@ -391,6 +405,62 @@ describe("deleting a trigger", { skip: deno ? false : "the deno npm package is n
       await eventually(() => t.fires.get(second)?.status === "delivered");
       assert.equal(t.codex.queued.length, 2);
       assert.doesNotMatch(t.codex.queued[1]!.message, /previous_fire/);
+    } finally {
+      t.cleanup();
+      await server.close();
+    }
+  });
+});
+
+describe("recipes", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+  it("drafts a trigger from a ready-made recipe, with the recipe's code and permissions", async () => {
+    const server = await startServer();
+    const t = setup(server);
+    try {
+      const dir = join(t.recipesDir, "price-watch");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "probe.ts"), STATE_PROBE);
+      writeFileSync(
+        join(dir, "recipe.json"),
+        JSON.stringify({
+          id: "price-watch",
+          version: 2,
+          title: "Price watch",
+          summary: "Fires when a price crosses a threshold.",
+          entry: "probe.ts",
+          mode: "state",
+          permissions: { net: [server.host], env: [] },
+          interval: { min: "10s", max: "1h", default: "1m" },
+          params: {
+            url: { type: "string", required: true, description: "Where the price comes from." },
+            threshold: { type: "number", default: 150, description: "Fire above this." },
+          },
+        }),
+      );
+      assert.deepEqual(t.service.listRecipes().map((r) => r.id), ["price-watch"]);
+
+      const base = { id: "from-recipe", name: "Price watch", intent: "Tell me when the price goes above 150", action: { type: "notify" } };
+      await assert.rejects(t.service.createDraft({ definition: base, recipe: "nope" }, fromThread()), /no recipe named nope \(available: price-watch\)/);
+      await assert.rejects(t.service.createDraft({ definition: base, recipe: "price-watch", code: STATE_PROBE }, fromThread()), /either recipe or code/);
+      await assert.rejects(
+        t.service.createDraft({ definition: { ...base, probe: { params: { url: server.origin, limit: 3 } } }, recipe: "price-watch" }, fromThread()),
+        /has no parameter limit/,
+      );
+
+      const view = await t.service.createDraft({ definition: { ...base, probe: { params: { url: server.origin } } }, recipe: "price-watch" }, fromThread());
+      assert.equal(view.trial?.ok, true, view.trial?.error);
+      assert.match(view.approvalText, /Probe: the ready-made recipe price-watch@2, shipped with the plugin/);
+      assert.match(view.definitionYaml, /recipe: price-watch@2/);
+      assert.match(view.definitionYaml, /threshold: 150/);
+
+      t.service.activateDraft({ draftId: view.draftId }, fromThread());
+      assert.equal(t.store.loadTrigger("from-recipe").definition.meta.recipe, "price-watch@2");
+      assert.throws(
+        () => t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { limit: 1 } } } }, fromThread({ turnId: "turn-20" })),
+        /do not fit the price-watch recipe/,
+      );
+      const update = t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { threshold: 300 } } } }, fromThread({ turnId: "turn-21" }));
+      assert.deepEqual(update.changes, ["probe.params.threshold: 150 → 300"]);
     } finally {
       t.cleanup();
       await server.close();

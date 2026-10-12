@@ -8,6 +8,8 @@ export interface Notification {
   body: string;
   /** Thread to open when the notification is clicked (where supported). */
   threadId?: string;
+  /** Where to send it; the configured default when left out. */
+  channels?: Array<"desktop" | "email">;
 }
 
 export interface Notifier {

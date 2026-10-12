@@ -9,6 +9,7 @@ export type ActionType = "notify" | "agent";
 export type TargetKind = "origin" | "dedicated";
 export type NotifyWhen = "always" | "receipt" | "never";
 export type Sandbox = "read-only" | "workspace-write";
+export type Channel = "desktop" | "email";
 
 export interface QuietHours {
   from: string;
@@ -41,12 +42,14 @@ export interface TriggerDefinition {
   };
   action: { type: ActionType; prompt?: string; sandbox: Sandbox };
   target: { kind: TargetKind; cwd?: string; thread_id?: string | null };
-  notify: { when: NotifyWhen };
+  notify: { when: NotifyWhen; channels?: Channel[] };
   meta: {
     created_at: string;
     origin_thread_id?: string | null;
     approved_at?: string | null;
     revision: number;
+    /** The ready-made recipe the probe comes from, such as "ibkr-account@1". */
+    recipe?: string;
   };
 }
 
@@ -271,8 +274,16 @@ export function validateDefinition(raw: unknown): ValidationResult {
 
   // notify
   const notifyRaw = isRecord(raw.notify) ? raw.notify : {};
-  const notify = { when: (notifyRaw.when as NotifyWhen | undefined) ?? "receipt" };
+  const notify: TriggerDefinition["notify"] = { when: (notifyRaw.when as NotifyWhen | undefined) ?? "receipt" };
   if (!["always", "receipt", "never"].includes(notify.when)) errors.push('notify.when must be "always", "receipt" or "never"');
+  if (notifyRaw.channels !== undefined && notifyRaw.channels !== null) {
+    const list = notifyRaw.channels;
+    if (!Array.isArray(list) || list.length === 0 || !list.every((c) => c === "desktop" || c === "email")) {
+      errors.push('notify.channels must be a non-empty list of "desktop" and "email"');
+    } else {
+      notify.channels = [...new Set(list as Channel[])];
+    }
+  }
 
   // meta
   const metaRaw = isRecord(raw.meta) ? raw.meta : {};
@@ -284,6 +295,7 @@ export function validateDefinition(raw: unknown): ValidationResult {
     approved_at: isIsoDate(approvedAt) ? approvedAt : null,
     revision: Number.isInteger(metaRaw.revision) ? (metaRaw.revision as number) : 1,
   };
+  if (typeof metaRaw.recipe === "string" && metaRaw.recipe) meta.recipe = metaRaw.recipe;
 
   if (errors.length > 0) return { ok: false, errors };
 

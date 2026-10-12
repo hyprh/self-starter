@@ -9,11 +9,13 @@ import { approvalText, describeState } from "../core/describe.js";
 import { definitionToYaml, validateDefinition, type TriggerDefinition } from "../core/definition.js";
 import { deepMerge, describeChanges, patchPaths } from "../core/patch.js";
 import type { ProbeRunResult } from "./probe-runner.js";
-import type { Config } from "./config.js";
+import { channelSettings } from "./channels.js";
+import { loadConfig, type Config } from "./config.js";
 import type { Engine, RunRecord } from "./engine.js";
 import type { Executor } from "./executor.js";
 import type { FireLog, FireRecord } from "./fires.js";
 import type { Paths } from "./paths.js";
+import { applyRecipe, listRecipes, loadRecipe, type Recipe } from "./recipes.js";
 import { approvalProblem, fingerprint, type DryRun, type LoadedDraft, type LoadedTrigger, type Store } from "./store.js";
 
 export type ErrorCode = "not_found" | "invalid" | "refused" | "conflict";
@@ -54,6 +56,8 @@ export interface ServiceDeps {
   paths: Paths;
   config: Config;
   version: string;
+  /** Folder of ready-made recipes (recipes/ in the package). */
+  recipesDir: string;
   deno: () => string | undefined;
   codex: () => string | undefined;
   log: (line: string) => void;
@@ -204,6 +208,20 @@ export class TriggerService {
     }
   }
 
+  private recipe(id: unknown): { recipe: Recipe; code: string } {
+    if (typeof id !== "string") throw new ServiceError("invalid", "recipe must be a recipe id from trigger_recipes");
+    try {
+      return loadRecipe(this.deps.recipesDir, id);
+    } catch (error) {
+      throw new ServiceError("not_found", (error as Error).message);
+    }
+  }
+
+  /** The ready-made recipes, for trigger_recipes and `ctrig recipes`. */
+  listRecipes(): Recipe[] {
+    return listRecipes(this.deps.recipesDir);
+  }
+
   private cleanupDrafts(): void {
     const cutoff = this.now().getTime() - DRAFT_TTL_MS;
     for (const meta of this.deps.store.listDrafts()) {
@@ -214,7 +232,7 @@ export class TriggerService {
   // ---- drafts and approval ----------------------------------------------
 
   /** Validates a new trigger (or a new version of one), stores it as a draft, and runs its probe once. */
-  async createDraft(params: { definition?: unknown; code?: unknown; replace?: unknown }, caller: Caller): Promise<DraftView> {
+  async createDraft(params: { definition?: unknown; code?: unknown; recipe?: unknown; replace?: unknown }, caller: Caller): Promise<DraftView> {
     this.guard(caller, "create a trigger");
     let raw = params.definition;
     if (typeof raw === "string") {
@@ -225,12 +243,24 @@ export class TriggerService {
       }
     }
     if (!isRecord(raw)) throw new ServiceError("invalid", "definition must be a mapping (an object or YAML text)");
-    const code = params.code;
-    if (typeof code !== "string" || code.trim() === "") throw new ServiceError("invalid", "code is required: the probe's TypeScript source");
+    let code = params.code;
+    let recipeRef: string | undefined;
+    if (params.recipe !== undefined && params.recipe !== null && params.recipe !== "") {
+      if (code !== undefined && code !== null && code !== "") throw new ServiceError("invalid", "pass either recipe or code, not both");
+      const recipe = this.recipe(params.recipe);
+      const applied = applyRecipe(recipe.recipe, raw);
+      if (applied.errors.length > 0) throw new ServiceError("invalid", `the definition does not fit the ${recipe.recipe.id} recipe:\n- ${applied.errors.join("\n- ")}`);
+      raw = applied.definition;
+      code = recipe.code;
+      recipeRef = `${recipe.recipe.id}@${recipe.recipe.version}`;
+    }
+    if (typeof code !== "string" || code.trim() === "") {
+      throw new ServiceError("invalid", "code is required (the probe's TypeScript source), or a recipe from trigger_recipes");
+    }
     if (Buffer.byteLength(code, "utf8") > MAX_CODE_BYTES) throw new ServiceError("invalid", "the probe code is larger than 64 KB");
 
     // The engine owns the approval fields, the thread ids and the revision.
-    const cleaned: Record<string, unknown> = { ...raw };
+    const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     delete cleaned.meta;
     if (isRecord(cleaned.probe)) cleaned.probe = { ...cleaned.probe, sha256: null };
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
@@ -252,6 +282,7 @@ export class TriggerService {
       approved_at: null,
       revision: (existing?.definition.meta.revision ?? 0) + 1,
     };
+    if (recipeRef) definition.meta.recipe = recipeRef;
 
     this.cleanupDrafts();
     const meta: Parameters<Store["createDraft"]>[2] = { originThreadId: definition.meta.origin_thread_id ?? null };
@@ -390,6 +421,14 @@ export class TriggerService {
     }
     const existing = this.load(params.triggerId);
     const merged = deepMerge(JSON.parse(JSON.stringify(existing.definition)) as Record<string, unknown>, changes);
+    const recipeId = existing.definition.meta.recipe?.split("@")[0];
+    if (recipeId) {
+      const recipe = this.recipe(recipeId).recipe;
+      const probe = isRecord(merged.probe) ? { ...merged.probe } : {};
+      delete probe.permissions;
+      const checked = applyRecipe(recipe, { ...merged, mode: recipe.mode, probe });
+      if (checked.errors.length > 0) throw new ServiceError("invalid", `these changes do not fit the ${recipe.id} recipe:\n- ${checked.errors.join("\n- ")}`);
+    }
     const validated = validateDefinition(merged);
     if (!validated.ok) throw new ServiceError("invalid", `the changed definition has problems:\n- ${validated.errors.join("\n- ")}`);
     const def = validated.definition;
@@ -539,6 +578,10 @@ export class TriggerService {
       codex: this.deps.codex() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
+      channels: (() => {
+        const settings = channelSettings(loadConfig(this.deps.paths));
+        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: ctrig channel email ...)" };
+      })(),
       budget: this.deps.config.budget,
       ...this.deps.executor.status(),
     };
@@ -555,6 +598,7 @@ export class TriggerService {
       "draft.discard": (p) => this.discardDraft(p),
       "draft.activate": (p, c) => this.activateDraft(p, c),
       "trigger.list": () => this.list(),
+      "recipe.list": () => this.listRecipes(),
       "trigger.get": (p) => this.get(p),
       "trigger.test": (p) => this.test(p),
       "trigger.update": (p, c) => this.updateTrigger(p, c),

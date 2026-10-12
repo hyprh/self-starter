@@ -3,6 +3,7 @@
 
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { ChannelNotifier } from "../engine/channels.js";
 import { CodexCli, type CodexRunner } from "../engine/codex.js";
 import { loadConfig, resolveCodex, resolveDeno } from "../engine/config.js";
 import { Engine } from "../engine/engine.js";
@@ -13,7 +14,7 @@ import { resolvePaths, type Paths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
 import { TriggerService } from "../engine/service.js";
 import { Store } from "../engine/store.js";
-import { VERSION } from "../runtime.js";
+import { PACKAGE_ROOT, VERSION } from "../runtime.js";
 import { startControlServer } from "./control.js";
 
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
@@ -29,6 +30,8 @@ export interface DaemonOptions {
   now?: () => Date;
   /** Called when a client asks the daemon to stop. */
   onStopRequest?: () => void;
+  /** Folder of ready-made recipes; defaults to recipes/ in the package. */
+  recipesDir?: string;
 }
 
 export interface Daemon {
@@ -106,7 +109,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     const config = loadConfig(paths);
     const fires = new FireLog(paths.fires);
     const secrets = new Secrets(paths);
-    const notifier = options.notifier ?? new SystemNotifier(log);
+    const notifier = options.notifier ?? new ChannelNotifier(paths, new SystemNotifier(log), log);
     const codexBin = () => resolveCodex(config);
     const codex =
       options.codex ??
@@ -118,7 +121,8 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     const clock = options.now ? { now: options.now } : {};
     const executor = new Executor({ store, fires, paths, config, notifier, codex, log, ...clock });
     const engine = new Engine({ store, executor, secrets, paths, config, deno, log, ...clock });
-    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, deno, codex: codexBin, log, ...clock });
+    const recipesDir = options.recipesDir ?? join(PACKAGE_ROOT, "recipes");
+    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codex: codexBin, log, ...clock });
     const handlers = service.handlers();
     handlers["daemon.stop"] = () => {
       setTimeout(() => options.onStopRequest?.(), 50);

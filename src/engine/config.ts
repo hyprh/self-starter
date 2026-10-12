@@ -7,6 +7,11 @@ import { readJson, writeJsonAtomic } from "./fs-util.js";
 import type { Paths } from "./paths.js";
 
 export interface Config {
+  /** Notification channels; see channels.ts. */
+  channels?: {
+    default?: Array<"desktop" | "email">;
+    email?: { to: string; from?: string; host: string; port: number; secure: boolean; user?: string };
+  };
   /** Absolute path of the codex CLI. Recorded by `ctrig install`; found on PATH otherwise. */
   codexBin?: string;
   /** Absolute path of deno. Defaults to the binary shipped with the deno npm package. */

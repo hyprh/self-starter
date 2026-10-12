@@ -11,6 +11,8 @@ export interface Paths {
   runs: string;
   config: string;
   secrets: string;
+  /** SMTP password for the email channel; never given to probes. */
+  channelSecrets: string;
   socket: string;
   lock: string;
   logs: string;
@@ -37,6 +39,7 @@ export function resolvePaths(home = process.env.CODEX_TRIGGERS_HOME || join(home
     runs: join(home, "runs.jsonl"),
     config: join(home, "config.json"),
     secrets: join(home, "secrets.json"),
+    channelSecrets: join(home, "channel-secrets.json"),
     socket,
     lock: join(home, "ctrigd.pid"),
     logs: join(home, "logs"),

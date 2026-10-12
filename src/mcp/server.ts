@@ -31,7 +31,8 @@ export const TOOLS = [
     description:
       "Submit a new trigger, or a new version of one, as a draft. The engine checks the definition, saves the probe code and runs the probe once, " +
       "with only the network access the definition declares. Returns the draft id, the trial run result and warnings. Nothing runs on a schedule " +
-      "until the user approves it through trigger_activate. Follow the codex-triggers:triggers skill when writing the definition and the probe.",
+      "until the user approves it through trigger_activate. Pass either code you wrote or a ready-made recipe from trigger_recipes. " +
+      "Follow the codex-triggers:triggers skill when writing the definition and the probe.",
     inputSchema: {
       type: "object",
       properties: {
@@ -41,16 +42,28 @@ export const TOOLS = [
         },
         code: {
           type: "string",
-          description: "The probe's TypeScript source for Deno. It reads one JSON object on stdin and prints one JSON object on stdout.",
+          description: "The probe's TypeScript source for Deno. It reads one JSON object on stdin and prints one JSON object on stdout. Leave it out when using a recipe.",
+        },
+        recipe: {
+          type: "string",
+          description: "Id of a ready-made recipe from trigger_recipes, such as ibkr-account. The recipe supplies the code, permissions and mode; set its parameters in definition.probe.params.",
         },
         replace: {
           type: "boolean",
           description: "Set to true to replace the existing trigger with the same id (needed to change its code, permissions or mode).",
         },
       },
-      required: ["definition", "code"],
+      required: ["definition"],
     },
     annotations: { title: "Draft a trigger", readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
+  {
+    name: "trigger_recipes",
+    description:
+      "List the ready-made recipes: probes that ship with the plugin for common things to watch, such as an Interactive Brokers account. " +
+      "Each lists its parameters, the secrets the user must store first and the setup steps. Prefer a recipe when one fits.",
+    inputSchema: { type: "object", properties: {} },
+    annotations: { title: "List recipes", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
   {
     name: "trigger_activate",
@@ -278,9 +291,14 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
   const callTool = async (name: string, args: Json, caller: Caller): Promise<ToolResult> => {
     switch (name) {
       case "trigger_draft": {
-        const view = await call<DraftView>("draft.create", { definition: args.definition, code: args.code, replace: args.replace === true }, caller, SLOW_CALL_MS);
+        const params: Json = { definition: args.definition, replace: args.replace === true };
+        if (args.code !== undefined) params.code = args.code;
+        if (args.recipe !== undefined) params.recipe = args.recipe;
+        const view = await call<DraftView>("draft.create", params, caller, SLOW_CALL_MS);
         return text(draftText(view));
       }
+      case "trigger_recipes":
+        return text(await call("recipe.list", {}, caller));
       case "trigger_activate": {
         const view = await call<DraftView>("draft.get", { draftId: args.draft_id }, caller);
         return approveAndActivate(view, caller);

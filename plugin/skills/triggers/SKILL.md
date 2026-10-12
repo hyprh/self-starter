@@ -10,11 +10,12 @@ A trigger is a small probe program that checks something, rules for when the res
 ## Creating a trigger
 
 1. **Clarify first**, in one short question if anything important is ambiguous: the exact condition (intraday price or close? which market?), how quickly the user needs to know, whether to act once or every time, and what should happen when it fires: only a notification, or a task for Codex (which one?).
-2. **Find a data source** the probe can read with plain HTTP: an official JSON API is best, an HTML page works if it is stable. If an API key is needed, ask the user to store it in a terminal with `ctrig secret set NAME --hosts api.example.com`. Never ask for a key in the chat, and never put one in the code or the params.
-3. **Write the probe and the definition** following the contract below.
-4. **Call `trigger_draft`.** It checks everything, saves the draft and runs the probe once. If the trial run fails or its result looks wrong, fix it and call `trigger_draft` again.
-5. **Tell the user** in one or two sentences what will be watched, how often, what counts as firing and what happens then, and mention warnings that matter (for example "the condition already holds, so it will fire right away").
-6. **Call `trigger_activate`** with the draft id. The user approves in a dialog. If the tool says no dialog could be shown, pass on its instruction to run `ctrig approve <draft-id>` in a terminal.
+2. **Check the ready-made recipes** with `trigger_recipes`. If one fits (for example `ibkr-account` for an Interactive Brokers account, which has its own skill `codex-triggers:ibkr`), use it: pass `recipe` to `trigger_draft` with only its parameters, and skip writing a probe.
+3. **Otherwise, find a data source** the probe can read with plain HTTP: an official JSON API is best, an HTML page works if it is stable. If an API key is needed, ask the user to store it in a terminal with `ctrig secret set NAME --hosts api.example.com`. Never ask for a key in the chat, and never put one in the code or the params.
+4. **Write the probe and the definition** following the contract below.
+5. **Call `trigger_draft`.** It checks everything, saves the draft and runs the probe once. If the trial run fails or its result looks wrong, fix it and call `trigger_draft` again.
+6. **Tell the user** in one or two sentences what will be watched, how often, what counts as firing and what happens then, and mention warnings that matter (for example "the condition already holds, so it will fire right away").
+7. **Call `trigger_activate`** with the draft id. The user approves in a dialog. If the tool says no dialog could be shown, pass on its instruction to run `ctrig approve <draft-id>` in a terminal.
 
 ## The probe
 
@@ -140,6 +141,7 @@ target:
   cwd: /path/to/project         # working folder of the dedicated thread
 notify:
   when: receipt                 # receipt: when Codex says it matters | always | never
+  channels: [desktop, email]    # leave out to use the user's default; email works once the user ran `ctrig channel email`
 ```
 
 Choosing settings:
@@ -148,6 +150,7 @@ Choosing settings:
 - **interval**: as slow as the user can accept. A price during market hours: 1 to 5 minutes; a release feed: 15 minutes to an hour. Let the probe ask for faster checks near the threshold and slower ones when nothing can happen (for example, return the time until the market opens).
 - **for** filters out blips; **cooldown** and **max_fires** limit repeats; `max_fires: 1` with `expires_at` suits "tell me once, within the next week".
 - **action**: use `notify` when the user only wants to know. Use `agent` when there is work to do, and write `prompt` as a self-contained task: a dedicated thread does not see this conversation.
+- **notify.channels**: leave it out unless the user asks for email; `service_status` shows whether email is set up. If it is not, ask the user to run `ctrig channel email --to <address> --host <smtp server> --user <login>` in a terminal; never handle the SMTP password in the chat.
 - **target**: `origin` suits one-off triggers tied to the current work ("tell me when this CI run finishes"); the message waits in this thread until the user has it open. `dedicated` suits long-running watches: Codex runs each fire in the background in the trigger's own thread (set `target.cwd` to the project folder). `origin` is the default when `max_fires` is 1, `dedicated` otherwise.
 
 ## When a message starts with [codex-triggers]

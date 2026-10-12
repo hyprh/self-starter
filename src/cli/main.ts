@@ -7,7 +7,9 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
+import { ChannelNotifier, channelSettings, removeEmailChannel, saveEmailChannel, setDefaultChannels } from "../engine/channels.js";
 import { loadConfig } from "../engine/config.js";
+import { SystemNotifier } from "../engine/notify.js";
 import { resolvePaths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
 import type { DraftView, TriggerSummary } from "../engine/service.js";
@@ -31,12 +33,21 @@ Triggers
   ctrig pause <id> | resume <id> | delete <id>
   ctrig history [<id>] [-n <count>]               recent fires and what came of them
   ctrig drafts                                    drafts waiting for approval
+  ctrig recipes                                   ready-made recipes Codex can set up for you
   ctrig approve <draft-id | trigger-id>           review and approve in the terminal
 
 Secrets (API keys for probes)
   ctrig secret set <NAME> --hosts <host,...>      store a secret that may only be sent to these hosts
   ctrig secret set <NAME> --any-host              ... or to any host the probe can reach
   ctrig secret list | ctrig secret rm <NAME>
+
+Notifications
+  ctrig channel list                              where notifications go
+  ctrig channel email --to <addr> --host <smtp-host> [--port 465] [--user <login>] [--from <addr>] [--starttls] [--default]
+                                                  send notifications by email too (asks for the SMTP password)
+  ctrig channel default desktop[,email]           channels for triggers that do not choose their own
+  ctrig channel test [desktop|email]              send a test notification
+  ctrig channel rm email
 
 Background service
   ctrig service install|uninstall|start|stop|restart|status
@@ -59,7 +70,7 @@ function parseArgs(argv: string[]): Args {
       flags.set("n", argv[++i] ?? "");
     } else if (arg.startsWith("--")) {
       const [name, inline] = arg.slice(2).split("=", 2) as [string, string | undefined];
-      const takesValue = ["codex", "hosts"].includes(name);
+      const takesValue = ["codex", "hosts", "to", "host", "port", "user", "from"].includes(name);
       flags.set(name, inline ?? (takesValue ? (argv[++i] ?? "") : true));
     } else {
       positional.push(arg);
@@ -214,6 +225,58 @@ async function secretCommand(args: Args): Promise<void> {
       return;
     default:
       throw new UsageError("usage: ctrig secret set|list|rm");
+  }
+}
+
+async function channelCommand(args: Args): Promise<void> {
+  const [, action, name] = args.positional;
+  switch (action) {
+    case "list":
+    case undefined: {
+      const settings = channelSettings(loadConfig(paths));
+      out(`desktop  ${process.platform === "darwin" ? "macOS notifications" : "notify-send"}`);
+      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (ctrig channel email --to ... --host ...)");
+      out(`default  ${settings.default.join(", ")}`);
+      return;
+    }
+    case "email": {
+      const to = need(args.flags.get("to") as string | undefined, "--to <address>");
+      const host = need(args.flags.get("host") as string | undefined, "--host <smtp host>");
+      const secure = !args.flags.has("starttls");
+      const port = args.flags.has("port") ? Number(args.flags.get("port")) : secure ? 465 : 587;
+      const user = args.flags.get("user") as string | undefined;
+      const from = args.flags.get("from") as string | undefined;
+      let password: string | undefined;
+      if (user) password = process.stdin.isTTY ? await readHidden(`SMTP password for ${user}: `) : await readStdin();
+      new Store(paths).ensureLayout();
+      saveEmailChannel(paths, { to, host, port, secure, ...(user ? { user } : {}), ...(from ? { from } : {}) }, password);
+      if (args.flags.has("default")) setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, "email"])]);
+      out(`Email set up: notifications can go to ${to}. Try it: ctrig channel test email`);
+      return;
+    }
+    case "default": {
+      const names = need(name, "channel names, such as desktop,email").split(",").map((n) => n.trim()).filter(Boolean);
+      out(`Default channels: ${setDefaultChannels(paths, names).join(", ")}`);
+      return;
+    }
+    case "test": {
+      const channel = (name ?? "email") as "desktop" | "email";
+      const errors: string[] = [];
+      const notifier = new ChannelNotifier(paths, new SystemNotifier(), (line) => {
+        if (/failed|not set up|no email channel/.test(line)) errors.push(line);
+      });
+      await notifier.notify({ title: "codex-triggers test", body: "If you can read this, notifications work.", channels: [channel] });
+      if (errors.length > 0) throw new Error(errors.join("; "));
+      out(`Sent a test notification to ${channel}.`);
+      return;
+    }
+    case "rm":
+    case "remove":
+      if (name !== "email") throw new UsageError("only the email channel can be removed");
+      out(removeEmailChannel(paths) ? "Removed the email channel." : "No email channel was set up.");
+      return;
+    default:
+      throw new UsageError("usage: ctrig channel list|email|default|test|rm");
   }
 }
 
@@ -372,6 +435,17 @@ async function main(argv: string[]): Promise<void> {
       }
       return;
     }
+    case "recipes": {
+      const recipes = await daemonCall<Array<{ id: string; version: number; title: string; summary: string; secrets: Array<{ name: string }> }>>("recipe.list");
+      if (recipes.length === 0) return out("No recipes.");
+      for (const r of recipes) {
+        out(`${r.id}  ${r.title}`);
+        out(`  ${r.summary}`);
+        if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (ctrig secret set ...)`);
+      }
+      out("\nAsk Codex to set one up, for example: \"watch my IBKR account for unusual activity\".");
+      return;
+    }
     case "drafts": {
       const drafts = await daemonCall<Array<{ draftId: string; createdAt: string; trialOk: boolean | null; replaces: string | null }>>("draft.list");
       if (drafts.length === 0) return out("No drafts.");
@@ -387,6 +461,10 @@ async function main(argv: string[]): Promise<void> {
       return;
     case "service":
       await serviceCommand(id);
+      return;
+    case "channel":
+    case "channels":
+      await channelCommand(args);
       return;
     case "logs": {
       const file = join(paths.logs, "ctrigd.log");

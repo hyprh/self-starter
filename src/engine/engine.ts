@@ -307,12 +307,12 @@ export class Engine {
     this.appendRun(record);
 
     if (evaluation.health === "degraded") {
-      await this.deps.executor.notifyAbout(definition.policy.quiet_hours, {
+      await this.deps.executor.notifyAbout(definition, {
         title: `${definition.name}: the probe keeps failing`,
         body: `${record.error ?? "unknown error"} (checks continue; see: ctrig show ${id})`,
       });
     } else if (evaluation.health === "recovered") {
-      await this.deps.executor.notifyAbout(definition.policy.quiet_hours, {
+      await this.deps.executor.notifyAbout(definition, {
         title: `${definition.name}: working again`,
         body: record.summary ?? "The probe succeeded.",
       });
@@ -352,7 +352,7 @@ export class Engine {
   private async pauseForApproval(definition: TriggerDefinition, problem: string): Promise<void> {
     this.pause(definition.id, `${APPROVAL_PAUSE}: ${problem}`);
     this.log(`${definition.id} paused: ${problem}`);
-    await this.deps.executor.notifyAbout(definition.policy.quiet_hours, {
+    await this.deps.executor.notifyAbout(definition, {
       title: `${definition.name}: paused`,
       body: `The trigger will not run because ${problem}. To review and resume it, run: ctrig approve ${definition.id}`,
     });
