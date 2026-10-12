@@ -136,6 +136,8 @@ export interface WakeOptions {
   cwd?: string;
   sandbox: Sandbox;
   timeoutMs: number;
+  /** How long to wait for the queued message to start running (one minute by default). */
+  startTimeoutMs?: number;
 }
 
 export interface CodexRunner {
@@ -238,7 +240,11 @@ export class CodexCli implements CodexRunner {
   async wakeThread(options: WakeOptions): Promise<ExecResult> {
     const session = await this.appServer(options.cwd);
     try {
-      const started = session.next((m) => m.method === "turn/started" && m.params?.threadId === options.threadId, 60_000, "the queued message to start");
+      const started = session.next(
+        (m) => m.method === "turn/started" && m.params?.threadId === options.threadId,
+        options.startTimeoutMs ?? 60_000,
+        "the queued message to start",
+      );
       const completed = session.next(turnCompletedIn(options.threadId), options.timeoutMs, "the turn to finish");
       completed.catch(() => {}); // settled below, or abandoned when nothing started
       await session.request("thread/resume", {
