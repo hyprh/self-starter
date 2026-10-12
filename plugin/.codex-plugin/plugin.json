@@ -1,0 +1,14 @@
+{
+  "name": "codex-triggers",
+  "version": "0.1.0",
+  "description": "Let Codex act when something happens: say what to watch, approve the small probe Codex writes for it, and Codex takes over when it fires.",
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Triggers",
+    "shortDescription": "Act when a condition is met",
+    "developerName": "codex-triggers",
+    "category": "Productivity",
+    "defaultPrompt": "Watch something for me and act when it happens"
+  }
+}
