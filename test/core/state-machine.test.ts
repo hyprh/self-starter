@@ -183,7 +183,7 @@ describe("event mode", () => {
 });
 
 describe("nextRunDelayMs", () => {
-  it("clamps the probe's suggestion to the approved range", () => {
+  it("clamps the probe's suggestion to the configured range", () => {
     const def = makeDefinition();
     const rt = initialRuntime(1);
     assert.equal(nextRunDelayMs(def, rt, stateRun(false, { nextCheckInMs: 1000 }), atSeconds(0)), 10_000);

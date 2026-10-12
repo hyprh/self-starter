@@ -43,7 +43,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
     ...overrides,
   });
 
-  /** Drafts and activates a trigger, as the MCP tools would after the user approved. */
+  /** Drafts and activates a trigger, as the MCP tools would. */
   const activate = async (overrides: Record<string, unknown> = {}, code = STATE_PROBE, caller: Caller = fromThread()) => {
     const view = await service.createDraft({ definition: definition(overrides), code }, caller);
     assert.ok(view.trial?.ok, `trial run failed: ${view.trial?.error}`);
@@ -66,18 +66,18 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     await server.close();
   });
 
-  it("drafts, approves, fires into the origin thread and takes the receipt", async () => {
+  it("drafts, activates, fires into the origin thread and takes the receipt", async () => {
     const view = await t.service.createDraft({ definition: t.definition({ policy: { max_fires: 1 } }), code: STATE_PROBE }, fromThread());
     assert.equal(view.trial?.ok, true);
     assert.equal(view.trial?.fire, false);
-    assert.match(view.approvalText, /^Create the trigger "Price above 150" \(price-alert\)\?/);
-    assert.match(view.approvalText, new RegExp(`Network: ${server.host.replace(/\./g, "\\.")}`));
-    assert.match(view.approvalText, /back in the thread where the trigger was created/);
-    assert.equal(t.store.hasTrigger("price-alert"), false, "nothing is live before approval");
+    assert.match(view.description, /^The trigger "Price above 150" \(price-alert\)/);
+    assert.match(view.description, /Probe access: full: runs as you \(files, commands, any network\)/);
+    assert.match(view.description, /back in the thread where the trigger was created/);
+    assert.equal(t.store.hasTrigger("price-alert"), false, "nothing is live before activation");
 
     const trigger = t.service.activateDraft({ draftId: view.draftId }, fromThread());
     assert.equal(trigger.lifecycle, "active");
-    assert.equal(trigger.approval, "approved");
+    assert.ok(t.store.loadTrigger("price-alert").definition.meta.activated_at);
 
     const quiet = await t.engine.runNow("price-alert");
     assert.equal(quiet?.ok, true);
@@ -139,7 +139,7 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     const fire = await eventually(() => (t.fires.get(fired!.fireId!)?.status === "done" ? t.fires.get(fired!.fireId!) : undefined));
     assert.equal(t.codex.resumes.length, 1);
     assert.equal(t.codex.resumes[0]!.threadId, "thread-dedicated-1");
-    assert.equal(t.codex.resumes[0]!.sandbox, "read-only");
+    assert.equal(t.codex.resumes[0]!.sandbox, "workspace-write");
     assert.match(t.codex.resumes[0]!.prompt, /give your final answer as JSON/);
     assert.equal(fire.receipt?.source, "final-answer");
     assert.equal(fire.receipt?.summary, "looked into it");
@@ -170,35 +170,36 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.equal(t.codex.started.length, 1, "one fallback thread, reused");
   });
 
-  it("pauses a trigger whose code changed after approval until it is approved again", async () => {
+  it("picks up hand edits to the probe at the next check", async () => {
     await t.activate();
-    writeFileSync(join(t.paths.triggers, "price-alert", "probe.ts"), `${STATE_PROBE}\n// changed`);
-    assert.equal(await t.engine.runNow("price-alert"), undefined);
-    const runtime = t.engine.runtime("price-alert");
-    assert.equal(runtime.lifecycle, "paused");
-    assert.match(runtime.pausedReason ?? "", /^needs approval: its probe code or permissions changed after approval/);
-    assert.match((await eventually(() => t.notifier.sent[0])).body, /self-starter approve price-alert/);
-    assert.throws(() => t.service.resume({ triggerId: "price-alert" }, fromThread({ turnId: "turn-2" })), /self-starter approve price-alert/);
-    assert.throws(() => t.service.approveTrigger({ triggerId: "price-alert" }, fromThread()), (error: ServiceError) => error.code === "refused");
-
-    const approved = t.service.approveTrigger({ triggerId: "price-alert" }, { via: "cli" });
-    assert.equal(approved.lifecycle, "active");
-    assert.equal(t.store.loadTrigger("price-alert").definition.meta.revision, 2);
-    assert.equal((await t.engine.runNow("price-alert"))?.ok, true);
+    writeFileSync(join(t.paths.triggers, "price-alert", "probe.ts"), 'console.log(JSON.stringify({ fire: true, summary: "edited by hand" }));');
+    const record = await t.engine.runNow("price-alert");
+    assert.equal(record?.summary, "edited by hand");
+    assert.ok(record?.fireId);
+    assert.equal(t.engine.runtime("price-alert").lifecycle, "active");
   });
 
-  it("only gives a secret to probes that cannot reach other hosts", async () => {
-    const withSecret = { probe: { params: { url: server.origin, threshold: 150 }, permissions: { net: [server.host], env: ["API_KEY"] } } };
+  it("limits a host-bound secret to sandboxed probes that cannot reach other hosts", async () => {
+    const sandboxed = { access: "sandbox", params: { url: server.origin, threshold: 150 }, permissions: { net: [server.host], env: ["API_KEY"] } };
     t.secrets.set("API_KEY", "s3cret", ["api.example.com"]);
-    const refused = await t.service.createDraft({ definition: t.definition(withSecret), code: STATE_PROBE }, fromThread());
+    const refused = await t.service.createDraft({ definition: t.definition({ probe: sandboxed }), code: STATE_PROBE }, fromThread());
     assert.equal(refused.trial?.ok, false);
     assert.match(refused.trial?.error ?? "", /API_KEY may only be sent to api\.example\.com, but the probe can also reach 127\.0\.0\.1/);
     assert.match(refused.warnings[0] ?? "", /The trial run failed/);
 
     t.secrets.set("API_KEY", "s3cret", ["127.0.0.1"]);
-    const allowed = await t.service.createDraft({ definition: t.definition({ ...withSecret, id: "price-alert-2" }), code: STATE_PROBE }, fromThread());
+    const allowed = await t.service.createDraft({ definition: t.definition({ probe: sandboxed, id: "price-alert-2" }), code: STATE_PROBE }, fromThread());
     assert.equal(allowed.trial?.ok, true);
-    assert.match(allowed.approvalText, /Secrets: API_KEY/);
+    assert.match(allowed.description, /Secrets: API_KEY/);
+    assert.match(allowed.description, /Probe access: sandbox: network only to 127\.0\.0\.1:\d+; no files, no commands/);
+
+    // A full-access probe runs as the user and gets the secrets it declares.
+    t.secrets.set("API_KEY", "s3cret", ["api.example.com"]);
+    const full = { params: { url: server.origin, threshold: 150 }, permissions: { env: ["API_KEY"] } };
+    const readsKey = `${STATE_PROBE.replace('summary: "price " + price', 'summary: "price " + price + " key " + Deno.env.get("API_KEY")')}`;
+    const fullView = await t.service.createDraft({ definition: t.definition({ probe: full, id: "price-alert-3" }), code: readsKey }, fromThread());
+    assert.equal(fullView.trial?.ok, true, fullView.trial?.error);
+    assert.match(fullView.trial?.summary ?? "", /key s3cret$/);
   });
 
   it("treats the first event run as a baseline and fires once per new event", async () => {
@@ -215,23 +216,21 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.equal(t.codex.queued.length + t.codex.resumes.length, 0, "notify actions do not involve Codex");
   });
 
-  it("updates parameters through an approved draft and starts the state over", async () => {
+  it("applies updates at once and starts the state over", async () => {
     await t.activate();
     await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
     server.price = 200;
     await t.engine.runNow("price-alert");
     assert.equal(t.engine.runtime("price-alert").fireCount, 1);
 
-    const view = t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { params: { threshold: 300 } }, policy: { cooldown: "1h" } } }, fromThread({ turnId: "turn-3" }));
-    assert.deepEqual(view.changes, ["policy.cooldown: \"1h\" (new)", "probe.params.threshold: 150 → 300"]);
-    assert.match(view.approvalText, /^Change the trigger "Price above 150"/);
-    assert.match(view.approvalText, /Probe code \(unchanged\)/);
     assert.throws(
-      () => t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { permissions: { net: ["evil.example"] } } } }, fromThread({ turnId: "turn-3" })),
-      /cannot change probe\.permissions\.net/,
+      () => t.service.updateTrigger({ triggerId: "price-alert", changes: { mode: "event" } }, fromThread({ turnId: "turn-3" })),
+      /cannot change mode: a new probe \(code or mode\) goes through trigger_draft with replace=true/,
     );
+    const result = t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { params: { threshold: 300 } }, policy: { cooldown: "1h" } } }, fromThread({ turnId: "turn-3" }));
+    assert.deepEqual(result.changes, ["policy.cooldown: \"1h\" (new)", "probe.params.threshold: 150 → 300"]);
+    assert.equal(result.trigger.lifecycle, "active");
 
-    t.service.activateDraft({ draftId: view.draftId }, fromThread({ turnId: "turn-4" }));
     const definition = t.store.loadTrigger("price-alert").definition;
     assert.equal(definition.meta.revision, 2);
     assert.equal(definition.probe.params.threshold, 300);
@@ -449,7 +448,7 @@ describe("recipes", { skip: deno ? false : "the deno npm package is not installe
 
       const view = await t.service.createDraft({ definition: { ...base, probe: { params: { url: server.origin } } }, recipe: "price-watch" }, fromThread());
       assert.equal(view.trial?.ok, true, view.trial?.error);
-      assert.match(view.approvalText, /Probe: the ready-made recipe price-watch@2, shipped with the plugin/);
+      assert.match(view.description, /Probe: the ready-made recipe price-watch@2, shipped with the plugin/);
       assert.match(view.definitionYaml, /recipe: price-watch@2/);
       assert.match(view.definitionYaml, /threshold: 150/);
 
@@ -458,6 +457,10 @@ describe("recipes", { skip: deno ? false : "the deno npm package is not installe
       assert.throws(
         () => t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { limit: 1 } } } }, fromThread({ turnId: "turn-20" })),
         /do not fit the price-watch recipe/,
+      );
+      assert.throws(
+        () => t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { access: "sandbox" } } }, fromThread({ turnId: "turn-20" })),
+        /cannot change probe\.access: the price-watch recipe fixes the probe's access and permissions/,
       );
       const update = t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { threshold: 300 } } } }, fromThread({ turnId: "turn-21" }));
       assert.deepEqual(update.changes, ["probe.params.threshold: 150 → 300"]);

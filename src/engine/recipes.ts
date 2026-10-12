@@ -1,7 +1,7 @@
 // Recipes: ready-made probes that ship with the plugin, such as the IBKR account
 // watch. The agent picks a recipe and fills in its parameters instead of writing
-// the probe; the recipe fixes the code, the permissions and the mode, so what the
-// user approves is code we wrote and tested.
+// the probe; the recipe fixes the code, its access and permissions and the mode,
+// so what runs is code we wrote and tested.
 //
 //   recipes/<id>/recipe.json   what it watches, its parameters, secrets and setup steps
 //   recipes/<id>/<entry>       the probe
@@ -31,6 +31,8 @@ export interface Recipe {
   summary: string;
   entry: string;
   mode: "state" | "event";
+  /** "sandbox" for probes that only need the hosts in permissions.net; "full" (the default) otherwise. */
+  access?: "full" | "sandbox";
   permissions: { net: string[]; env: string[] };
   interval?: { min: string; max: string; default: string };
   timeout?: string;
@@ -87,18 +89,20 @@ function typeMatches(type: RecipeParam["type"], value: unknown): boolean {
 }
 
 /**
- * Fills a definition from a recipe: the recipe's entry, permissions and mode
- * replace whatever the caller sent, parameters get their defaults, and unknown
- * or mistyped parameters are rejected.
+ * Fills a definition from a recipe: the recipe's entry, access, permissions and
+ * mode replace whatever the caller sent, parameters get their defaults, and
+ * unknown or mistyped parameters are rejected.
  */
 export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { definition: Record<string, unknown>; errors: string[] } {
   const errors: string[] = [];
   const probe = isRecord(raw.probe) ? { ...raw.probe } : {};
+  const access = recipe.access ?? "full";
   if (raw.mode !== undefined && raw.mode !== recipe.mode) errors.push(`the ${recipe.id} recipe runs in ${recipe.mode} mode`);
   if (probe.permissions !== undefined) {
     const same = JSON.stringify(probe.permissions) === JSON.stringify(recipe.permissions);
     if (!same) errors.push(`the ${recipe.id} recipe fixes the probe's permissions; leave probe.permissions out`);
   }
+  if (probe.access !== undefined && probe.access !== access) errors.push(`the ${recipe.id} recipe runs with ${access} access; leave probe.access out`);
 
   const given = isRecord(probe.params) ? probe.params : {};
   const params: Record<string, unknown> = {};
@@ -121,6 +125,7 @@ export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { def
     probe: {
       ...probe,
       entry: recipe.entry,
+      access,
       params,
       permissions: recipe.permissions,
       ...(probe.interval === undefined && recipe.interval ? { interval: recipe.interval } : {}),

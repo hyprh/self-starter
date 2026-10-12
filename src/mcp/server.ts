@@ -10,10 +10,8 @@ import { resolvePaths, type Paths } from "../engine/paths.js";
 import type { Caller, DraftView, TriggerSummary } from "../engine/service.js";
 import { VERSION } from "../runtime.js";
 import { ensureDaemon } from "../service/manager.js";
-import { askApproval, type Elicit, type ElicitResult } from "./approval.js";
 
 const PROTOCOL_VERSION = "2025-06-18";
-const ELICITATION_TIMEOUT_MS = 10 * 60_000;
 const SLOW_CALL_MS = 6 * 60_000;
 
 type Json = Record<string, unknown>;
@@ -29,9 +27,9 @@ export const TOOLS = [
   {
     name: "trigger_draft",
     description:
-      "Submit a new trigger, or a new version of one, as a draft. The engine checks the definition, saves the probe code and runs the probe once, " +
-      "with only the network access the definition declares. Returns the draft id, the trial run result and warnings. Nothing runs on a schedule " +
-      "until the user approves it through trigger_activate. Pass either code you wrote or a ready-made recipe from trigger_recipes. " +
+      "Submit a new trigger, or a new version of one, as a draft. The engine checks the definition, saves the probe code and runs the probe once. " +
+      "Returns the draft id, the trial run result, warnings and a plain-language description. Nothing runs on a schedule until trigger_activate. " +
+      "Pass either code you wrote or a ready-made recipe from trigger_recipes. " +
       "Follow the self-starter:triggers skill when writing the definition and the probe.",
     inputSchema: {
       type: "object",
@@ -42,15 +40,17 @@ export const TOOLS = [
         },
         code: {
           type: "string",
-          description: "The probe's TypeScript source for Deno. It reads one JSON object on stdin and prints one JSON object on stdout. Leave it out when using a recipe.",
+          description:
+            "The probe's TypeScript source for Deno. It reads one JSON object on stdin and prints one JSON object on stdout. " +
+            "Unless the definition sets probe.access to sandbox, it runs with the user's permissions: files, commands, any network. Leave it out when using a recipe.",
         },
         recipe: {
           type: "string",
-          description: "Id of a ready-made recipe from trigger_recipes, such as ibkr-account. The recipe supplies the code, permissions and mode; set its parameters in definition.probe.params.",
+          description: "Id of a ready-made recipe from trigger_recipes, such as ibkr-account. The recipe supplies the code, access, permissions and mode; set its parameters in definition.probe.params.",
         },
         replace: {
           type: "boolean",
-          description: "Set to true to replace the existing trigger with the same id (needed to change its code, permissions or mode).",
+          description: "Set to true to replace the existing trigger with the same id (needed to change its code or mode).",
         },
       },
       required: ["definition"],
@@ -68,8 +68,8 @@ export const TOOLS = [
   {
     name: "trigger_activate",
     description:
-      "Ask the user to approve a draft in a dialog and, if they approve, turn it on. The dialog shows what is watched, the network access, how often, " +
-      "what happens when it fires and the trial run. Before calling it, tell the user in one or two sentences what the trigger will do.",
+      "Turn a draft on: its probe starts running on schedule, and each fire hands the task to Codex. The trigger keeps working on its own after this, " +
+      "so decide first whether the user should confirm it; the self-starter:triggers skill says when to ask.",
     inputSchema: {
       type: "object",
       properties: { draft_id: { type: "string", description: "The draft id returned by trigger_draft or trigger_update." } },
@@ -80,8 +80,8 @@ export const TOOLS = [
   {
     name: "trigger_update",
     description:
-      "Change an existing trigger: probe.params, probe.interval, probe.timeout, for, policy, action, target (kind, cwd), notify, name or intent. " +
-      "The user approves the change in a dialog. To change the probe code, its permissions or the mode, use trigger_draft with replace=true instead.",
+      "Change an existing trigger: probe.params, probe.interval, probe.timeout, probe.access, probe.permissions, for, policy, action, target (kind, cwd), " +
+      "notify, name or intent. The change takes effect at once and the firing rules start over. To change the probe code or the mode, use trigger_draft with replace=true instead.",
     inputSchema: {
       type: "object",
       properties: {
@@ -211,12 +211,13 @@ function draftText(view: DraftView): string {
   const lines = [`Draft ${view.draftId} saved for trigger "${view.triggerId}"${view.replaces ? " (replaces the current version)" : ""}.`, ""];
   if (view.trial && !view.trial.ok && view.trial.stderr) lines.push("Probe stderr:", view.trial.stderr.trim(), "");
   if (view.warnings.length > 0) lines.push("Warnings:", ...view.warnings.map((w) => `- ${w}`), "");
-  lines.push("The user will be asked to approve this:", "-----", view.approvalText, "-----", "");
+  lines.push("What it will do:", "-----", view.description, "-----", "");
   lines.push("Definition with defaults filled in:", view.definitionYaml.trimEnd(), "");
   lines.push(
     view.trial && !view.trial.ok
       ? "Next: fix the probe, then call trigger_draft again."
-      : `Next: tell the user in one or two sentences what this trigger will do, then call trigger_activate with draft_id "${view.draftId}".`,
+      : `Next: call trigger_activate with draft_id "${view.draftId}". If the user should confirm first (see the skill), ` +
+          "tell them in one or two sentences what it will check, how often and what you will do when it fires, and ask before activating.",
   );
   return lines.join("\n");
 }
@@ -225,8 +226,6 @@ export interface McpServerOptions {
   paths?: Paths;
   input?: Readable;
   output?: Writable;
-  /** Native dialog used when elicitation is unavailable (tests replace it). */
-  dialog?: (message: string) => Promise<"approved" | "declined" | "unavailable">;
   /** Starts the daemon when needed; tests pass a no-op. */
   ensureDaemon?: (paths: Paths) => Promise<unknown>;
 }
@@ -236,56 +235,14 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
   const input = options.input ?? process.stdin;
   const output = options.output ?? process.stdout;
   const ensure = options.ensureDaemon ?? ensureDaemon;
-  let clientCapabilities: Json = {};
-  let nextRequestId = 1;
-  const pending = new Map<string, (message: Json | undefined) => void>();
 
   const send = (message: Json) => {
     output.write(`${JSON.stringify(message)}\n`);
   };
 
-  const requestClient = (method: string, params: Json, timeoutMs: number): Promise<Json | undefined> =>
-    new Promise((resolve) => {
-      const id = `self-starter-${nextRequestId++}`;
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        resolve(undefined);
-      }, timeoutMs);
-      pending.set(id, (message) => {
-        clearTimeout(timer);
-        resolve(message);
-      });
-      send({ jsonrpc: "2.0", id, method, params });
-    });
-
-  const elicit: Elicit = async (params) => {
-    const response = await requestClient("elicitation/create", params as Json, ELICITATION_TIMEOUT_MS);
-    if (!response) return { action: "timeout" };
-    if (response.error || !isRecord(response.result)) return undefined;
-    return response.result as unknown as ElicitResult;
-  };
-
   const call = async <T>(method: string, params: Json, caller: Caller, timeoutMs?: number): Promise<T> => {
     await ensure(paths);
     return callDaemon<T>(paths.socket, method, params, caller, timeoutMs);
-  };
-
-  const approveAndActivate = async (view: DraftView, caller: Caller): Promise<ToolResult> => {
-    const outcome = await askApproval(view.approvalText, clientCapabilities.elicitation ? elicit : undefined, options.dialog);
-    if (outcome.decision === "unavailable") {
-      return text(
-        `No approval dialog could be shown here. Ask the user to approve it in a terminal by running:\n  self-starter approve ${view.draftId}\n` +
-          "and to tell you when it is done; then check it with trigger_get.",
-      );
-    }
-    if (outcome.decision === "declined") {
-      return text(`The user did not approve ${view.triggerId}. Nothing was changed. Ask the user what they would like to change.`);
-    }
-    const result = await call<TriggerSummary>("draft.activate", { draftId: view.draftId }, caller);
-    return text(
-      `The user approved it (${outcome.via}). The trigger "${result.id}" is ${result.lifecycle === "active" ? "active" : result.lifecycle}: ${result.state}.\n` +
-        `${JSON.stringify(result, null, 2)}`,
-    );
   };
 
   const callTool = async (name: string, args: Json, caller: Caller): Promise<ToolResult> => {
@@ -300,12 +257,15 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
       case "trigger_recipes":
         return text(await call("recipe.list", {}, caller));
       case "trigger_activate": {
-        const view = await call<DraftView>("draft.get", { draftId: args.draft_id }, caller);
-        return approveAndActivate(view, caller);
+        const result = await call<TriggerSummary>("draft.activate", { draftId: args.draft_id }, caller);
+        return text(`The trigger "${result.id}" is ${result.lifecycle}: ${result.state}.\n${JSON.stringify(result, null, 2)}`);
       }
       case "trigger_update": {
-        const view = await call<DraftView>("trigger.update", { triggerId: args.trigger_id, changes: args.changes }, caller);
-        return approveAndActivate(view, caller);
+        const result = await call<{ changes: string[]; trigger: TriggerSummary }>("trigger.update", { triggerId: args.trigger_id, changes: args.changes }, caller);
+        return text(
+          `Changed "${result.trigger.id}": ${result.changes.join("; ")}. It took effect at once; its firing rules started over.\n` +
+            JSON.stringify(result.trigger, null, 2),
+        );
       }
       case "trigger_list":
         return text(await call("trigger.list", {}, caller));
@@ -345,7 +305,6 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
     const params = isRecord(message.params) ? message.params : {};
     switch (message.method) {
       case "initialize": {
-        clientCapabilities = isRecord(params.capabilities) ? params.capabilities : {};
         const requested = str(params.protocolVersion);
         send({
           jsonrpc: "2.0",
@@ -402,15 +361,8 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
       } catch {
         return;
       }
-      if (message.id !== undefined && message.method === undefined) {
-        const waiter = pending.get(String(message.id));
-        if (waiter) {
-          pending.delete(String(message.id));
-          waiter(message);
-        }
-        return;
-      }
-      if (message.id === undefined) return; // notifications need no answer
+      // Responses (this server sends no requests) and notifications need no answer.
+      if (message.id === undefined || message.method === undefined) return;
       void handleRequest(message).catch((error: Error) => {
         send({ jsonrpc: "2.0", id: message.id, error: { code: -32603, message: error.message } });
       });

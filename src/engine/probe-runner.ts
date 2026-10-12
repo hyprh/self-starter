@@ -1,6 +1,10 @@
-// Runs a probe in Deno with only the permissions its definition declares:
-// network access to the listed hosts, the listed environment variables, and
-// nothing else (no files, no subprocesses, no remote or npm imports).
+// Runs a probe in Deno.
+//
+// By default (access: full) a probe runs as the user, like a script they run
+// themselves: it can read and write files, run commands, reach any host and read
+// the environment. With access: sandbox it can only reach the hosts in
+// permissions.net and read the secrets in permissions.env: no files, no
+// subprocesses, no remote or npm imports.
 
 import { spawn } from "node:child_process";
 import { join } from "node:path";
@@ -10,16 +14,18 @@ import type { RunResult } from "../core/state-machine.js";
 
 const STDOUT_LIMIT = 256 * 1024;
 const STDERR_LIMIT = 16 * 1024;
+const FULL_MEMORY_MB = 512;
+const SANDBOX_MEMORY_MB = 128;
 
 /**
  * Variables Deno itself reads to reach the network through a proxy or to trust
- * extra certificates. Probes cannot read them (no --allow-env for them).
+ * extra certificates. Sandboxed probes cannot read them (no --allow-env for them).
  */
-const PASS_THROUGH_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "DENO_CERT", "DENO_TLS_CA_STORE"];
+const PASS_THROUGH_ENV = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "DENO_CERT", "DENO_TLS_CA_STORE", "TZ"];
 
-function passThroughEnv(): Record<string, string> {
+function pickEnv(names: string[]): Record<string, string> {
   const env: Record<string, string> = {};
-  for (const name of PASS_THROUGH_ENV) {
+  for (const name of names) {
     const value = process.env[name];
     if (value) env[name] = value;
   }
@@ -38,8 +44,10 @@ export interface ProbeInput {
 export interface ProbeRunOptions {
   denoBin: string;
   denoDir: string;
-  /** Directory holding the probe file; also the working directory. */
+  /** Directory holding the probe file. */
   dir: string;
+  /** Working directory of a full-access probe, such as the trigger's target.cwd; defaults to `dir`. */
+  cwd?: string;
   definition: TriggerDefinition;
   input: ProbeInput;
   /** Values for the definition's permissions.env, already filtered. */
@@ -50,12 +58,26 @@ export interface ProbeRunOptions {
 export type ProbeRunResult = RunResult & { stderr: string };
 
 export function denoArgs(definition: TriggerDefinition, entryPath: string): string[] {
-  const args = ["run", "--quiet", "--no-prompt", "--no-config", "--no-lock", "--no-remote", "--no-npm"];
+  const args = ["run", "--quiet", "--no-prompt", "--no-config", "--no-lock"];
+  if (definition.probe.access === "full") {
+    args.push("--allow-all", `--v8-flags=--max-old-space-size=${FULL_MEMORY_MB}`, entryPath);
+    return args;
+  }
+  args.push("--no-remote", "--no-npm");
   const { net, env } = definition.probe.permissions;
   if (net.length > 0) args.push(`--allow-net=${net.join(",")}`);
   if (env.length > 0) args.push(`--allow-env=${env.join(",")}`);
-  args.push("--v8-flags=--max-old-space-size=128", entryPath);
+  args.push(`--v8-flags=--max-old-space-size=${SANDBOX_MEMORY_MB}`, entryPath);
   return args;
+}
+
+/** The environment a probe starts with: the user's own for full access, almost nothing in the sandbox. */
+export function probeEnv(definition: TriggerDefinition, secrets: Record<string, string>, denoDir: string): Record<string, string> {
+  const own = { DENO_DIR: denoDir, DENO_NO_UPDATE_CHECK: "1", NO_COLOR: "1" };
+  if (definition.probe.access === "full") {
+    return { ...pickEnv(Object.keys(process.env)), ...secrets, ...own };
+  }
+  return { ...pickEnv(PASS_THROUGH_ENV), ...secrets, ...own };
 }
 
 /** The error message from Deno's stderr, such as "TypeError: fetch failed", without the stack and source excerpt. */
@@ -73,17 +95,12 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
   const started = Date.now();
 
   return new Promise((resolve) => {
+    // A process group of its own, so a timeout also stops the commands the probe started.
     const child = spawn(options.denoBin, denoArgs(definition, entryPath), {
-      cwd: options.dir,
-      env: {
-        ...passThroughEnv(),
-        ...options.env,
-        DENO_DIR: options.denoDir,
-        DENO_NO_UPDATE_CHECK: "1",
-        NO_COLOR: "1",
-        ...(process.env.TZ ? { TZ: process.env.TZ } : {}),
-      },
+      cwd: definition.probe.access === "full" ? (options.cwd ?? options.dir) : options.dir,
+      env: probeEnv(definition, options.env, options.denoDir),
       stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
     });
 
     let stdout = "";
@@ -100,7 +117,11 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      try {
+        if (child.pid) process.kill(-child.pid, "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => {

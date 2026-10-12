@@ -18,9 +18,8 @@ class McpClient {
   private readonly fromServer = new PassThrough();
   private readonly waiting = new Map<number, (message: Json) => void>();
   private nextId = 1;
-  /** Answers server-to-client requests such as elicitation/create. */
-  onRequest: (message: Json) => Promise<Json> | Json = () => ({ error: { code: -32601, message: "not handled" } });
-  readonly elicitations: Json[] = [];
+  /** Requests the server sent to the client (such as dialogs); it should send none. */
+  readonly serverRequests: Json[] = [];
   readonly done: Promise<void>;
 
   constructor(options: Parameters<typeof runMcpServer>[0]) {
@@ -28,8 +27,8 @@ class McpClient {
     createInterface({ input: this.fromServer }).on("line", (line) => {
       const message = JSON.parse(line) as Json;
       if (message.method) {
-        if (message.method === "elicitation/create") this.elicitations.push(message.params);
-        void Promise.resolve(this.onRequest(message)).then((answer) => this.send({ jsonrpc: "2.0", id: message.id, ...answer }));
+        this.serverRequests.push(message);
+        this.send({ jsonrpc: "2.0", id: message.id, error: { code: -32601, message: "not handled" } });
         return;
       }
       this.waiting.get(message.id)?.(message);
@@ -106,9 +105,9 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     assert.deepEqual(callerFrom(undefined), { via: "mcp" });
   });
 
-  it("creates and approves a trigger through MCP elicitation, then delivers its fire", async () => {
-    const mcp = new McpClient({ paths: home.paths, ensureDaemon: async () => undefined, dialog: async () => "unavailable" });
-    const init = await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: { elicitation: {} }, clientInfo: { name: "test" } });
+  it("creates and activates a trigger through MCP, then delivers its fire", async () => {
+    const mcp = new McpClient({ paths: home.paths, ensureDaemon: async () => undefined });
+    const init = await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test" } });
     assert.equal(init.result.serverInfo.name, "self-starter");
     assert.match(init.result.instructions, /\[self-starter\]/);
     const tools = await mcp.request("tools/list");
@@ -118,15 +117,12 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     assert.equal(draft.isError, false, draft.text);
     const draftId = /Draft (draft-watch-a-[0-9a-f]+) saved/.exec(draft.text)?.[1];
     assert.ok(draftId, draft.text);
-    assert.match(draft.text, /Next: tell the user/);
+    assert.match(draft.text, /What it will do:\n-----\nThe trigger "Price watch watch-a" \(watch-a\)/);
+    assert.match(draft.text, new RegExp(`Next: call trigger_activate with draft_id "${draftId}"`));
 
-    mcp.onRequest = async (message) => {
-      await new Promise((resolve) => setTimeout(resolve, 1600)); // a person takes a moment
-      return { result: { action: "accept", content: { approve: message.params.requestedSchema.properties.approve ? true : false } } };
-    };
     const activated = await mcp.tool("trigger_activate", { draft_id: draftId }, meta("thread-a", "turn-1"));
-    assert.match(activated.text, /The user approved it \(elicitation\)/);
-    assert.match(mcp.elicitations[0]!.message, /^Create the trigger "Price watch watch-a" \(watch-a\)\?/);
+    assert.match(activated.text, /^The trigger "watch-a" is active: watching\./);
+    assert.equal(mcp.serverRequests.length, 0, "no dialog: Codex decides whether to ask in the chat");
 
     server.price = 160;
     const fired = await daemon.engine.runNow("watch-a");
@@ -147,41 +143,18 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     await mcp.close();
   });
 
-  it("falls back to a native dialog when Codex declines the elicitation by itself", async () => {
-    let dialogs = 0;
-    const mcp = new McpClient({
-      paths: home.paths,
-      ensureDaemon: async () => undefined,
-      dialog: async () => {
-        dialogs += 1;
-        return "approved";
-      },
-    });
-    await mcp.request("initialize", { capabilities: { elicitation: {} } });
-    mcp.onRequest = () => ({ result: { action: "decline" } });
-    const draft = await mcp.tool("trigger_draft", { definition: definition("watch-b"), code: STATE_PROBE }, meta("thread-b", "turn-1"));
-    const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
-    const activated = await mcp.tool("trigger_activate", { draft_id: draftId }, meta("thread-b", "turn-1"));
-    assert.match(activated.text, /The user approved it \(dialog\)/);
-    assert.equal(dialogs, 1);
-    await mcp.close();
-  });
-
-  it("tells the agent to ask for terminal approval when no dialog can be shown", async () => {
-    const mcp = new McpClient({ paths: home.paths, ensureDaemon: async () => undefined, dialog: async () => "unavailable" });
+  it("applies trigger_update right away", async () => {
+    const mcp = new McpClient({ paths: home.paths, ensureDaemon: async () => undefined });
     await mcp.request("initialize", { capabilities: {} });
     const draft = await mcp.tool("trigger_draft", { definition: definition("watch-c"), code: STATE_PROBE }, meta("thread-c", "turn-1"));
     const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
-    const result = await mcp.tool("trigger_activate", { draft_id: draftId }, meta("thread-c", "turn-1"));
-    assert.match(result.text, new RegExp(`self-starter approve ${draftId}`));
-    assert.equal(daemon.store.hasTrigger("watch-c"), false);
-
-    // What `self-starter approve` does after the user says yes in the terminal.
-    await callDaemon(home.paths.socket, "draft.activate", { draftId }, { via: "cli" });
+    await mcp.tool("trigger_activate", { draft_id: draftId }, meta("thread-c", "turn-1"));
     assert.equal(daemon.store.hasTrigger("watch-c"), true);
 
-    const declined = await mcp.tool("trigger_update", { trigger_id: "watch-c", changes: { probe: { params: { threshold: 300 } } } }, meta("thread-c", "turn-2"));
-    assert.match(declined.text, /self-starter approve draft-watch-c-/);
+    const changed = await mcp.tool("trigger_update", { trigger_id: "watch-c", changes: { probe: { params: { threshold: 300 } } } }, meta("thread-c", "turn-2"));
+    assert.equal(changed.isError, false, changed.text);
+    assert.match(changed.text, /^Changed "watch-c": probe\.params\.threshold: 150 → 300\. It took effect at once/);
+    assert.equal(daemon.store.loadTrigger("watch-c").definition.probe.params.threshold, 300);
     await mcp.close();
   });
 });

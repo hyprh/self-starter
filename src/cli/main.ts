@@ -4,7 +4,6 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createInterface } from "node:readline/promises";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
 import { ChannelNotifier, channelSettings, removeEmailChannel, saveEmailChannel, setDefaultChannels } from "../engine/channels.js";
@@ -32,13 +31,12 @@ Triggers
   self-starter test <id>                                 run the probe once, without firing
   self-starter pause <id> | resume <id> | delete <id>
   self-starter history [<id>] [-n <count>]               recent fires and what came of them
-  self-starter drafts                                    drafts waiting for approval
+  self-starter drafts                                    drafts Codex tried but did not turn on
+  self-starter activate <draft-id>                       turn a draft on
   self-starter recipes                                   ready-made recipes Codex can set up for you
-  self-starter approve <draft-id | trigger-id>           review and approve in the terminal
 
 Secrets (API keys for probes)
-  self-starter secret set <NAME> --hosts <host,...>      store a secret that may only be sent to these hosts
-  self-starter secret set <NAME> --any-host              ... or to any host the probe can reach
+  self-starter secret set <NAME> [--hosts <host,...>]    store a secret; --hosts limits which hosts a sandboxed probe may send it to
   self-starter secret list | self-starter secret rm <NAME>
 
 Notifications
@@ -104,17 +102,6 @@ function when(iso: string | null | undefined): string {
   return date.toDateString() === now.toDateString() ? time : `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
 }
 
-async function confirm(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY) throw new Error("approval needs an interactive terminal");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const answer = await rl.question(`${question} [y/N] `);
-    return /^y(es)?$/i.test(answer.trim());
-  } finally {
-    rl.close();
-  }
-}
-
 function readHidden(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const stdin = process.stdin;
@@ -174,28 +161,14 @@ function printSummary(t: TriggerSummary): void {
   out(`  next check ${when(t.nextCheck)} · ${t.fires} fire(s) · ${target}`);
 }
 
-async function approve(id: string): Promise<void> {
-  if (id.startsWith("draft-")) {
-    const view = await daemonCall<DraftView>("draft.get", { draftId: id });
-    out(view.approvalText);
-    if (view.warnings.length > 0) out(`\nWarnings:\n${view.warnings.map((w) => `- ${w}`).join("\n")}`);
-    out();
-    printCode(view.codePath);
-    if (!(await confirm("Approve and activate this trigger?"))) return out("Not approved; nothing changed.");
-    const result = await daemonCall<TriggerSummary>("draft.activate", { draftId: id });
-    out(`Activated ${result.id}: ${result.state}`);
-    return;
-  }
-  const view = await daemonCall<{ triggerId: string; problem: string | null; approvalText: string }>("trigger.approval", { triggerId: id });
-  if (!view.problem) return out(`${id} is already approved.`);
-  out(`${id} needs approval because ${view.problem}.\n`);
-  out(view.approvalText);
+async function activate(draftId: string): Promise<void> {
+  const view = await daemonCall<DraftView>("draft.get", { draftId });
+  out(view.description);
+  if (view.warnings.length > 0) out(`\nWarnings:\n${view.warnings.map((w) => `- ${w}`).join("\n")}`);
   out();
-  const shown = await daemonCall<{ probePath: string }>("trigger.get", { triggerId: id });
-  printCode(shown.probePath);
-  if (!(await confirm("Approve this code and these permissions, and resume the trigger?"))) return out("Not approved; the trigger stays paused.");
-  const result = await daemonCall<TriggerSummary>("trigger.approve", { triggerId: id });
-  out(`Approved ${result.id}: ${result.state}`);
+  printCode(view.codePath);
+  const result = await daemonCall<TriggerSummary>("draft.activate", { draftId });
+  out(`Activated ${result.id}: ${result.state}`);
 }
 
 async function secretCommand(args: Args): Promise<void> {
@@ -205,18 +178,18 @@ async function secretCommand(args: Args): Promise<void> {
     case "set": {
       const secretName = need(name, "secret name");
       const hostsFlag = args.flags.get("hosts");
-      const hosts = args.flags.has("any-host") ? "*" : typeof hostsFlag === "string" ? hostsFlag.split(",").map((h) => h.trim()).filter(Boolean) : undefined;
-      if (!hosts) throw new UsageError("say where the secret may be sent: --hosts api.example.com[,other.host] or --any-host");
+      const hosts = typeof hostsFlag === "string" ? hostsFlag.split(",").map((h) => h.trim()).filter(Boolean) : "*";
+      if (hosts !== "*" && hosts.length === 0) throw new UsageError("--hosts needs at least one host, such as --hosts api.example.com");
       const value = process.stdin.isTTY ? await readHidden(`Value for ${secretName}: `) : await readStdin();
       new Store(paths).ensureLayout();
       secrets.set(secretName, value, hosts);
-      out(`Saved ${secretName} (may be sent to ${hosts === "*" ? "any host" : hosts.join(", ")}).`);
+      out(`Saved ${secretName}${hosts === "*" ? "" : ` (a sandboxed probe may only send it to ${hosts.join(", ")})`}.`);
       return;
     }
     case "list": {
       const list = secrets.list();
       if (list.length === 0) return out("No secrets.");
-      for (const s of list) out(`${s.name}  →  ${s.hosts === "*" ? "any host" : s.hosts.join(", ")}`);
+      for (const s of list) out(s.hosts === "*" ? s.name : `${s.name}  (sandboxed probes: only ${s.hosts.join(", ")})`);
       return;
     }
     case "rm":
@@ -378,7 +351,7 @@ async function main(argv: string[]): Promise<void> {
       await install(paths, { codex: args.flags.get("codex") as string | undefined, service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
       out("\nDone. Restart the Codex app (or start a new `codex` session) so it loads the plugin, then ask Codex, for example:");
       out('  "Watch https://example.com/status and tell me when it stops returning 200."');
-      out("Codex uses the skill $self-starter:triggers to set it up and asks you to approve it.");
+      out("Codex uses the skill $self-starter:triggers to set it up.");
       return;
     case "uninstall":
       await uninstall(paths, { purge: args.flags.has("purge"), log: (l) => out(`✓ ${l}`) });
@@ -401,7 +374,6 @@ async function main(argv: string[]): Promise<void> {
     case "show": {
       const detail = await daemonCall<TriggerSummary & Record<string, unknown>>("trigger.get", { triggerId: need(id, "trigger id") });
       printSummary(detail);
-      out(`  approval: ${String(detail.approval)}`);
       out(`  probe: ${String(detail.probePath)}\n`);
       out(String(detail.definitionYaml).trimEnd());
       out(`\nstate: ${JSON.stringify(detail.runtime, null, 2)}`);
@@ -450,11 +422,11 @@ async function main(argv: string[]): Promise<void> {
       const drafts = await daemonCall<Array<{ draftId: string; createdAt: string; trialOk: boolean | null; replaces: string | null }>>("draft.list");
       if (drafts.length === 0) return out("No drafts.");
       for (const d of drafts) out(`${d.draftId}  ${when(d.createdAt)}  trial ${d.trialOk === null ? "not run" : d.trialOk ? "ok" : "failed"}${d.replaces ? `  (replaces ${d.replaces})` : ""}`);
-      out("\nApprove one with: self-starter approve <draft-id>");
+      out("\nTurn one on with: self-starter activate <draft-id>");
       return;
     }
-    case "approve":
-      await approve(need(id, "draft id or trigger id"));
+    case "activate":
+      await activate(need(id, "draft id"));
       return;
     case "secret":
       await secretCommand(args);

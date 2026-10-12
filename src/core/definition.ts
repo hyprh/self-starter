@@ -8,7 +8,10 @@ export type Concurrency = "skip" | "queue" | "coalesce";
 export type ActionType = "notify" | "agent";
 export type TargetKind = "origin" | "dedicated";
 export type NotifyWhen = "always" | "receipt" | "never";
-export type Sandbox = "read-only" | "workspace-write";
+/** How Codex runs when it handles a fire in a dedicated thread (Codex's own sandbox modes). */
+export type Sandbox = "read-only" | "workspace-write" | "danger-full-access";
+/** What a probe may do: what the user can ("full"), or only reach the hosts it lists ("sandbox"). */
+export type ProbeAccess = "full" | "sandbox";
 export type Channel = "desktop" | "email";
 
 export interface QuietHours {
@@ -25,8 +28,9 @@ export interface TriggerDefinition {
   probe: {
     runtime: "deno";
     entry: string;
-    sha256: string | null;
+    access: ProbeAccess;
     params: Record<string, unknown>;
+    /** env: secrets passed in as environment variables. net: the only hosts a sandboxed probe can reach. */
     permissions: { net: string[]; env: string[] };
     interval: { min: string; max: string; default: string };
     timeout: string;
@@ -46,7 +50,7 @@ export interface TriggerDefinition {
   meta: {
     created_at: string;
     origin_thread_id?: string | null;
-    approved_at?: string | null;
+    activated_at?: string | null;
     revision: number;
     /** The ready-made recipe the probe comes from, such as "ibkr-account@1". */
     recipe?: string;
@@ -171,10 +175,8 @@ export function validateDefinition(raw: unknown): ValidationResult {
   if (typeof entry !== "string" || !ENTRY_PATTERN.test(entry)) {
     errors.push("probe.entry must be a file name ending in .ts, .js or .mjs");
   }
-  const sha256 = probeRaw.sha256 ?? null;
-  if (sha256 !== null && (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256))) {
-    errors.push("probe.sha256 must be a hex SHA-256 digest");
-  }
+  const access = probeRaw.access ?? "full";
+  if (access !== "full" && access !== "sandbox") errors.push('probe.access must be "full" or "sandbox"');
   const params = probeRaw.params ?? {};
   if (!isRecord(params)) {
     errors.push("probe.params must be a mapping");
@@ -250,11 +252,11 @@ export function validateDefinition(raw: unknown): ValidationResult {
   const actionRaw = isRecord(raw.action) ? raw.action : {};
   const action: TriggerDefinition["action"] = {
     type: (actionRaw.type as ActionType | undefined) ?? "agent",
-    sandbox: (actionRaw.sandbox as Sandbox | undefined) ?? "read-only",
+    sandbox: (actionRaw.sandbox as Sandbox | undefined) ?? "workspace-write",
   };
   if (action.type !== "notify" && action.type !== "agent") errors.push('action.type must be "notify" or "agent"');
-  if (action.sandbox !== "read-only" && action.sandbox !== "workspace-write") {
-    errors.push('action.sandbox must be "read-only" or "workspace-write"');
+  if (!["read-only", "workspace-write", "danger-full-access"].includes(action.sandbox)) {
+    errors.push('action.sandbox must be "read-only", "workspace-write" or "danger-full-access"');
   }
   if (action.type === "agent") action.prompt = text(actionRaw.prompt, "action.prompt", LIMITS.promptChars, errors);
   else if (typeof actionRaw.prompt === "string") action.prompt = actionRaw.prompt;
@@ -288,11 +290,11 @@ export function validateDefinition(raw: unknown): ValidationResult {
   // meta
   const metaRaw = isRecord(raw.meta) ? raw.meta : {};
   const createdAt = metaRaw.created_at instanceof Date ? metaRaw.created_at.toISOString() : metaRaw.created_at;
-  const approvedAt = metaRaw.approved_at instanceof Date ? metaRaw.approved_at.toISOString() : metaRaw.approved_at;
+  const activatedAt = metaRaw.activated_at instanceof Date ? metaRaw.activated_at.toISOString() : metaRaw.activated_at;
   const meta: TriggerDefinition["meta"] = {
     created_at: isIsoDate(createdAt) ? createdAt : new Date().toISOString(),
     origin_thread_id: (metaRaw.origin_thread_id as string | null | undefined) ?? null,
-    approved_at: isIsoDate(approvedAt) ? approvedAt : null,
+    activated_at: isIsoDate(activatedAt) ? activatedAt : null,
     revision: Number.isInteger(metaRaw.revision) ? (metaRaw.revision as number) : 1,
   };
   if (typeof metaRaw.recipe === "string" && metaRaw.recipe) meta.recipe = metaRaw.recipe;
@@ -307,7 +309,7 @@ export function validateDefinition(raw: unknown): ValidationResult {
     probe: {
       runtime: "deno",
       entry: entry as string,
-      sha256: sha256 as string | null,
+      access: access as ProbeAccess,
       params: params as Record<string, unknown>,
       permissions: { net, env },
       interval,

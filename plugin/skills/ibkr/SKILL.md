@@ -5,7 +5,7 @@ description: Keep an eye on an Interactive Brokers (IBKR) account and speak up w
 
 # Watch an IBKR account
 
-This sets up a trigger from the ready-made recipe `ibkr-account`. Read the skill `self-starter:triggers` first for how triggers, approval and fire messages work.
+This sets up a trigger from the ready-made recipe `ibkr-account`. Read the skill `self-starter:triggers` first for how triggers and fire messages work.
 
 The recipe reads Interactive Brokers' Flex Web Service with a read-only token: it can read reports, it cannot trade or move money.
 

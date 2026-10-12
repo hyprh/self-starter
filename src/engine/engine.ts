@@ -1,9 +1,8 @@
 // The watcher: runs each trigger's probe on schedule, applies the firing rules,
 // and hands fires to the executor.
 //
-// Definitions are read from disk before every run, so hand edits take effect at
-// the next check. A probe whose code or permissions differ from what the user
-// approved does not run; the trigger is paused until the user approves it again.
+// Definitions and probe code are read from disk before every run, so hand edits
+// take effect at the next check.
 
 import { existsSync, renameSync, statSync } from "node:fs";
 import type { TriggerDefinition } from "../core/definition.js";
@@ -20,10 +19,9 @@ import { appendJsonLine, readJsonLines } from "./fs-util.js";
 import type { Paths } from "./paths.js";
 import { runProbe, type ProbeInput, type ProbeRunResult } from "./probe-runner.js";
 import type { Secrets } from "./secrets.js";
-import { approvalProblem, type Store } from "./store.js";
+import type { Store } from "./store.js";
 
 export const USER_PAUSE = "paused by the user";
-export const APPROVAL_PAUSE = "needs approval";
 
 const RUNS_LOG_MAX_BYTES = 5 * 1024 * 1024;
 const RECENT_RUNS = 20;
@@ -201,9 +199,6 @@ export class Engine {
   resume(id: string): RuntimeState {
     const current = this.runtime(id);
     if (current.lifecycle === "active") return current;
-    if (current.lifecycle === "paused" && current.pausedReason?.startsWith(APPROVAL_PAUSE)) {
-      throw new Error(`${id} ${current.pausedReason.replace(/^needs approval: /, "needs approval because ")}; ask the user to run: self-starter approve ${id}`);
-    }
     if (current.lifecycle === "expired") throw new Error(`${id} has expired; change policy.expires_at with trigger_update to use it again`);
     if (current.lifecycle === "exhausted") throw new Error(`${id} reached policy.max_fires; raise it with trigger_update to use it again`);
     const runtime: RuntimeState = { ...current, lifecycle: "active", nextRunAt: this.now().toISOString() };
@@ -261,15 +256,9 @@ export class Engine {
     } catch (error) {
       return this.recordInvalid(id, (error as Error).message);
     }
-    const { definition, probeCode, dir } = loaded;
+    const { definition, dir } = loaded;
     const runtime = this.syncRevision(id, definition);
     if (runtime.lifecycle !== "active") return undefined;
-
-    const problem = approvalProblem(definition, probeCode);
-    if (problem) {
-      await this.pauseForApproval(definition, problem);
-      return undefined;
-    }
 
     const startedAt = this.now();
     if (definition.policy.expires_at && Date.parse(definition.policy.expires_at) <= startedAt.getTime()) {
@@ -323,9 +312,7 @@ export class Engine {
 
   /** Runs the probe with the trigger's current state, without applying the result. */
   async test(id: string): Promise<ProbeRunResult> {
-    const { definition, probeCode, dir } = this.deps.store.loadTrigger(id);
-    const problem = approvalProblem(definition, probeCode);
-    if (problem) throw new Error(`${id} will not run because ${problem}; ask the user to run: self-starter approve ${id}`);
+    const { definition, dir } = this.deps.store.loadTrigger(id);
     return this.execute(definition, dir, this.runtime(id));
   }
 
@@ -337,24 +324,18 @@ export class Engine {
   private async execute(definition: TriggerDefinition, dir: string, runtime: RuntimeState | undefined): Promise<ProbeRunResult> {
     const denoBin = this.deps.deno();
     if (!denoBin) return failure("deno was not found; run `self-starter doctor`");
-    const { values, problems } = this.deps.secrets.pick(definition.probe.permissions.env, definition.probe.permissions.net);
+    const { access, permissions } = definition.probe;
+    const { values, problems } = this.deps.secrets.pick(permissions.env, access === "full" ? "any" : permissions.net);
     if (problems.length > 0) return failure(problems.join("; "));
+    const cwd = definition.target.cwd;
     return runProbe({
       denoBin,
       denoDir: this.deps.paths.denoDir,
       dir,
+      ...(cwd && existsSync(cwd) ? { cwd } : {}),
       definition,
       input: probeInput(definition, runtime, this.now()),
       env: values,
-    });
-  }
-
-  private async pauseForApproval(definition: TriggerDefinition, problem: string): Promise<void> {
-    this.pause(definition.id, `${APPROVAL_PAUSE}: ${problem}`);
-    this.log(`${definition.id} paused: ${problem}`);
-    await this.deps.executor.notifyAbout(definition, {
-      title: `${definition.name}: paused`,
-      body: `The trigger will not run because ${problem}. To review and resume it, run: self-starter approve ${definition.id}`,
     });
   }
 

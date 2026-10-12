@@ -1,4 +1,4 @@
-// Plain-language descriptions of a trigger, for approval dialogs, listings and the CLI.
+// Plain-language descriptions of a trigger, for Codex to explain it, listings and the CLI.
 
 import type { TriggerDefinition } from "./definition.js";
 import type { RuntimeState } from "./state-machine.js";
@@ -32,13 +32,24 @@ export function describeFiring(def: TriggerDefinition): string {
   return parts.join("; ");
 }
 
+const SANDBOX_TEXT = {
+  "read-only": "read-only",
+  "workspace-write": "can change files and run commands in its folder",
+  "danger-full-access": "full access, no sandbox",
+} as const;
+
 export function describeAction(def: TriggerDefinition): string {
   if (def.action.type === "notify") return "a notification (Codex is not involved)";
   const where =
     def.target.kind === "origin"
       ? "back in the thread where the trigger was created"
-      : `in a dedicated thread (${def.action.sandbox} sandbox${def.target.cwd ? `, folder ${def.target.cwd}` : ""})`;
+      : `in a dedicated thread (${SANDBOX_TEXT[def.action.sandbox]}${def.target.cwd ? `; folder ${def.target.cwd}` : ""})`;
   return `Codex works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
+}
+
+export function describeAccess(def: TriggerDefinition): string {
+  if (def.probe.access === "full") return "full: runs as you (files, commands, any network)";
+  return `sandbox: network only to ${def.probe.permissions.net.join(", ") || "nothing"}; no files, no commands`;
 }
 
 export function describeNotify(def: TriggerDefinition): string {
@@ -55,34 +66,32 @@ export function describeTrial(trial: TrialRun | undefined, mode: TriggerDefiniti
     mode === "event"
       ? `${trial.events ?? 0} event(s) seen now; they count as old, only later ones fire`
       : trial.fire
-        ? "the condition holds now, so it fires right after approval"
+        ? "the condition holds now, so it fires right after activation"
         : "condition not met";
   return `ok in ${seconds}: "${trial.summary ?? ""}" (${outcome})`;
 }
 
-export interface ApprovalInput {
+export interface DescribeInput {
   definition: TriggerDefinition;
   codePath: string;
   trial?: TrialRun;
   /** For a change to an existing trigger: what differs. */
   changes?: string[];
-  /** True when the probe code or its permissions are new or changed. */
+  /** True when the probe code is new or changed. */
   codeChanged: boolean;
 }
 
-/** The text shown when asking the user to approve a trigger or a change to one. */
-export function approvalText(input: ApprovalInput): string {
+/** What a trigger (or a change to one) will do, in plain language. */
+export function describeTrigger(input: DescribeInput): string {
   const def = input.definition;
-  const heading = input.changes
-    ? `Change the trigger "${def.name}" (${def.id})?`
-    : `Create the trigger "${def.name}" (${def.id})?`;
+  const heading = input.changes ? `Change to the trigger "${def.name}" (${def.id})` : `The trigger "${def.name}" (${def.id})`;
   const lines = [heading, ""];
   if (input.changes) {
     lines.push("Changes:", ...input.changes.map((line) => `  • ${line}`), "");
   }
   lines.push(`Your words: "${def.intent}"`);
   lines.push(`Checks: ${describeChecks(def)}`);
-  lines.push(`Network: ${def.probe.permissions.net.join(", ") || "none"}`);
+  lines.push(`Probe access: ${describeAccess(def)}`);
   if (def.probe.permissions.env.length > 0) lines.push(`Secrets: ${def.probe.permissions.env.join(", ")}`);
   lines.push(`Fires: ${describeFiring(def)}`);
   lines.push(`Then: ${describeAction(def)}`);
@@ -93,7 +102,7 @@ export function approvalText(input: ApprovalInput): string {
   return lines.join("\n");
 }
 
-/** One phrase for the current state, such as "watching" or "paused (needs approval: ...)". */
+/** One phrase for the current state, such as "watching" or "paused (paused by the user)". */
 export function describeState(runtime: RuntimeState, now: Date = new Date()): string {
   if (runtime.lifecycle === "paused") return `paused (${runtime.pausedReason ?? "paused"})`;
   if (runtime.lifecycle === "expired") return "expired";

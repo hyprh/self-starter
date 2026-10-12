@@ -513,7 +513,7 @@ export class Executor {
     if (fireId) this.deps.fires.record({ type: "notified", fireId, at: this.now().toISOString() });
   }
 
-  /** Notifications about a trigger itself (health, approval), outside any fire. */
+  /** Notifications about a trigger itself (its health), outside any fire. */
   async notifyAbout(definition: TriggerDefinition | undefined, notification: Notification): Promise<void> {
     await this.sendNotification(definition, undefined, notification);
   }

@@ -1,11 +1,11 @@
 // Trigger definitions, probe code, runtime state and drafts on disk.
 //
 //   triggers/<id>/trigger.yaml   definition (what should be)
-//   triggers/<id>/<entry>        probe code, pinned by probe.sha256
+//   triggers/<id>/<entry>        probe code
 //   triggers/<id>/state.json     runtime state (what is), written only by the daemon
-//   drafts/<draft-id>/...        definitions waiting for the user's approval
+//   drafts/<draft-id>/...        tried once, not active yet
 
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { definitionToYaml, parseDefinitionYaml, type TriggerDefinition } from "../core/definition.js";
@@ -41,25 +41,6 @@ export interface DraftMeta {
 
 export interface LoadedDraft extends LoadedTrigger {
   meta: DraftMeta;
-}
-
-export function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
-}
-
-/** What the user approves: the probe code together with its permissions. Stored as probe.sha256. */
-export function fingerprint(definition: TriggerDefinition, probeCode: string): string {
-  const { net, env } = definition.probe.permissions;
-  return sha256(`${probeCode}\n--- permissions ---\n${JSON.stringify({ net, env })}`);
-}
-
-/** Why a trigger may not run, or undefined when the user approved exactly this code and these permissions. */
-export function approvalProblem(definition: TriggerDefinition, probeCode: string): string | undefined {
-  if (!definition.meta.approved_at || !definition.probe.sha256) return "it has not been approved";
-  if (fingerprint(definition, probeCode) !== definition.probe.sha256) {
-    return "its probe code or permissions changed after approval";
-  }
-  return undefined;
 }
 
 export class Store {
@@ -157,8 +138,8 @@ export class Store {
   }
 
   /**
-   * Turns an approved draft into a trigger: writes the final definition into the
-   * draft folder, then moves the folder into place, replacing an older version.
+   * Turns a draft into a trigger: writes the final definition into the draft
+   * folder, then moves the folder into place, replacing an older version.
    */
   promoteDraft(draftId: string, definition: TriggerDefinition): void {
     const dir = this.draftDir(draftId);

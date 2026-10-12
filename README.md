@@ -4,15 +4,16 @@ Let Codex act when something happens.
 
 Codex works when you talk to it, and its Automations run on a clock. Many things you want done are "when X happens, do Y": when NVDA breaks 200, find out why; when CI on main fails, investigate; when a dependency ships a release, check it for breaking changes. Self-Starter is a Codex plugin for exactly that.
 
-You tell Codex in one sentence what to watch and what to do. Codex writes a small **probe** (a few lines of TypeScript) that checks the condition, you approve it, and a background service keeps running it. No model is called while waiting. When the condition is met, the task goes back to Codex: into the thread where you asked, or into a thread dedicated to the trigger, which Codex works on in the background. You get a notification with the result.
+You tell Codex in one sentence what to watch and what to do. Codex writes a small **probe** (a few lines of TypeScript) that checks the condition, and a background service keeps running it. No model is called while waiting. When the condition is met, the task goes back to Codex: into the thread where you asked, or into a thread dedicated to the trigger, which Codex works on in the background. You get a notification with the result.
 
 ```
-You:    When the Rust compiler ships a new stable release, read the release notes and tell me
-        what matters for this project.
-Codex:  I'll check the GitHub releases of rust-lang/rust every 30 minutes and, for each new
-        stable release, work through the notes in a dedicated thread. [approval dialog]
-...three weeks later, a notification:
-        Rust releases: 1.97.0 adds X; our use of Y in src/parse.rs is affected. Details in the thread.
+You:    When the training run in runs/exp42 finishes, compare its metrics with exp41
+        and tell me which one to keep.
+Codex:  I'll check the end of runs/exp42/train.log every two minutes. When it says
+        "Finished training", I'll compare the two runs here and report back. Start it?
+You:    Yes.
+...four hours later, in the same thread:
+        exp42 finished: val loss 0.412 vs 0.437 for exp41, same accuracy. Keep exp42.
 ```
 
 Status: working MVP, verified end to end with the Codex CLI and app server on Linux; see the [design](docs/design.md) for what is still to be checked in the Codex app on your machine.
@@ -20,9 +21,10 @@ Status: working MVP, verified end to end with the Codex CLI and app server on Li
 ## How it works
 
 - **Probes are code, the engine owns the rules.** A probe answers "what do I see now, and does it count?". The engine runs it on a schedule the probe can adapt (check more often near a threshold), fires only when a condition becomes true (with optional minimum duration, re-arm hysteresis, cooldown, max fires and expiry), deduplicates events, retries, and alerts you when a probe keeps failing.
-- **Sandboxed and approved.** Probes run in Deno with network access only to the hosts they declare, no file access and no subprocesses. Nothing runs on a schedule until you approve a dialog that shows what is watched, the network access, the action and a trial run. If the code or permissions change later, the trigger pauses until you approve again.
-- **Two ways back into Codex.** `origin` queues the task into the thread where you created the trigger (good for "tell me when this build finishes"); `dedicated` runs each fire in the trigger's own thread in the background (good for long-running watches), titled "Trigger: <name>" in Codex.
-- **Fires are data, not instructions.** What a probe saw is passed to Codex in a block marked untrusted; the task itself is the one you approved. A turn handling a fire cannot create or change triggers.
+- **Probes run on your machine, as you.** A probe can read files and logs, run the commands you have (`git`, `gh`, `docker`, a skill's scripts), talk to local services and call web APIs. When a probe only needs a few web APIs, it can run in a sandbox instead (`probe.access: sandbox`): network to the hosts it declares, no files, no commands.
+- **Codex decides when to ask.** Codex tries every probe once before turning it on. For a trigger that acts on your behalf or runs for a long time, it tells you what it will check and do, and asks before starting it; a plain "let me know when the build finishes" just starts.
+- **Two ways back into Codex.** `origin` queues the task into the thread where you created the trigger (good for "tell me when this build finishes"); `dedicated` runs each fire in the trigger's own thread in the background (good for long-running watches), titled "Trigger: <name>" in Codex. Dedicated runs can change files and run commands in the trigger's folder (Codex's `workspace-write` sandbox); a trigger can choose `read-only`, or `danger-full-access` when it needs more.
+- **Fires are data, not instructions.** What a probe saw is passed to Codex in a block marked untrusted; the task itself comes from the trigger's definition. A turn handling a fire cannot create or change triggers.
 
 ## Install
 
@@ -45,20 +47,20 @@ For notifications that open the right thread when clicked on macOS, install `ter
 
 Just ask Codex, for example:
 
-- "Tell me when https://status.example.com stops returning 200."
-- "When NVDA closes above 200, look into why and write me a five-line brief."
+- "When the training run in runs/exp42 finishes, summarize its metrics."
+- "If the dev server on port 3000 stops answering for two minutes, find out why."
 - "Whenever CI fails on main in this repo, find the cause and suggest a fix."
-- "Watch the releases of `denoland/deno` and tell me about anything that affects this project."
+- "When a new version of `zod` is published, check whether it affects this project."
 
-Codex uses the plugin's skill (`$self-starter:triggers`), writes the probe, runs it once, explains what it will do, and asks you to approve. Later you can ask "what triggers do I have?", "why didn't the NVDA trigger fire?", "raise the threshold to 210" or "pause the release watch".
+Codex uses the plugin's skill (`$self-starter:triggers`), writes the probe, runs it once and turns it on, asking you first when the trigger acts for you. Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?", "check every 10 minutes instead" or "pause the release watch".
 
 If a probe needs an API key, Codex asks you to store it in a terminal; it never sees the key:
 
 ```sh
-self-starter secret set QUOTE_API_KEY --hosts api.example.com
+self-starter secret set QUOTE_API_KEY
 ```
 
-The secret is only given to probes that cannot reach any other host.
+Probes that list the secret in `probe.permissions.env` get it as an environment variable. With `--hosts api.example.com`, a sandboxed probe only gets it when it cannot reach any other host.
 
 ### Ready-made recipes
 
@@ -85,7 +87,8 @@ self-starter show <id>              definition, state, recent checks and fires
 self-starter test <id>              run the probe once, without firing
 self-starter pause|resume|delete <id>
 self-starter history [<id>]         recent fires and what came of them
-self-starter approve <draft-id|id>  review and approve in the terminal
+self-starter drafts                 drafts Codex tried but did not turn on
+self-starter activate <draft-id>    turn a draft on
 self-starter recipes                ready-made recipes
 self-starter secret set|list|rm
 self-starter channel list|email|default|test|rm

@@ -46,9 +46,10 @@ describe("validateDefinition", () => {
     assert.equal(def.probe.entry, "probe.ts");
     assert.deepEqual(def.probe.interval, { min: "30s", max: "1h", default: "5m" });
     assert.equal(def.probe.timeout, "20s");
+    assert.equal(def.probe.access, "full");
     assert.equal(def.policy.concurrency, "coalesce");
     assert.equal(def.action.type, "agent");
-    assert.equal(def.action.sandbox, "read-only");
+    assert.equal(def.action.sandbox, "workspace-write");
     assert.equal(def.target.kind, "dedicated");
     assert.equal(def.notify.when, "receipt");
     assert.equal(def.meta.revision, 1);

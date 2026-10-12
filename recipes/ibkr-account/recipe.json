@@ -5,6 +5,7 @@
   "summary": "Watches an Interactive Brokers account through the Flex Web Service and reports what changed: new executions (including option assignments and exercises) within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a matching trade, and large moves in net asset value. Read-only: a Flex token can read reports but cannot trade.",
   "entry": "probe.ts",
   "mode": "event",
+  "access": "sandbox",
   "permissions": {
     "net": ["ndcdyn.interactivebrokers.com", "gdcdyn.interactivebrokers.com"],
     "env": ["IBKR_FLEX_TOKEN"]

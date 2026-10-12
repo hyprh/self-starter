@@ -1,11 +1,11 @@
-// The operations behind the control API: drafts and approval, changes, queries
+// The operations behind the control API: drafts and activation, changes, queries
 // and receipts. Requests come from the plugin's MCP server on behalf of a Codex
-// thread, or from self-starter in a terminal.
+// thread, or from the self-starter CLI in a terminal.
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { approvalText, describeState } from "../core/describe.js";
+import { describeState, describeTrigger } from "../core/describe.js";
 import { definitionToYaml, validateDefinition, type TriggerDefinition } from "../core/definition.js";
 import { deepMerge, describeChanges, patchPaths } from "../core/patch.js";
 import type { ProbeRunResult } from "./probe-runner.js";
@@ -16,7 +16,7 @@ import type { Executor } from "./executor.js";
 import type { FireLog, FireRecord } from "./fires.js";
 import type { Paths } from "./paths.js";
 import { applyRecipe, listRecipes, loadRecipe, type Recipe } from "./recipes.js";
-import { approvalProblem, fingerprint, type DryRun, type LoadedDraft, type LoadedTrigger, type Store } from "./store.js";
+import type { DryRun, LoadedDraft, LoadedTrigger, Store } from "./store.js";
 
 export type ErrorCode = "not_found" | "invalid" | "refused" | "conflict";
 
@@ -43,10 +43,12 @@ const MAX_TRIGGERS = 100;
 const DRAFT_TTL_MS = 24 * 3_600_000;
 const RECENT_FIRE_MS = 24 * 3_600_000;
 const REPORTED_TURNS_MAX = 1000;
-/** What trigger_update may not change: those changes get the full review of trigger_draft. */
-const LOCKED_PATHS = ["version", "id", "meta", "mode", "probe.runtime", "probe.entry", "probe.sha256", "probe.permissions", "target.thread_id"];
-/** Bookkeeping that is not part of what the user approves. */
-const BOOKKEEPING = ["meta", "probe.sha256", "target.thread_id"];
+/** What trigger_update may not change: a new probe (code or mode) goes through trigger_draft and its trial run. */
+const LOCKED_PATHS = ["version", "id", "meta", "mode", "probe.runtime", "probe.entry", "target.thread_id"];
+/** What a recipe fixes in addition. */
+const RECIPE_LOCKED_PATHS = ["probe.access", "probe.permissions"];
+/** Bookkeeping that is not part of what the trigger does. */
+const BOOKKEEPING = ["meta", "target.thread_id"];
 
 export interface ServiceDeps {
   store: Store;
@@ -73,7 +75,8 @@ export interface DraftView {
   trial: DryRun | null;
   warnings: string[];
   changes: string[] | null;
-  approvalText: string;
+  /** What the trigger will do, in plain language, for Codex to tell the user. */
+  description: string;
 }
 
 export interface TriggerSummary {
@@ -229,7 +232,7 @@ export class TriggerService {
     }
   }
 
-  // ---- drafts and approval ----------------------------------------------
+  // ---- drafts and activation --------------------------------------------
 
   /** Validates a new trigger (or a new version of one), stores it as a draft, and runs its probe once. */
   async createDraft(params: { definition?: unknown; code?: unknown; recipe?: unknown; replace?: unknown }, caller: Caller): Promise<DraftView> {
@@ -259,10 +262,9 @@ export class TriggerService {
     }
     if (Buffer.byteLength(code, "utf8") > MAX_CODE_BYTES) throw new ServiceError("invalid", "the probe code is larger than 64 KB");
 
-    // The engine owns the approval fields, the thread ids and the revision.
+    // The engine owns the activation time, the thread ids and the revision.
     const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     delete cleaned.meta;
-    if (isRecord(cleaned.probe)) cleaned.probe = { ...cleaned.probe, sha256: null };
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
     const validated = validateDefinition(cleaned);
     if (!validated.ok) throw new ServiceError("invalid", `the definition has problems:\n- ${validated.errors.join("\n- ")}`);
@@ -279,7 +281,7 @@ export class TriggerService {
     definition.meta = {
       created_at: existing?.definition.meta.created_at ?? this.now().toISOString(),
       origin_thread_id: caller.threadId ?? existing?.definition.meta.origin_thread_id ?? null,
-      approved_at: null,
+      activated_at: null,
       revision: (existing?.definition.meta.revision ?? 0) + 1,
     };
     if (recipeRef) definition.meta.recipe = recipeRef;
@@ -317,15 +319,15 @@ export class TriggerService {
   private draftView(draft: LoadedDraft): DraftView {
     const def = draft.definition;
     const existing = draft.meta.replaces ? this.tryLoad(draft.meta.replaces) : undefined;
-    const codeChanged = !existing || fingerprint(existing.definition, existing.probeCode) !== fingerprint(def, draft.probeCode);
+    const codeChanged = !existing || existing.probeCode !== draft.probeCode;
     let changes: string[] | null = null;
     if (existing) {
       changes = describeChanges(existing.definition, def, BOOKKEEPING);
-      if (existing.probeCode !== draft.probeCode) changes.unshift("probe code: new version");
+      if (codeChanged) changes.unshift("probe code: new version");
     }
     const trial = draft.meta.dryRun ?? null;
     const codePath = join(draft.dir, def.probe.entry);
-    const text = approvalText({ definition: def, codePath: tilde(codePath), codeChanged, ...(trial ? { trial } : {}), ...(changes ? { changes } : {}) });
+    const description = describeTrigger({ definition: def, codePath: tilde(codePath), codeChanged, ...(trial ? { trial } : {}), ...(changes ? { changes } : {}) });
     return {
       draftId: draft.meta.draftId,
       triggerId: def.id,
@@ -335,7 +337,7 @@ export class TriggerService {
       trial,
       warnings: this.warnings(draft),
       changes,
-      approvalText: text,
+      description,
     };
   }
 
@@ -359,7 +361,7 @@ export class TriggerService {
     return { discarded: draft.meta.draftId };
   }
 
-  /** Makes an approved draft live. The approval itself is asked for by the caller (MCP dialog or terminal prompt). */
+  /** Turns a draft on. Whether to check with the user first is up to Codex (see the skill). */
   activateDraft(params: { draftId?: unknown }, caller: Caller) {
     this.guard(caller, "activate a trigger");
     const draft = this.loadDraft(params.draftId);
@@ -370,78 +372,68 @@ export class TriggerService {
     }
     const existing = exists ? this.tryLoad(def.id) : undefined;
     def.meta.revision = (existing?.definition.meta.revision ?? 0) + 1;
-    def.meta.approved_at = this.now().toISOString();
-    def.probe.sha256 = fingerprint(def, draft.probeCode);
-    const previous = existing?.definition.target;
-    if (def.target.kind === "dedicated" && previous?.kind === "dedicated" && previous.thread_id) def.target.thread_id = previous.thread_id;
+    def.meta.activated_at = this.now().toISOString();
+    def.target.thread_id = this.keptThread(existing?.definition, def);
 
     this.deps.store.promoteDraft(draft.meta.draftId, def);
     this.deps.engine.reload(def.id);
-    if (def.action.type === "agent" && def.target.kind === "dedicated" && !def.target.thread_id) {
-      this.deps.executor.prepareDedicatedThread(def.id);
-    }
-    this.deps.log(`activated ${def.id} revision ${def.meta.revision} (approved via ${caller.via})`);
+    this.prepareThread(def);
+    this.deps.log(`activated ${def.id} revision ${def.meta.revision} (${caller.via})`);
     return this.get({ triggerId: def.id });
   }
 
-  /** For `self-starter approve <id>`: what changed since the user approved this trigger. */
-  approvalView(params: { triggerId?: unknown }): { triggerId: string; problem: string | null; approvalText: string } {
-    const { definition, probeCode, dir } = this.load(params.triggerId);
-    const problem = approvalProblem(definition, probeCode) ?? null;
-    const text = approvalText({ definition, codePath: tilde(join(dir, definition.probe.entry)), codeChanged: problem !== null });
-    return { triggerId: definition.id, problem, approvalText: text };
+  /** A dedicated trigger keeps its thread across versions. */
+  private keptThread(previous: TriggerDefinition | undefined, next: TriggerDefinition): string | null {
+    const before = previous?.target;
+    return next.target.kind === "dedicated" && before?.kind === "dedicated" ? (before.thread_id ?? null) : null;
   }
 
-  /** Approves the code and permissions now on disk, after the user reviewed them in a terminal. */
-  approveTrigger(params: { triggerId?: unknown }, caller: Caller) {
-    if (caller.via !== "cli") throw new ServiceError("refused", "only the user can approve this, by running `self-starter approve` in a terminal");
-    const { definition, probeCode } = this.load(params.triggerId);
-    definition.probe.sha256 = fingerprint(definition, probeCode);
-    definition.meta.approved_at = this.now().toISOString();
-    definition.meta.revision += 1;
-    this.deps.store.saveDefinition(definition);
-    this.deps.engine.reload(definition.id);
-    this.deps.log(`re-approved ${definition.id} revision ${definition.meta.revision}`);
-    return this.get({ triggerId: definition.id });
+  /** Creates the dedicated thread right away, so it exists before the first fire. */
+  private prepareThread(def: TriggerDefinition): void {
+    if (def.action.type === "agent" && def.target.kind === "dedicated" && !def.target.thread_id) {
+      this.deps.executor.prepareDedicatedThread(def.id);
+    }
   }
 
   // ---- changes -----------------------------------------------------------
 
-  /** Prepares a change to parameters, policy, action or notifications as a draft that needs approval. */
-  updateTrigger(params: { triggerId?: unknown; changes?: unknown }, caller: Caller): DraftView {
+  /** Changes parameters, policy, action, target or notifications. Takes effect at once; the firing rules start over. */
+  updateTrigger(params: { triggerId?: unknown; changes?: unknown }, caller: Caller) {
     this.guard(caller, "change a trigger");
     const changes = params.changes;
     if (!isRecord(changes) || Object.keys(changes).length === 0) throw new ServiceError("invalid", "changes must be a non-empty mapping");
-    const locked = patchPaths(changes).filter((path) => LOCKED_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}.`)));
+    const existing = this.load(params.triggerId);
+    const recipeId = existing.definition.meta.recipe?.split("@")[0];
+    const lockedPaths = recipeId ? [...LOCKED_PATHS, ...RECIPE_LOCKED_PATHS] : LOCKED_PATHS;
+    const locked = patchPaths(changes).filter((path) => lockedPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}.`)));
     if (locked.length > 0) {
+      const why = recipeId ? `the ${recipeId} recipe fixes the probe's access and permissions, and ` : "";
       throw new ServiceError(
         "invalid",
-        `trigger_update cannot change ${locked.join(", ")}. To change the probe code, its permissions or the mode, submit a new version with trigger_draft (replace=true).`,
+        `trigger_update cannot change ${locked.join(", ")}: ${why}a new probe (code or mode) goes through trigger_draft with replace=true.`,
       );
     }
-    const existing = this.load(params.triggerId);
     const merged = deepMerge(JSON.parse(JSON.stringify(existing.definition)) as Record<string, unknown>, changes);
-    const recipeId = existing.definition.meta.recipe?.split("@")[0];
     if (recipeId) {
       const recipe = this.recipe(recipeId).recipe;
       const probe = isRecord(merged.probe) ? { ...merged.probe } : {};
       delete probe.permissions;
+      delete probe.access;
       const checked = applyRecipe(recipe, { ...merged, mode: recipe.mode, probe });
       if (checked.errors.length > 0) throw new ServiceError("invalid", `these changes do not fit the ${recipe.id} recipe:\n- ${checked.errors.join("\n- ")}`);
     }
     const validated = validateDefinition(merged);
     if (!validated.ok) throw new ServiceError("invalid", `the changed definition has problems:\n- ${validated.errors.join("\n- ")}`);
     const def = validated.definition;
-    if (describeChanges(existing.definition, def, BOOKKEEPING).length === 0) throw new ServiceError("invalid", "these changes do not change anything");
-    def.meta = { ...existing.definition.meta, approved_at: null, revision: existing.definition.meta.revision + 1 };
-    def.probe.sha256 = null;
-    def.target.thread_id = null;
-    this.cleanupDrafts();
-    const draft = this.deps.store.createDraft(def, existing.probeCode, {
-      originThreadId: def.meta.origin_thread_id ?? null,
-      replaces: def.id,
-    });
-    return this.draftView(draft);
+    const changed = describeChanges(existing.definition, def, BOOKKEEPING);
+    if (changed.length === 0) throw new ServiceError("invalid", "these changes do not change anything");
+    def.meta = { ...existing.definition.meta, revision: existing.definition.meta.revision + 1 };
+    def.target.thread_id = this.keptThread(existing.definition, def);
+    this.deps.store.saveDefinition(def);
+    this.deps.engine.reload(def.id);
+    this.prepareThread(def);
+    this.deps.log(`changed ${def.id}, now revision ${def.meta.revision} (${caller.via}): ${changed.join("; ")}`);
+    return { changes: changed, trigger: this.get({ triggerId: def.id }) };
   }
 
   pause(params: { triggerId?: unknown }, caller: Caller) {
@@ -503,11 +495,10 @@ export class TriggerService {
   }
 
   get(params: { triggerId?: unknown }) {
-    const { definition, probeCode, dir } = this.load(params.triggerId);
+    const { definition, dir } = this.load(params.triggerId);
     const runtime = this.deps.engine.runtime(definition.id);
     return {
       ...this.summary(definition.id),
-      approval: approvalProblem(definition, probeCode) ?? "approved",
       definitionYaml: definitionToYaml(definition),
       probePath: join(dir, definition.probe.entry),
       runtime: {
@@ -605,8 +596,6 @@ export class TriggerService {
       "trigger.pause": (p, c) => this.pause(p, c),
       "trigger.resume": (p, c) => this.resume(p, c),
       "trigger.delete": (p, c) => this.delete(p, c),
-      "trigger.approval": (p) => this.approvalView(p),
-      "trigger.approve": (p, c) => this.approveTrigger(p, c),
       "fire.history": (p) => this.history(p),
       "fire.report": (p, c) => this.report(p, c),
     };

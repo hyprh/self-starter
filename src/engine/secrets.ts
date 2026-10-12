@@ -1,9 +1,10 @@
 // Secrets for probes (API keys), kept in a file only the current user can read.
 //
-// Each secret names the hosts it may be sent to. A probe only receives a secret
-// when it declares the secret in permissions.env and every host it can reach is
-// one of the secret's hosts, so a probe cannot send a key anywhere the user did
-// not intend, even during the trial run before approval.
+// A probe receives the secrets it declares in permissions.env as environment
+// variables. A secret can also name the hosts it may be sent to; a sandboxed
+// probe then only receives it when every host it can reach is one of them. A
+// full-access probe runs as the user and could read this file anyway, so host
+// limits do not apply to it.
 
 import { chmodSync, existsSync } from "node:fs";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
@@ -65,19 +66,23 @@ export class Secrets {
     return true;
   }
 
-  /** Releases the declared secrets whose hosts cover every host the probe can reach. */
-  pick(names: string[], probeHosts: string[]): PickResult {
+  /**
+   * Releases the declared secrets. For a sandboxed probe, `probeHosts` lists the
+   * hosts it can reach, and a secret with hosts is only released when they cover
+   * all of them; "any" (a full-access probe) skips that check.
+   */
+  pick(names: string[], probeHosts: string[] | "any"): PickResult {
     const all = this.load();
     const values: Record<string, string> = {};
     const problems: string[] = [];
-    const reachable = [...new Set(probeHosts.map(hostName))];
+    const reachable = probeHosts === "any" ? [] : [...new Set(probeHosts.map(hostName))];
     for (const name of names) {
       const entry = all[name];
       if (!entry) {
-        problems.push(`secret ${name} is not set (ask the user to run: self-starter secret set ${name} --hosts ${reachable.join(",") || "<host>"})`);
+        problems.push(`secret ${name} is not set (ask the user to run in a terminal: self-starter secret set ${name})`);
         continue;
       }
-      const outside = entry.hosts === "*" ? [] : reachable.filter((host) => !(entry.hosts as string[]).includes(host));
+      const outside = entry.hosts === "*" || probeHosts === "any" ? [] : reachable.filter((host) => !(entry.hosts as string[]).includes(host));
       if (outside.length > 0) {
         problems.push(`secret ${name} may only be sent to ${(entry.hosts as string[]).join(", ")}, but the probe can also reach ${outside.join(", ")}`);
         continue;
