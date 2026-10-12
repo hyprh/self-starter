@@ -70,7 +70,7 @@ export function setDefaultChannels(paths: Paths, names: string[]): ChannelName[]
   if (unknown.length > 0 || names.length === 0) throw new Error(`channels must be some of: ${CHANNEL_NAMES.join(", ")}`);
   const config = loadConfig(paths);
   const settings = channelSettings(config);
-  if (names.includes("email") && !settings.email) throw new Error("set up email first: self-starter channel email --to ... --host ...");
+  if (names.includes("email") && !settings.email) throw new Error("set up email first: self-starter channel email you@example.com");
   settings.default = [...new Set(names)] as ChannelName[];
   config.channels = settings;
   saveConfig(paths, config);
@@ -81,10 +81,10 @@ function isLocalHost(host: string): boolean {
   return host === "localhost" || host === "127.0.0.1" || host === "::1";
 }
 
-/** The email for a notification: a subject people can scan, and how to get to the thread. */
+/** The email for a notification: a subject people can scan (and filter on), and how to get to the thread. */
 export function composeEmail(notification: Notification): { subject: string; text: string } {
   const firstLine = notification.body.split("\n")[0] ?? "";
-  const subject = `${notification.title}: ${firstLine}`.slice(0, 160);
+  const subject = `[Self-Starter] ${notification.title}: ${firstLine}`.slice(0, 160);
   const lines = [notification.body, ""];
   if (notification.threadId) {
     lines.push(`Open the thread in Codex: codex://threads/${notification.threadId}`, `Or in a terminal: codex resume ${notification.threadId}`, "");

@@ -18,7 +18,7 @@ Walk the user through these steps; they happen in the IBKR Client Portal and a t
 3. Optional, recommended: create an **Activity Flex Query** with Open Positions, Cash Transactions, Net Asset Value (NAV) in Base, Change in NAV and Trades; format XML; period Last Business Day. Note its Query ID. This adds deposits and withdrawals, position changes and NAV moves, once a day after the close.
 4. On the Flex Queries page, open Flex Web Service Configuration, enable it and generate a token.
 5. In a terminal: `self-starter secret set IBKR_FLEX_TOKEN --hosts ndcdyn.interactivebrokers.com,gdcdyn.interactivebrokers.com` and paste the token when asked. The token must never be pasted into the chat; if the user offers it, tell them to use the command instead.
-6. Optional: `self-starter channel email ...` to also get the results by email (see `self-starter help`).
+6. Optional: `self-starter channel email <their address>` to also get the results by email.
 
 Query IDs are not secret; the user can tell you them in the chat.
 

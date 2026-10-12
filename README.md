@@ -70,14 +70,15 @@ Some things to watch come with a probe already written and tested, so Codex only
 
 ### Email
 
-Notifications go to the desktop by default. To get them by email too:
+Notifications go to the desktop by default. To get them by email too, give your address:
 
 ```sh
-self-starter channel email --to you@example.com --host smtp.example.com --user you@example.com
-self-starter channel test email
+self-starter channel email you@gmail.com
 ```
 
-Then ask Codex to email you about a trigger, or make email a default with `self-starter channel default desktop,email`. The SMTP password is kept in a file only you can read and is never given to probes.
+The mail server is filled in for Gmail, iCloud, Yahoo, Fastmail, QQ, 163, 126 and Aliyun addresses. The command asks for an app password (create one in your mailbox's security settings; QQ and NetEase call it an authorization code), keeps it in a file only you can read, and sends you a test email. Outlook and Hotmail addresses cannot send this way, because Microsoft now requires OAuth; use another address, or your own server with `--host smtp.example.com [--port 587 --starttls]`.
+
+Then ask Codex to email you about a trigger, or make email a default with `self-starter channel default desktop,email`. Probes never see the app password.
 
 ## Command line
 

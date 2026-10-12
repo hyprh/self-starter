@@ -6,8 +6,18 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
-import { ChannelNotifier, channelSettings, removeEmailChannel, saveEmailChannel, setDefaultChannels } from "../engine/channels.js";
+import {
+  ChannelNotifier,
+  channelSettings,
+  composeEmail,
+  removeEmailChannel,
+  saveEmailChannel,
+  sendEmail,
+  setDefaultChannels,
+  type EmailSettings,
+} from "../engine/channels.js";
 import { loadConfig } from "../engine/config.js";
+import { mailProviderFor, unsupportedSender } from "../engine/mail-providers.js";
 import { SystemNotifier } from "../engine/notify.js";
 import { resolvePaths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
@@ -41,8 +51,9 @@ Secrets (API keys for probes)
 
 Notifications
   self-starter channel list                              where notifications go
-  self-starter channel email --to <addr> --host <smtp-host> [--port 465] [--user <login>] [--from <addr>] [--starttls] [--default]
-                                                        send notifications by email too (asks for the SMTP password)
+  self-starter channel email <your address> [--to <addr>] [--default] [--no-test]
+                                                        email from Gmail, iCloud, Yahoo, Fastmail, QQ, 163/126 or Aliyun
+                                                        with an app password; other servers: --host <smtp-host> [--port] [--starttls]
   self-starter channel default desktop[,email]           channels for triggers that do not choose their own
   self-starter channel test [desktop|email]              send a test notification
   self-starter channel rm email
@@ -201,6 +212,54 @@ async function secretCommand(args: Args): Promise<void> {
   }
 }
 
+/**
+ * `self-starter channel email you@gmail.com`: the mailbox sends notifications to
+ * itself (or to --to) through its provider's server, with an app password. Any
+ * other server works with --host, --port and --starttls.
+ */
+async function setUpEmail(address: string | undefined, args: Args): Promise<void> {
+  const flag = (name: string) => {
+    const value = args.flags.get(name);
+    return typeof value === "string" && value !== "" ? value : undefined;
+  };
+  const sender = address ?? flag("user");
+  const host = flag("host");
+  const provider = sender && !host ? mailProviderFor(sender) : undefined;
+  if (!host && !provider) {
+    if (!sender) throw new UsageError("usage: self-starter channel email <your address> [--to <address>]");
+    throw new UsageError(unsupportedSender(sender) ?? `there is no preset for ${sender}; give its SMTP server with --host (and --port, --starttls)`);
+  }
+  const secure = provider ? provider.secure : !args.flags.has("starttls");
+  const settings: EmailSettings = {
+    to: need(flag("to") ?? sender, "--to <address>"),
+    host: provider?.host ?? host!,
+    port: flag("port") ? Number(flag("port")) : (provider?.port ?? (secure ? 465 : 587)),
+    secure,
+    ...(sender ? { user: sender } : {}),
+    ...((flag("from") ?? sender) ? { from: flag("from") ?? sender } : {}),
+  };
+
+  let password: string | undefined;
+  if (settings.user) {
+    if (provider) out(`${provider.name}: ${provider.howToGetPassword}.`);
+    password = process.stdin.isTTY ? await readHidden(`App password for ${settings.user}: `) : await readStdin();
+  }
+  new Store(paths).ensureLayout();
+  saveEmailChannel(paths, settings, password);
+  if (args.flags.has("default")) setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, "email"])]);
+
+  if (args.flags.has("no-test")) return out(`Saved. Notifications can go to ${settings.to}; try it with: self-starter channel test email`);
+  out(`Saved. Sending a test email to ${settings.to}...`);
+  try {
+    await sendEmail(settings, password, composeEmail({ title: "Test email", body: "Email works: triggers that use the email channel will send their results here." }));
+  } catch (error) {
+    const message = (error as Error).message;
+    const hint = /\b535\b|auth|credential|password|login/i.test(message) ? " Check the app password and run this command again." : "";
+    throw new Error(`the test email failed: ${message}.${hint}`);
+  }
+  out(`Sent. Ask Codex to email you about a trigger, or make email a default: self-starter channel default desktop,email`);
+}
+
 async function channelCommand(args: Args): Promise<void> {
   const [, action, name] = args.positional;
   switch (action) {
@@ -208,25 +267,13 @@ async function channelCommand(args: Args): Promise<void> {
     case undefined: {
       const settings = channelSettings(loadConfig(paths));
       out(`desktop  ${process.platform === "darwin" ? "macOS notifications" : "notify-send"}`);
-      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (self-starter channel email --to ... --host ...)");
+      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (self-starter channel email you@example.com)");
       out(`default  ${settings.default.join(", ")}`);
       return;
     }
-    case "email": {
-      const to = need(args.flags.get("to") as string | undefined, "--to <address>");
-      const host = need(args.flags.get("host") as string | undefined, "--host <smtp host>");
-      const secure = !args.flags.has("starttls");
-      const port = args.flags.has("port") ? Number(args.flags.get("port")) : secure ? 465 : 587;
-      const user = args.flags.get("user") as string | undefined;
-      const from = args.flags.get("from") as string | undefined;
-      let password: string | undefined;
-      if (user) password = process.stdin.isTTY ? await readHidden(`SMTP password for ${user}: `) : await readStdin();
-      new Store(paths).ensureLayout();
-      saveEmailChannel(paths, { to, host, port, secure, ...(user ? { user } : {}), ...(from ? { from } : {}) }, password);
-      if (args.flags.has("default")) setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, "email"])]);
-      out(`Email set up: notifications can go to ${to}. Try it: self-starter channel test email`);
+    case "email":
+      await setUpEmail(name, args);
       return;
-    }
     case "default": {
       const names = need(name, "channel names, such as desktop,email").split(",").map((n) => n.trim()).filter(Boolean);
       out(`Default channels: ${setDefaultChannels(paths, names).join(", ")}`);

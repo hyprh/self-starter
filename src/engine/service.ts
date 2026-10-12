@@ -571,7 +571,7 @@ export class TriggerService {
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {
         const settings = channelSettings(loadConfig(this.deps.paths));
-        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: self-starter channel email ...)" };
+        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: self-starter channel email <their address>)" };
       })(),
       budget: this.deps.config.budget,
       ...this.deps.executor.status(),

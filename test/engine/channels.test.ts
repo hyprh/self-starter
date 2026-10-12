@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createServer, type Server, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -12,6 +14,8 @@ import {
 } from "../../src/engine/channels.js";
 import { loadConfig } from "../../src/engine/config.js";
 import { RecordingNotifier, tempHome } from "./fixtures.js";
+
+const CLI = fileURLToPath(new URL("../../src/cli/main.js", import.meta.url));
 
 /** Just enough SMTP to accept a message: EHLO, AUTH PLAIN, MAIL, RCPT, DATA, QUIT. */
 class FakeSmtp {
@@ -88,7 +92,7 @@ describe("notification channels", () => {
 
   it("writes emails people can scan, with the way back to the thread", () => {
     const email = composeEmail({ title: "IBKR account watch", body: "Withdrawal of 5,000 USD (U1234567)\nmore", threadId: "thread-9" });
-    assert.equal(email.subject, "IBKR account watch: Withdrawal of 5,000 USD (U1234567)");
+    assert.equal(email.subject, "[Self-Starter] IBKR account watch: Withdrawal of 5,000 USD (U1234567)");
     assert.match(email.text, /codex:\/\/threads\/thread-9/);
     assert.match(email.text, /codex resume thread-9/);
   });
@@ -111,7 +115,7 @@ describe("notification channels", () => {
     const message = smtp.messages[0]!;
     assert.equal(message.auth, "\u0000me@example.com\u0000app-password");
     assert.match(message.to[0]!, /me@example\.com/);
-    assert.match(message.data, /Subject: IBKR account watch: Withdrawal of 5,000 USD/);
+    assert.match(message.data, /Subject: \[Self-Starter\] IBKR account watch: Withdrawal of 5,000 USD/);
     assert.match(message.data, /codex resume thread-1/);
     assert.equal(desktop.sent.length, 0, "email only");
 
@@ -126,6 +130,36 @@ describe("notification channels", () => {
 
     assert.equal(removeEmailChannel(home.paths), true);
     assert.deepEqual(loadConfig(home.paths).channels?.default, ["desktop"]);
+  });
+
+  it("sets up email from an address and an app password, and sends a test email", async () => {
+    // Asynchronous, so that the fake SMTP server in this process can answer the CLI.
+    const setUp = (...args: string[]) =>
+      new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+        const child = spawn(process.execPath, [CLI, "channel", "email", ...args], {
+          env: { ...process.env, SELF_STARTER_HOME: home.paths.home },
+        });
+        let stdout = "";
+        let stderr = "";
+        child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+        child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
+        child.on("close", (status) => resolve({ status, stdout, stderr }));
+        child.stdin.end("app-password\n");
+      });
+    const before = smtp.messages.length;
+    const done = await setUp("me@example.org", "--host", "127.0.0.1", "--port", String(smtp.port), "--starttls");
+    assert.equal(done.status, 0, done.stderr);
+    assert.match(done.stdout, /Sent\./);
+    const message = smtp.messages[before]!;
+    assert.equal(message.auth, "\u0000me@example.org\u0000app-password");
+    assert.match(message.to[0]!, /me@example\.org/, "it sends to the same mailbox unless --to says otherwise");
+    assert.match(message.data, /Subject: \[Self-Starter\] Test email: Email works/);
+
+    const outlook = await setUp("me@outlook.com");
+    assert.notEqual(outlook.status, 0);
+    assert.match(outlook.stderr, /requires OAuth/);
+    const unknown = await setUp("me@example.org");
+    assert.match(unknown.stderr, /no preset for me@example\.org; give its SMTP server with --host/);
   });
 
   it("logs a failed delivery instead of throwing", async () => {
