@@ -2,7 +2,7 @@
 
 CI covers everything up to the Codex app, on Linux and macOS: the install with launchd or systemd, the plugin registered with the real Codex CLI, probes, fires delivered with `codex queue`, threads woken through the app server (also after Codex was closed in the middle of a turn), receipts, and email. What only your machine can show is how the Codex desktop app itself behaves. That is four checks, about ten minutes, and `self-starter history` tells you the result of most of them.
 
-Before you start: install as the [README](../README.md#install) says, run `brew install terminal-notifier`, and restart the Codex app.
+Before you start: install as the [guide](guide.md#install) says, run `brew install terminal-notifier`, and restart the Codex app.
 
 ## 1. The app loads the plugin (H1)
 

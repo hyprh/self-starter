@@ -483,3 +483,10 @@ Validated without the app (section 7.3): plugin installation, MCP tools and `_me
 - **Cursor Automations**: schedule and event triggers.
 - **Hookdeck mcp-events-bridge and AgentMonitors**: plugins that wake a coding agent on external events.
 - **The MCP Triggers & Events working group**: standardizing how servers push events.
+
+## 14. Repository and development
+
+- `src/`: `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`, `service` (launchd and systemd)
+- `plugin/`: the Codex plugin (manifest and skills); `recipes/`: ready-made probes; `site/`: the landing page
+- `test/`: unit and integration tests (`npm test`: real Deno probes, the daemon, the MCP protocol), and end-to-end checks in `test/e2e/`: `install.ts` (a real install with the Codex CLI and launchd or systemd, a trigger, a crash, a reinstall, an uninstall), `agent.ts` (fires through the real Codex CLI with a stand-in model: an open thread, then a thread closed in the middle of a turn, and a thread of the trigger's own) and `email.ts` (real email through a throwaway Ethereal mailbox, read back over IMAP)
+- `.github/workflows/`: `ci.yml` runs the tests on Linux (Node 20, 22, 24) and macOS and the install and agent checks on both; `email.yml` runs the email check when the email code changes, or on demand; `pages.yml` publishes `site/` to GitHub Pages (Settings > Pages > Source: GitHub Actions)
