@@ -33,7 +33,7 @@ Status: working MVP, verified end to end with the Codex CLI and app server on Li
 Requirements: macOS or Linux, Node.js 20 or newer, and the Codex CLI (`npm install -g @openai/codex`) or the Codex app. Deno is installed for you.
 
 ```sh
-git clone https://github.com/hyprh/SelfReflection.git self-starter
+git clone https://github.com/hyprh/self-starter.git
 cd self-starter
 npm install            # also builds
 npm link               # puts `self-starter` on your PATH (or use: node dist/src/cli/main.js)
