@@ -6,13 +6,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
-import { loadConfig } from "../engine/config.js";
+import { loadConfig, saveConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
 import type { DraftView, FireView, TriggerSummary } from "../engine/service.js";
 import { runMcpServer } from "../mcp/server.js";
 import { VERSION } from "../runtime.js";
-import { ensureDaemon, serviceManager, serviceSpec } from "../service/manager.js";
-import { doctor, install, stopRunningDaemon, uninstall } from "./install.js";
+import { ensureDaemon, installService, serviceManager, stopRunningDaemon } from "../service/manager.js";
+import { doctor, install, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
 
@@ -103,14 +103,14 @@ async function serviceCommand(action: string | undefined): Promise<void> {
   switch (action) {
     case "install": {
       if (manager.kind === "none") throw new Error("no launchd or systemd user session here; run `self-starter daemon` some other way");
-      await stopRunningDaemon(paths);
-      manager.install(serviceSpec(paths, loadConfig(paths).codexBin));
+      await installService(paths, manager);
       out((await waitForDaemon(paths.socket, 10_000)) ? `Installed and started (${manager.file}).` : `Installed (${manager.file}), but the daemon did not answer yet; see self-starter logs.`);
       return;
     }
     case "uninstall":
       manager.uninstall();
-      out("Removed the background service.");
+      saveConfig(paths, { ...loadConfig(paths), service: false });
+      out("Removed the background service. Codex starts the daemon when it needs it; `self-starter service install` brings the service back.");
       return;
     case "start":
       await ensureDaemon(paths);

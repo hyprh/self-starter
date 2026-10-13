@@ -1,13 +1,31 @@
 {
   "name": "self-starter",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "license": "MIT",
   "private": true,
-  "description": "Let Codex act when conditions are met: agent-written probes, a background engine, and a Codex plugin.",
+  "description": "Give Codex eyes: small probes watch what you care about, and Codex comes back to your conversation when something changes.",
+  "homepage": "https://hyprh.github.io/self-starter/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyprh/self-starter.git"
+  },
+  "keywords": [
+    "codex",
+    "codex-plugin",
+    "mcp",
+    "agent",
+    "triggers",
+    "automation"
+  ],
   "type": "module",
   "bin": {
     "self-starter": "dist/src/cli/main.js"
   },
+  "files": [
+    "dist/src",
+    "plugin",
+    "recipes"
+  ],
   "engines": {
     "node": ">=20"
   },

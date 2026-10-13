@@ -7,8 +7,10 @@
 // leaves the conversation paused as Stop does; the second run finishes, and
 // Self-Starter wakes both threads to handle their fires. Each fire must end
 // with Codex calling trigger_report from the right thread.
-// It uses its own Self-Starter and Codex folders and no background service:
-// npm run build && node dist/test/e2e/agent.js
+// The plugin is installed the way the README says, with this checkout as the
+// marketplace, and its first start installs the runtime from a tarball of this
+// checkout. It uses its own Self-Starter and Codex folders and no background
+// service: npm run build && node dist/test/e2e/agent.js
 
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
@@ -16,12 +18,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { callDaemon } from "../../src/client/client.js";
-import { findCodex } from "../../src/cli/install.js";
+import { findCodex, loadConfig, saveConfig } from "../../src/engine/config.js";
 import { AppServerSession, type RpcMessage } from "../../src/engine/app-server.js";
 import { CodexCli, codexCommand } from "../../src/engine/codex.js";
 import type { FireView } from "../../src/engine/service.js";
 import { resolvePaths } from "../../src/engine/paths.js";
-import { cli, createTrigger, show, waitFor } from "./harness.js";
+import { callPluginTool, cli, createTrigger, installFromMarketplace, packRuntime, show, waitFor } from "./harness.js";
 
 type Json = Record<string, any>;
 
@@ -151,7 +153,12 @@ async function main(): Promise<void> {
   );
   let codex: AppServerSession | undefined;
   try {
-    show("self-starter install --no-service", await selfStarter(["install", "--no-service"]));
+    // No background service on the machine that runs the test: the daemon runs as a detached process.
+    saveConfig(paths, { ...loadConfig(paths), service: false });
+    process.env.SELF_STARTER_RUNTIME = packRuntime(scratch);
+    show("codex plugin marketplace add, codex plugin add", installFromMarketplace(process.env));
+    const status = JSON.parse(await callPluginTool(process.env, "service_status")) as { version: string; deno: string };
+    console.log(`✓ the plugin's first start installed its runtime and started Self-Starter ${status.version} (deno: ${status.deno})`);
 
     // The user talks to Codex, and asks for the two triggers.
     codex = await openCodex();
@@ -212,6 +219,7 @@ try {
   console.error(`\nself-starter logs:\n${await selfStarter(["logs", "-n", "60"]).catch((e: Error) => e.message)}`);
   process.exitCode = 1;
 } finally {
-  await selfStarter(["uninstall", "--purge"]).catch(() => undefined);
+  // The plugin and everything else live in the scratch folders; only the daemon runs outside them.
+  await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
   rmSync(scratch, { recursive: true, force: true });
 }

@@ -6,10 +6,10 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { which } from "../engine/config.js";
+import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
 import type { Paths } from "../engine/paths.js";
-import { CLI_SCRIPT } from "../runtime.js";
-import { isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { CLI_SCRIPT, VERSION } from "../runtime.js";
 
 export const LAUNCHD_LABEL = "dev.self-starter.daemon";
 export const SYSTEMD_UNIT = "self-starter.service";
@@ -34,8 +34,19 @@ export interface ServiceManager {
 }
 
 function run(cmd: string, args: string[]): { ok: boolean; output: string } {
-  const out = spawnSync(cmd, args, { encoding: "utf8" });
+  const out = spawnSync(cmd, args, { encoding: "utf8", env: commandEnv() });
   return { ok: out.status === 0, output: `${out.stdout ?? ""}${out.stderr ?? ""}`.trim() };
+}
+
+/**
+ * `systemctl --user` finds the user's systemd through XDG_RUNTIME_DIR, which
+ * Codex does not pass to the MCP servers it starts; it is /run/user/<uid> on
+ * systemd systems.
+ */
+function commandEnv(): NodeJS.ProcessEnv {
+  if (process.platform !== "linux" || process.env.XDG_RUNTIME_DIR) return process.env;
+  const runtimeDir = `/run/user/${userInfo().uid}`;
+  return existsSync(runtimeDir) ? { ...process.env, XDG_RUNTIME_DIR: runtimeDir } : process.env;
 }
 
 function xml(text: string): string {
@@ -230,12 +241,90 @@ export function spawnDetachedDaemon(paths: Paths): void {
   child.unref();
 }
 
-/** Makes sure a daemon is listening: through the service manager when installed, otherwise as a detached process. */
+/** Asks a running daemon to stop, and waits until it no longer answers. */
+export async function stopRunningDaemon(paths: Paths): Promise<void> {
+  if (!(await isDaemonRunning(paths.socket))) return;
+  await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline && (await isDaemonRunning(paths.socket))) await new Promise((r) => setTimeout(r, 200));
+}
+
+/** The version of the daemon listening on the socket, or undefined when none answers. */
+export async function daemonVersion(socket: string): Promise<string | undefined> {
+  try {
+    return (await callDaemon<{ version: string }>(socket, "ping", {}, { via: "cli" }, 3000)).version;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Compares versions such as 0.0.1 and 0.1.0, ignoring a pre-release suffix: negative, zero or positive. */
+export function compareVersions(a: string, b: string): number {
+  const parts = (version: string) => version.split("-")[0]!.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const difference = (x[i] ?? 0) - (y[i] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  return 0;
+}
+
+const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
+/**
+ * Writes <home>/bin/self-starter, which runs this installation's CLI. Users who
+ * installed only the Codex plugin have no `self-starter` on their PATH, and use
+ * this one for what they do in a terminal (secrets, the email password).
+ */
+export function writeCommand(paths: Paths): string {
+  const file = join(paths.home, "bin", "self-starter");
+  const lines = ["#!/bin/sh", "# Runs the Self-Starter installation that the background service runs."];
+  if (process.env.SELF_STARTER_HOME) lines.push(`export SELF_STARTER_HOME=${shellQuote(paths.home)}`);
+  lines.push(`exec ${shellQuote(process.execPath)} ${shellQuote(CLI_SCRIPT)} "$@"`, "");
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(file, lines.join("\n"), { mode: 0o755 });
+  return file;
+}
+
+/**
+ * Makes the background service run this installation from now on and starts it,
+ * stopping whatever daemon still runs. Also records the codex CLI for the daemon,
+ * and writes the self-starter command.
+ */
+export async function installService(paths: Paths, manager = serviceManager()): Promise<void> {
+  const config = loadConfig(paths);
+  config.codexBin ??= findCodex();
+  config.service = true;
+  saveConfig(paths, config);
+  await stopRunningDaemon(paths);
+  writeCommand(paths);
+  manager.install(serviceSpec(paths, config.codexBin));
+}
+
+/**
+ * Makes sure a daemon of this version or a newer one is listening. When none
+ * answers, or an older one does, the background service is set up to run this
+ * installation: the first time the Codex plugin starts Self-Starter on a
+ * machine, and after an upgrade. Without a service manager, or when the user
+ * chose to run without the service, the daemon runs as a detached process.
+ */
 export async function ensureDaemon(paths: Paths): Promise<"running" | "started"> {
-  if (await isDaemonRunning(paths.socket)) return "running";
+  const running = await daemonVersion(paths.socket);
+  if (running !== undefined && compareVersions(running, VERSION) >= 0) return "running";
   const manager = serviceManager();
-  if (manager.installed() && manager.start() && (await waitForDaemon(paths.socket, 8000))) return "started";
+  let serviceError = "";
+  if (manager.kind !== "none" && loadConfig(paths).service !== false) {
+    try {
+      await installService(paths, manager);
+      if (await waitForDaemon(paths.socket, 10_000)) return "started";
+      serviceError = `the ${manager.kind} service did not start; `;
+    } catch (error) {
+      serviceError = `${(error as Error).message}; `;
+    }
+  }
+  await stopRunningDaemon(paths);
+  writeCommand(paths);
   spawnDetachedDaemon(paths);
   if (await waitForDaemon(paths.socket, 10_000)) return "started";
-  throw new Error(`could not start the self-starter daemon; see ${join(paths.logs, "service.log")} or run \`self-starter doctor\``);
+  throw new Error(`${serviceError}could not start the self-starter daemon; see ${join(paths.logs, "service.log")} or run \`self-starter doctor\``);
 }

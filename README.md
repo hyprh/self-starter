@@ -14,8 +14,14 @@ and when something changes, Codex comes back to your conversation with what it f
 
 <p align="center">
   <a href="https://github.com/hyprh/self-starter/actions/workflows/ci.yml"><img src="https://github.com/hyprh/self-starter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/hyprh/self-starter/releases"><img src="https://img.shields.io/github/v/release/hyprh/self-starter" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
+
+```sh
+codex plugin marketplace add hyprh/self-starter
+codex plugin add self-starter@self-starter
+```
 
 <p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
 
@@ -49,22 +55,17 @@ Anything a few lines of code can check: a file, a command, a local service, a we
 
 ## Install
 
-macOS or Linux, Node.js 20+, and the Codex CLI (`npm install -g @openai/codex`) or the Codex app.
+You need macOS or Linux, [Node.js](https://nodejs.org) 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Then the two commands above, and restart the Codex app.
 
-```sh
-git clone https://github.com/hyprh/self-starter.git && cd self-starter
-npm install && npm link
-self-starter install   # the Codex plugin, and a background service (launchd or systemd)
-self-starter doctor    # checks everything
-```
+The first time Codex starts the plugin, it downloads the rest of Self-Starter (about 50 MB, with [Deno](https://deno.com) for the probes) and sets up a small background service (launchd or systemd), so triggers keep running when Codex is closed. Secrets and email are set up in a terminal with `~/.self-starter/bin/self-starter`; see the [guide](docs/guide.md).
 
-Restart the Codex app so it loads the plugin. Email, secrets and the command line are in the [guide](docs/guide.md).
+Or from a clone of this repository: `npm install && npm link && self-starter install`.
 
 ## Try it in two minutes
 
 1. In a Codex conversation: "Tell me when /tmp/self-starter-demo/done appears, and what it says. Check every 10 seconds."
 2. Close the Codex app if you like, then: `mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done`
-3. Codex answers in that conversation and you get a notification. `self-starter history` shows where it answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
+3. Codex answers in that conversation and you get a notification. `~/.self-starter/bin/self-starter history` shows where it answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
 
 ## How it works
 

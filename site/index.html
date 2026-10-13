@@ -167,12 +167,11 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
       </ul>
       <div class="start">
         <div class="cmd">
-          <pre id="install"><code>git clone https://github.com/hyprh/self-starter.git
-cd self-starter &amp;&amp; npm install &amp;&amp; npm link
-self-starter install</code></pre>
+          <pre id="install"><code>codex plugin marketplace add hyprh/self-starter
+codex plugin add self-starter@self-starter</code></pre>
           <button type="button" id="copy" aria-label="Copy the install commands">Copy</button>
         </div>
-        <p class="fine">macOS or Linux, Node.js 20 or newer, and the Codex CLI or app.</p>
+        <p class="fine">macOS or Linux, Node.js 20 or newer, and the Codex app or CLI. Restart the Codex app; the first start sets up the rest.</p>
       </div>
     </div>
 
@@ -215,7 +214,7 @@ self-starter install</code></pre>
   <section aria-labelledby="runs">
     <div class="wrap">
       <h2 id="runs">Six real runs</h2>
-      <p class="sub">Recorded on October 12 and 13, 2026 with Self-Starter 0.1.0. Each line is what the probe reported, unedited; times are UTC.</p>
+      <p class="sub">Recorded on October 12 and 13, 2026, before the first release. Each line is what the probe reported, unedited; times are UTC.</p>
       <div class="runs">
         <article class="run">
           <header><h3>A training run finishes</h3><span class="tag">local file</span></header>

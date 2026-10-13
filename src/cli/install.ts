@@ -5,68 +5,21 @@
 // it does not depend on the PATH that the Codex app gives its MCP servers.
 
 import { spawnSync } from "node:child_process";
-import { accessSync, constants, cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { cpSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { codexCommand } from "../engine/codex.js";
-import { bundledDeno, loadConfig, resolveCodex, resolveDeno, saveConfig, which } from "../engine/config.js";
+import { bundledDeno, findCodex, isExecutable, loadConfig, resolveCodex, resolveDeno, saveConfig, which } from "../engine/config.js";
 import { ensurePrivateDir, writeJsonAtomic } from "../engine/fs-util.js";
 import type { Paths } from "../engine/paths.js";
 import { Store } from "../engine/store.js";
 import { CLI_SCRIPT, PLUGIN_SOURCE, VERSION } from "../runtime.js";
-import { serviceManager, serviceSpec, spawnDetachedDaemon } from "../service/manager.js";
+import { installService, serviceManager, spawnDetachedDaemon, stopRunningDaemon } from "../service/manager.js";
 
 export const MARKETPLACE_NAME = "self-starter";
 export const PLUGIN_NAME = "self-starter";
 export const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 export const MCP_SERVER_NAME = "self_starter";
-
-function isExecutable(path: string): boolean {
-  try {
-    accessSync(path, constants.X_OK);
-    return statSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** A codex binary inside a macOS app bundle (the Codex app, or the ChatGPT app that ships Codex). */
-function findInAppBundles(): string | undefined {
-  if (process.platform !== "darwin") return undefined;
-  const bundles = ["/Applications/Codex.app", join(homedir(), "Applications/Codex.app"), "/Applications/ChatGPT.app", join(homedir(), "Applications/ChatGPT.app")];
-  const search = (dir: string, depth: number): string | undefined => {
-    if (depth < 0 || !existsSync(dir)) return undefined;
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return undefined;
-    }
-    for (const entry of entries) {
-      const path = join(dir, entry.name);
-      if (entry.isFile() && entry.name === "codex" && isExecutable(path)) return path;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const found = search(join(dir, entry.name), depth - 1);
-        if (found) return found;
-      }
-    }
-    return undefined;
-  };
-  for (const bundle of bundles) {
-    const found = search(join(bundle, "Contents"), 4);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-export function findCodex(): string | undefined {
-  const fromEnv = process.env.CODEX_BIN;
-  if (fromEnv && isExecutable(fromEnv)) return fromEnv;
-  return which("codex") ?? findInAppBundles();
-}
 
 /** Runs codex the way the daemon does, so that what doctor sees is what the daemon gets. */
 function runCodex(codexBin: string, args: string[]): { ok: boolean; output: string } {
@@ -112,14 +65,6 @@ export function buildMarketplace(paths: Paths): string {
   return pluginDir;
 }
 
-/** Asks a running daemon to stop, and waits until it no longer answers. */
-export async function stopRunningDaemon(paths: Paths): Promise<void> {
-  if (!(await isDaemonRunning(paths.socket))) return;
-  await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline && (await isDaemonRunning(paths.socket))) await new Promise((r) => setTimeout(r, 200));
-}
-
 export interface InstallOptions {
   codex?: string;
   service: boolean;
@@ -156,13 +101,14 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   if (!plugin.ok) throw new Error(`codex plugin add failed: ${plugin.output}`);
   log(`Codex plugin installed: ${PLUGIN_ID}`);
 
-  await stopRunningDaemon(paths);
   const manager = serviceManager();
   if (options.service && manager.kind !== "none") {
-    manager.install(serviceSpec(paths, codexBin));
+    await installService(paths, manager);
     if (!(await waitForDaemon(paths.socket, 10_000))) throw new Error(`the service did not start; see ${join(paths.logs, "service.log")}`);
     log(`background service: ${manager.kind} (${manager.file})`);
   } else {
+    if (!options.service) saveConfig(paths, { ...loadConfig(paths), service: false });
+    await stopRunningDaemon(paths);
     spawnDetachedDaemon(paths);
     if (!(await waitForDaemon(paths.socket, 10_000))) throw new Error(`the daemon did not start; see ${join(paths.logs, "service.log")}`);
     log(

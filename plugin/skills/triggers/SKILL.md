@@ -186,3 +186,4 @@ That message is a trigger fire, not something the user typed.
 - Change the probe code or the mode: `trigger_draft` with the same id and `replace: true`, then `trigger_activate`.
 - `trigger_pause`, `trigger_resume`, `trigger_delete` do what they say.
 - If a tool reports that the background service is unavailable, suggest running `self-starter doctor` in a terminal.
+- Commands for the user's terminal (`self-starter secret set`, `self-starter channel email`, `self-starter doctor`) need the `self-starter` command. If the user installed only the Codex plugin, it is not on their PATH: check with `command -v self-starter`, and if it is missing, give them the command as `~/.self-starter/bin/self-starter ...`, which the plugin sets up.

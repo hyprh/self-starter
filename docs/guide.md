@@ -4,18 +4,25 @@ Everything beyond the [README](../README.md): how to use triggers day to day, wh
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and the Codex CLI (`npm install -g @openai/codex`) or the Codex app. Deno is installed for you.
+Requirements: macOS or Linux, Node.js 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Deno is installed for you.
 
 ```sh
-git clone https://github.com/hyprh/self-starter.git
-cd self-starter
+codex plugin marketplace add hyprh/self-starter
+codex plugin add self-starter@self-starter
+```
+
+Then restart the Codex app. This repository is a Codex plugin marketplace with one plugin. The first time Codex starts it, the plugin installs the runtime of its version (the background service, the MCP server and Deno) into `~/.self-starter/runtime/<version>`, which takes about a minute, sets up the background service (a launchd agent on macOS, a systemd user unit on Linux) and writes `~/.self-starter/bin/self-starter`, the command for what you do in a terminal. Later starts need no network. To update, run `codex plugin marketplace upgrade self-starter` and `codex plugin add self-starter@self-starter` again; the next start of the new version installs its runtime and replaces the older background service.
+
+From a clone of this repository, for development:
+
+```sh
 npm install            # also builds
 npm link               # puts `self-starter` on your PATH (or use: node dist/src/cli/main.js)
 self-starter install   # installs the Codex plugin and the background service
 self-starter doctor    # checks everything
 ```
 
-`self-starter install` registers a local plugin marketplace with Codex, installs the Self-Starter plugin, and starts the background service (a launchd agent on macOS, a systemd user unit on Linux). Restart the Codex app afterwards so it loads the plugin. If `codex` is not on your PATH, pass `--codex /path/to/codex`. Run `self-starter install` again after updating Self-Starter; your triggers are kept.
+`self-starter install` registers a local plugin marketplace with Codex whose plugin runs this checkout, installs the plugin, and starts the background service. If `codex` is not on your PATH, pass `--codex /path/to/codex`. Run it again after pulling changes; your triggers are kept. `--no-service` runs the daemon without the service, and the plugin then leaves it that way.
 
 For notifications that open the right conversation when clicked on macOS, install `terminal-notifier` (`brew install terminal-notifier`). On Linux, notifications use `notify-send`.
 
@@ -66,6 +73,8 @@ Some things to watch come with a probe already written and tested, so Codex only
 - **Futu news watch** (`futu-news`): new research reports (analyst ratings and price targets), company announcements or news about the stocks you follow, from Futu's news search, with no account needed. It pairs with [Futu's own skills for Codex](https://www.futunn.com/skillhub): with them installed, Codex handles each fire with Futu's stock digest and community sentiment. Ask Codex, for example, "tell me when analysts change their view on Tencent or NVIDIA, and what the community thinks".
 
 ## Command line
+
+If you installed only the plugin, the command is `~/.self-starter/bin/self-starter`.
 
 ```
 self-starter list                   all triggers and their state

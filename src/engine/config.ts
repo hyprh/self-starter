@@ -1,7 +1,8 @@
 // Settings in ~/.self-starter/config.json, and how binaries are located.
 
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import type { Channel } from "../core/definition.js";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
@@ -22,6 +23,12 @@ export interface Config {
   channels?: { default?: Channel[]; email?: EmailSettings };
   /** Absolute path of the codex CLI. Recorded by `self-starter install`; found on PATH otherwise. */
   codexBin?: string;
+  /**
+   * Whether the daemon runs as a launchd or systemd service. Unset until the user
+   * decides: the Codex plugin then sets one up on first use; false after
+   * `self-starter install --no-service` or `self-starter service uninstall`.
+   */
+  service?: boolean;
   /** Absolute path of deno. Defaults to the binary shipped with the deno npm package. */
   denoBin?: string;
   budget: {
@@ -64,10 +71,10 @@ export function saveConfig(paths: Paths, config: Config): void {
   writeJsonAtomic(paths.config, config);
 }
 
-function isExecutable(path: string): boolean {
+export function isExecutable(path: string): boolean {
   try {
     accessSync(path, constants.X_OK);
-    return true;
+    return statSync(path).isFile();
   } catch {
     return false;
   }
@@ -99,6 +106,44 @@ export function resolveDeno(config: Config): string | undefined {
   return config.denoBin ?? bundledDeno() ?? which("deno");
 }
 
+/** A codex binary inside a macOS app bundle (the Codex app, or the ChatGPT app that ships Codex). */
+function findInAppBundles(): string | undefined {
+  if (process.platform !== "darwin") return undefined;
+  const bundles = ["/Applications/Codex.app", join(homedir(), "Applications/Codex.app"), "/Applications/ChatGPT.app", join(homedir(), "Applications/ChatGPT.app")];
+  const search = (dir: string, depth: number): string | undefined => {
+    if (depth < 0 || !existsSync(dir)) return undefined;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return undefined;
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name);
+      if (entry.isFile() && entry.name === "codex" && isExecutable(path)) return path;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const found = search(join(dir, entry.name), depth - 1);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  for (const bundle of bundles) {
+    const found = search(join(bundle, "Contents"), 4);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** The codex CLI: $CODEX_BIN, then PATH, then the macOS app bundles. */
+export function findCodex(): string | undefined {
+  const fromEnv = process.env.CODEX_BIN;
+  if (fromEnv && isExecutable(fromEnv)) return fromEnv;
+  return which("codex") ?? findInAppBundles();
+}
+
 export function resolveCodex(config: Config): string | undefined {
-  return config.codexBin ?? which("codex");
+  return config.codexBin ?? findCodex();
 }

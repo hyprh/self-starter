@@ -1,0 +1,11 @@
+{
+  "name": "self-starter",
+  "interface": { "displayName": "Self-Starter" },
+  "plugins": [
+    {
+      "name": "self-starter",
+      "source": { "source": "local", "path": "./plugin" },
+      "category": "Productivity"
+    }
+  ]
+}
