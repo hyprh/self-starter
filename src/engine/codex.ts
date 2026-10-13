@@ -98,7 +98,7 @@ export function parseExecJsonl(stdout: string): ExecResult {
   return result;
 }
 
-type TurnLike = { status?: string; items?: unknown; error?: { message?: string } } | undefined;
+type TurnLike = { id?: string; status?: string; completedAt?: number | null; items?: unknown; error?: { message?: string } } | undefined;
 
 /** The outcome of an app-server turn: whether it completed, and its last agent message. */
 function turnResult(turn: TurnLike): ExecResult {
@@ -114,6 +114,14 @@ function turnResult(turn: TurnLike): ExecResult {
 function startedBy(turn: TurnLike, marker: string): boolean {
   const items: Array<{ type?: string }> = Array.isArray(turn?.items) ? turn.items : [];
   return items.some((item) => item.type === "userMessage" && JSON.stringify(item).includes(marker));
+}
+
+/**
+ * Whether a listed turn is still running. A turn running in another process is
+ * listed as interrupted, but without an end time, unlike one that was stopped.
+ */
+function stillRunning(turn: TurnLike): boolean {
+  return turn?.status === "inProgress" || (turn?.status === "interrupted" && turn.completedAt === null);
 }
 
 const turnEvent = (method: "turn/started" | "turn/completed", threadId: string) => (message: RpcMessage) =>
@@ -242,7 +250,7 @@ export class CodexCli implements CodexRunner {
     try {
       const page = await session.request("thread/turns/list", { threadId, limit: 5, itemsView: "full" });
       const turns: TurnLike[] = Array.isArray(page.data) ? page.data : [];
-      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: turns[0]?.status === "inProgress" };
+      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: stillRunning(turns[0]) };
     } finally {
       session.close();
     }
@@ -267,8 +275,12 @@ export class CodexCli implements CodexRunner {
       await session.request("thread/resume", { threadId, sandbox: options.sandbox, excludeTurns: true });
       const startTimeoutMs = options.startTimeoutMs ?? 60_000;
       let ran = 0;
-      while (await started.next(ran === 0 ? startTimeoutMs : NEXT_TURN_MS)) {
-        if (!(await completed.next(options.timeoutMs))) throw timedOut(options.timeoutMs, "the turn to finish");
+      for (let start = await started.next(startTimeoutMs); start; start = await started.next(NEXT_TURN_MS)) {
+        if (!(await completed.next(options.timeoutMs))) {
+          // Stopped, rather than cut off when the server closes, it is recorded as over and does not look busy later.
+          await session.request("turn/interrupt", { threadId, turnId: start.params?.turn?.id }).catch(() => undefined);
+          throw timedOut(options.timeoutMs, "the turn to finish");
+        }
         ran += 1;
       }
       if (ran === 0) throw timedOut(startTimeoutMs, "the queued message to start");

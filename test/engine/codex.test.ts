@@ -36,6 +36,7 @@ if (args[0] === "queue") {
   // Like the real server, a completed turn carries only its agent messages ("summary" view).
   const completed = (threadId, turn) => send({ method: "turn/completed", params: { threadId, turn: { ...turn, items: turn.items.filter((item) => item.type === "agentMessage") } } });
   const answers = new Map(); // id of a request sent to the client -> what happens once it answers
+  const hanging = new Map(); // turn id -> how it ends when interrupted
   createInterface({ input: process.stdin }).on("line", (line) => {
     const message = JSON.parse(line);
     if (message.method === undefined) {
@@ -53,6 +54,10 @@ if (args[0] === "queue") {
       started(params.threadId, turn);
       return completed(params.threadId, turn);
     }
+    if (method === "turn/interrupt") {
+      send({ id, result: {} });
+      return hanging.get(params.turnId)?.();
+    }
     if (method === "thread/turns/list") {
       const turns = [...(load()[params.threadId]?.turns ?? [])].reverse();
       return send({ id, result: { data: turns.slice(0, params.limit ?? turns.length) } });
@@ -69,6 +74,7 @@ if (args[0] === "queue") {
         thread.turns.push(turn);
         save({ ...threads, [params.threadId]: thread }); // before the turn is announced, like a rollout on disk
         started(params.threadId, turn);
+        if (next.includes("HANG")) return hanging.set(turn.id, () => completed(params.threadId, { ...turn, status: "interrupted" }));
         // Mid-turn, it asks to run a command outside the sandbox; the turn ends once the client answers.
         const request = "approval-" + thread.turns.length;
         answers.set(request, () => {
@@ -123,7 +129,7 @@ describe("codex CLI wrapper", () => {
   });
 
   describe("through the app server", () => {
-    const threads = (state: Record<string, { turns: Array<{ status: string; items?: unknown[] }>; queued?: string[] }>) =>
+    const threads = (state: Record<string, { turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>; queued?: string[] }>) =>
       writeFileSync(process.env.FAKE_THREADS!, JSON.stringify(state));
     const appServerCalls = (method: string) =>
       calls().filter((call) => call.args[0] === "app-server" && call.args[1] === method) as Array<{ args: string[]; cwd: string; params: Record<string, unknown> }>;
@@ -141,12 +147,15 @@ describe("codex CLI wrapper", () => {
 
     it("looks at a thread without loading it", async () => {
       threads({
-        idle: { turns: [{ status: "completed", items: [{ type: "userMessage", text: "[self-starter] CI failed (ci · fire #1 · fire_abc)" }] }] },
-        busy: { turns: [{ status: "completed" }, { status: "inProgress" }] },
+        idle: { turns: [{ status: "completed", completedAt: 1, items: [{ type: "userMessage", text: "[self-starter] CI failed (ci · fire #1 · fire_abc)" }] }] },
+        // Seen from another process, a turn still running is listed as interrupted, without an end time.
+        busy: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: null }] },
+        stopped: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: 2 }] },
       });
       assert.deepEqual(await codex.inspectThread("idle", "fire_abc"), { mentions: true, busy: false });
       assert.deepEqual(await codex.inspectThread("idle", "fire_zzz"), { mentions: false, busy: false });
       assert.deepEqual(await codex.inspectThread("busy", "fire_abc"), { mentions: false, busy: true });
+      assert.deepEqual(await codex.inspectThread("stopped", "fire_abc"), { mentions: false, busy: false });
       assert.equal(appServerCalls("thread/resume").length, 0, "inspecting never resumes");
     });
 
@@ -167,6 +176,15 @@ describe("codex CLI wrapper", () => {
       const nothing = await codex.wakeThread({ threadId: "closed", marker: "fire_q2", sandbox: "workspace-write", timeoutMs: 10_000, startTimeoutMs: 300 });
       assert.equal(nothing.ok, false);
       assert.match(nothing.error ?? "", /waiting for the queued message to start/);
+    });
+
+    it("stops a woken turn that runs too long", async () => {
+      threads({ stuck: { turns: [], queued: ["[self-starter] HANG (build · fire #1 · fire_h1)"] } });
+      const result = await codex.wakeThread({ threadId: "stuck", marker: "fire_h1", sandbox: "workspace-write", timeoutMs: 300 });
+      assert.equal(result.ok, false);
+      assert.match(result.error ?? "", /waiting for the turn to finish/);
+      const turnId = JSON.parse(readFileSync(process.env.FAKE_THREADS!, "utf8")).stuck.turns[0].id;
+      assert.deepEqual(appServerCalls("turn/interrupt").at(-1)!.params, { threadId: "stuck", turnId }, "recorded as over, so it does not look busy later");
     });
   });
 
