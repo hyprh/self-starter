@@ -1,6 +1,7 @@
 {
   "name": "self-starter",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "Let Codex act when conditions are met: agent-written probes, a background engine, and a Codex plugin.",
   "type": "module",

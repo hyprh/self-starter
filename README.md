@@ -123,3 +123,7 @@ npm test               # builds, then runs unit and integration tests (real Deno
 - [site/](site): the landing page, published to GitHub Pages by `.github/workflows/pages.yml` (Settings > Pages > Source: GitHub Actions)
 - [src/](src): `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`
 - [spike/](spike/README.md): scripts that check the remaining assumptions in the Codex app
+
+## License
+
+[MIT](LICENSE)
