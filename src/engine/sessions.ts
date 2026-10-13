@@ -1,17 +1,17 @@
 // Claude Code sessions, as the Claude Code plugin sees them.
 //
-// The plugin's SessionStart and SessionEnd hooks (cc-plugin/bin/session-hook.mjs)
-// record which session each running Claude Code process shows, with its inbox
-// socket (inboxes/<key>.json), and where each session works (sessions/<id>.json).
+// The plugin's hooks (cc-plugin/bin/session-hook.mjs) record which session each
+// running Claude Code process shows, with its inbox socket (inboxes/<key>.json),
+// and where each session works and whether a turn runs there (sessions/<id>.json).
 //
-// A fire for a session that a process shows goes into that process's inbox, and
-// Claude Code starts a turn with it, or reads it during the turn in progress. It
-// is posted by the plugin's MCP server in that process, through a small relay
-// socket: as the session's own child, it is delivered in every permission mode,
-// where a message from outside waits for the user's approval in a session that
-// bypasses permission prompts. Without the relay it is posted straight to the
-// inbox. A fire for a session that no process shows runs headless, with
-// `claude -p --resume`, in the session's folder.
+// A fire for a session that a process shows goes into that process's inbox once
+// no turn runs there (the executor decides when), and Claude Code starts a turn
+// with it. It is posted by the plugin's MCP server in that process, through a
+// small relay socket: as the session's own child, it is delivered in every
+// permission mode, where a message from outside waits for the user's approval in
+// a session that bypasses permission prompts. Without the relay it is posted
+// straight to the inbox. A fire for a session that no process shows runs
+// headless, with `claude -p --resume`, in the session's folder.
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Sandbox } from "../core/definition.js";
 import type { TurnResult } from "./codex.js";
-import { isExecutable, which } from "./config.js";
+import { cliCommand, isExecutable, which } from "./config.js";
 import { ensurePrivateDir } from "./fs-util.js";
 import { socketPath, type Paths } from "./paths.js";
 
@@ -34,8 +34,11 @@ export interface SessionRecord {
   transcript?: string;
   /** CLAUDE_CONFIG_DIR of the process that ran it, when one was set. */
   configDir?: string;
-  /** The turn in progress or last run: whether a Self-Starter message started it, and that message's first line. */
-  turn?: { at: string; trigger: boolean; line?: string };
+  /**
+   * The session's latest turn: when it started or ended, whether it still runs, whether a Self-Starter
+   * message started it, and that message's first line.
+   */
+  turn?: { at: string; running?: boolean; trigger: boolean; line?: string };
   startedAt: string;
   endedAt?: string;
 }
@@ -287,7 +290,12 @@ function outsideSession(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 /** `claude -p`: one headless turn, the message on stdin, the result as JSON. Arguments go as an array, never through a shell. */
 export class ClaudeCli implements SessionRunner {
-  constructor(private readonly bin: string) {}
+  private readonly command: string;
+  private readonly prefix: string[];
+
+  constructor(bin: string) {
+    ({ command: this.command, prefix: this.prefix } = cliCommand(bin));
+  }
 
   run(options: SessionRunOptions): Promise<TurnResult> {
     const args = ["-p", "--output-format", "json", "--permission-mode", PERMISSION_MODE[options.sandbox], "--allowedTools", PLUGIN_SERVER_RULE];
@@ -295,7 +303,7 @@ export class ClaudeCli implements SessionRunner {
     const env = outsideSession(process.env);
     if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
     return new Promise((resolve) => {
-      const child = spawn(this.bin, args, { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+      const child = spawn(this.command, [...this.prefix, ...args], { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
       let stdout = "";
       let stderr = "";
       let timedOut = false;

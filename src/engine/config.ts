@@ -1,6 +1,6 @@
 // Settings in ~/.self-starter/config.json, and how binaries are located.
 
-import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -80,6 +80,20 @@ export function isExecutable(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * How to run an agent's CLI. Installed with npm, codex and claude are node scripts; they run with
+ * this node, so that they work even when node is not on the daemon's PATH.
+ */
+export function cliCommand(bin: string): { command: string; prefix: string[] } {
+  let real = bin;
+  try {
+    real = realpathSync(bin);
+  } catch {
+    // keep the path as given
+  }
+  return /\.[cm]?js$/.test(real) ? { command: process.execPath, prefix: [real] } : { command: bin, prefix: [] };
 }
 
 /** Finds an executable on PATH, like `command -v`. */

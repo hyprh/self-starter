@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
 import { after, describe, it } from "node:test";
-import { MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_NAME } from "../../src/cli/install.js";
+import { buildMarketplace, MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_NAME } from "../../src/cli/install.js";
+import { resolvePaths } from "../../src/engine/paths.js";
 import { PLUGIN_SERVER_RULE } from "../../src/engine/sessions.js";
-import { PACKAGE_ROOT, PLUGIN_SOURCE, VERSION } from "../../src/runtime.js";
+import { TOOLS } from "../../src/mcp/server.js";
+import { CLI_SCRIPT, PACKAGE_ROOT, PLUGIN_SOURCE, VERSION } from "../../src/runtime.js";
 
 const json = (path: string) => JSON.parse(readFileSync(join(PACKAGE_ROOT, path), "utf8"));
 
@@ -43,11 +45,46 @@ describe("the Claude Code plugin marketplace in this repository", () => {
     assert.equal(PLUGIN_SERVER_RULE, `mcp__plugin_${PLUGIN_NAME}_${MCP_SERVER_NAME}`);
   });
 
-  it("runs the session hook when a session starts and ends, and for every prompt", () => {
-    const hooks = json("cc-plugin/hooks/hooks.json").hooks as Record<string, Array<{ hooks: Array<{ command: string; args: string[] }> }>>;
-    assert.deepEqual(Object.keys(hooks).sort(), ["SessionEnd", "SessionStart", "UserPromptSubmit"]);
-    for (const [event, entries] of Object.entries(hooks)) {
-      assert.deepEqual([entries[0]!.hooks[0]!.command, ...entries[0]!.hooks[0]!.args], ["node", "${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], event);
+  it("follows sessions and their turns with the session hook, and approves only the safe tools", () => {
+    type Entry = { matcher?: string; hooks: Array<{ command: string; args: string[] }> };
+    const hooks = json("cc-plugin/hooks/hooks.json").hooks as Record<string, Entry[]>;
+    const run = (entry: Entry) => [entry.hooks[0]!.command, ...entry.hooks[0]!.args];
+    const { PreToolUse, ...session } = hooks;
+    const approve = PreToolUse?.[0];
+    assert.deepEqual(Object.keys(session).sort(), ["Notification", "SessionEnd", "SessionStart", "Stop", "StopFailure", "UserPromptSubmit"]);
+    for (const [event, entries] of Object.entries(session)) assert.deepEqual(run(entries[0]!), ["node", "${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], event);
+    assert.equal(session.Notification![0]!.matcher, "idle_prompt");
+
+    assert.deepEqual(run(approve!), ["node", "${CLAUDE_PLUGIN_ROOT}/bin/approve.mjs"]);
+    const approved = (tool: string) => new RegExp(approve!.matcher!).test(`${PLUGIN_SERVER_RULE}__${tool}`);
+    const tools = TOOLS.map((tool) => tool.name);
+    assert.deepEqual(tools.filter(approved), ["trigger_recipes", "trigger_tune", "trigger_list", "trigger_get", "trigger_test", "trigger_history", "trigger_report", "service_status"]);
+    // What creates, changes, pauses or deletes triggers keeps asking.
+    assert.deepEqual(tools.filter((tool) => !approved(tool)), ["trigger_draft", "trigger_activate", "trigger_update", "trigger_pause", "trigger_resume", "trigger_delete"]);
+    assert.equal(approved("trigger_report_and_more"), false);
+  });
+});
+
+describe("the local marketplace that self-starter install writes", () => {
+  it("holds both plugins, at this version, starting this installation's MCP server through absolute paths", () => {
+    const home = mkdtempSync(join(tmpdir(), "ss-marketplace-"));
+    try {
+      const paths = resolvePaths(home);
+      buildMarketplace(paths);
+      const read = (path: string) => JSON.parse(readFileSync(join(paths.marketplace, path), "utf8"));
+      const server = { command: process.execPath, args: [CLI_SCRIPT, "mcp"] };
+
+      assert.deepEqual(read(".agents/plugins/marketplace.json").plugins[0].source, { source: "local", path: "./plugins/self-starter" });
+      assert.equal(read("plugins/self-starter/.codex-plugin/plugin.json").version, VERSION);
+      const codexEnv = { SELF_STARTER_HOME: paths.home, ...(process.env.CODEX_HOME ? { CODEX_HOME: process.env.CODEX_HOME } : {}) };
+      assert.deepEqual(read("plugins/self-starter/.mcp.json").mcpServers[MCP_SERVER_NAME], { ...server, cwd: ".", env: codexEnv, startup_timeout_sec: 30 });
+
+      assert.deepEqual(read(".claude-plugin/marketplace.json").plugins, [{ name: PLUGIN_NAME, source: "./cc-plugin" }]);
+      assert.equal(read("cc-plugin/.claude-plugin/plugin.json").version, VERSION);
+      assert.deepEqual(read("cc-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME], { ...server, env: { SELF_STARTER_HOME: paths.home } });
+      assert.ok(existsSync(join(paths.marketplace, "cc-plugin", "hooks", "hooks.json")), "with its hooks");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
     }
   });
 });
@@ -108,8 +145,50 @@ describe("the plugin's launcher", () => {
   });
 
   it("starts the same way from the Claude Code plugin, which has its own manifest", async () => {
-    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-cc") }, "claude-code");
+    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-cc"), CLAUDE_CODE_SESSION_ID: "s1" }, "claude-code");
     assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
+  });
+
+  it("answers Claude Code in time when the first start takes longer than it waits, then brings the tools in", async () => {
+    const child = spawn(process.execPath, [join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs"), "mcp"], {
+      cwd: scratch,
+      env: {
+        PATH: `${bin}${delimiter}${process.env.PATH}`,
+        HOME: scratch,
+        SELF_STARTER_HOME: join(scratch, "home-cc-slow"),
+        SELF_STARTER_RUNTIME: PACKAGE_ROOT,
+        FAKE_NPM_DELAY: "3",
+        MCP_TIMEOUT: "1000", // the host waits a second, so the launcher answers after two
+        CLAUDE_CODE_SESSION_ID: "s1",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const messages: Array<Record<string, any>> = [];
+    createInterface({ input: child.stdout }).on("line", (line) => messages.push(JSON.parse(line)));
+    const request = (id: number, method: string, params: Record<string, unknown> = {}) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    const received = async (match: (message: Record<string, any>) => boolean, what: string) => {
+      for (let waited = 0; ; waited += 50) {
+        const found = messages.find(match);
+        if (found) return found;
+        assert.ok(waited < 15_000, `no ${what}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    };
+    try {
+      request(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
+      const init = await received((message) => message.id === 1, "answer to initialize");
+      assert.deepEqual(init.result.capabilities, { tools: { listChanged: true } });
+      assert.match(init.result.instructions, /installing its runtime/);
+      request(2, "tools/list");
+      assert.deepEqual((await received((message) => message.id === 2, "tool list")).result.tools, [], "no tools while installing");
+
+      await received((message) => message.method === "notifications/tools/list_changed", "notice that the tools changed");
+      request(3, "tools/list");
+      const tools = (await received((message) => message.id === 3, "tool list")).result.tools as Array<{ name: string }>;
+      assert.deepEqual(tools.map((tool) => tool.name), TOOLS.map((tool) => tool.name));
+    } finally {
+      child.kill();
+    }
   });
 
   it("finishes the install when the host gives up on a slow first start, so that the next start is ready", async () => {

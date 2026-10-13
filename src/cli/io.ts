@@ -7,7 +7,7 @@ export interface Args {
 }
 
 /** Flags that take a value (`--to me@example.com`); all others are switches. */
-const VALUE_FLAGS = new Set(["codex", "hosts", "to", "host", "port", "user", "from"]);
+const VALUE_FLAGS = new Set(["codex", "claude", "hosts", "to", "host", "port", "user", "from"]);
 
 export function parseArgs(argv: string[]): Args {
   const positional: string[] = [];

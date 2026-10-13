@@ -24,6 +24,7 @@
   "files": [
     "dist/src",
     "plugin",
+    "cc-plugin",
     "recipes"
   ],
   "engines": {

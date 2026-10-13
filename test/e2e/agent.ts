@@ -18,9 +18,9 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { callDaemon } from "../../src/client/client.js";
-import { findCodex, loadConfig, saveConfig } from "../../src/engine/config.js";
+import { cliCommand, findCodex, loadConfig, saveConfig } from "../../src/engine/config.js";
 import { AppServerSession, type RpcMessage } from "../../src/engine/app-server.js";
-import { CodexCli, codexCommand } from "../../src/engine/codex.js";
+import { CodexCli } from "../../src/engine/codex.js";
 import type { FireView } from "../../src/engine/service.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { callPluginTool, cli, createTrigger, installFromMarketplace, packRuntime, show, waitFor } from "./harness.js";
@@ -117,7 +117,7 @@ function standInModel(): Promise<Server> {
 
 /** The Codex app: an app server, here with no window. */
 function openCodex(): Promise<AppServerSession> {
-  const { command, prefix } = codexCommand(codexBin!);
+  const { command, prefix } = cliCommand(codexBin!);
   return AppServerSession.open(command, prefix, { cwd: project });
 }
 

@@ -275,6 +275,11 @@ export interface McpServerOptions {
   ensureDaemon?: (paths: Paths) => Promise<unknown>;
   /** Set when Claude Code started the server; read from the environment by default. */
   session?: SessionHost;
+  /**
+   * The plugin's launcher already answered `initialize` (with no tools), because installing this runtime
+   * took longer than the host waits: the server tells the host that its tools changed, so it lists them again.
+   */
+  toolsChanged?: boolean;
 }
 
 export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
@@ -422,6 +427,7 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
 
   return new Promise<void>((resolve) => {
     const lines = createInterface({ input });
+    if (options.toolsChanged) send({ jsonrpc: "2.0", method: "notifications/tools/list_changed" });
     lines.on("line", (line) => {
       if (!line.trim()) return;
       let message: Json;

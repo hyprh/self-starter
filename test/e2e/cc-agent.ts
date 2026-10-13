@@ -1,16 +1,19 @@
 // End to end with the real Claude Code CLI and a stand-in model, so that turns
 // run without an account. A user talks to Claude in an interactive session (in
-// tmux) and has three triggers set up on flag files: two answer in that session,
-// one in a session of its own. The first flag appears while the session is open:
-// the fire arrives in it as a message from another session, posted by the
-// plugin's MCP server. The user quits; the other two flags appear, and
-// Self-Starter resumes the sessions headless (`claude -p --resume`). Each fire
-// must end with Claude calling trigger_report from the right session, and the
-// fire's turn must not be able to create triggers.
+// tmux), answers its permission prompts, and has three triggers set up on flag
+// files: two answer in that session, one in a session of its own. The first flag
+// appears while Claude is busy with something else the user asked: the fire
+// waits for that turn to end, then arrives in the session as a message from
+// another session, posted by the plugin's MCP server. The user quits; the other
+// two flags appear, and Self-Starter resumes the sessions headless (`claude -p
+// --resume`). Each fire must end with Claude calling trigger_report from the
+// right session, without a permission prompt, and the fire's turn must not be
+// able to create triggers.
 // The plugin is installed the way the README says, with this checkout as the
 // marketplace, and its first start installs the runtime from a tarball of this
-// checkout. It uses its own Self-Starter and Claude Code folders and no
-// background service. Needs claude and tmux: npm run build && node dist/test/e2e/cc-agent.js
+// checkout, under Claude Code's usual 30-second wait. It uses its own
+// Self-Starter and Claude Code folders and no background service. Needs claude
+// and tmux: npm run build && node dist/test/e2e/cc-agent.js
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -67,9 +70,12 @@ const WATCHES: Record<string, Json> = {
 
 // ---- the stand-in model: the Messages API, streamed, playing a small script ----
 
-/** What the stand-in did, by session: fires it reported, refusals it got, trigger sessions it confirmed. */
-const seen: Array<{ kind: "report" | "refused" | "seed"; session: string; detail: string }> = [];
+/** What the stand-in did, by session and when: fires it reported, refusals it got, trigger sessions it confirmed, a slow turn. */
+const seen: Array<{ kind: "report" | "refused" | "seed" | "slow-start" | "slow-done"; session: string; detail: string; at: number }> = [];
+const note = (kind: (typeof seen)[number]["kind"], session: string, detail = "") => seen.push({ kind, session, detail, at: Date.now() });
 type Block = { type: "text"; text: string } | { type: "tool_use"; name: string; input: Json };
+/** How long the user's slow request keeps Claude busy. */
+const SLOW_TURN_MS = 25_000;
 let toolUses = 0;
 
 const contentOf = (message: Json | undefined): Json[] =>
@@ -77,7 +83,7 @@ const contentOf = (message: Json | undefined): Json[] =>
 const textOf = (blocks: Json[]): string =>
   blocks.map((block) => (block.type === "text" ? block.text : block.type === "tool_result" ? textOf(contentOf(block)) : "")).join("\n");
 
-function respond(request: Json, session: string): Block[] {
+function respond(request: Json, session: string): Block[] | { blocks: Block[]; delayMs: number } {
   const tools: string[] = (request.tools ?? []).map((tool: Json) => tool.name);
   const tool = (name: string) => tools.find((candidate) => candidate.endsWith(`__${name}`));
   if (!tool("trigger_report")) return [{ type: "text", text: "OK" }]; // a side request, such as a title
@@ -91,7 +97,7 @@ function respond(request: Json, session: string): Block[] {
     if (called.endsWith("__trigger_draft")) {
       const draftId = /Draft (\S+) saved/.exec(output)?.[1];
       if (draftId) return [{ type: "tool_use", name: tool("trigger_activate")!, input: { draft_id: draftId } }];
-      seen.push({ kind: "refused", session, detail: output.split("\n")[0]! });
+      note("refused", session, output.split("\n")[0]!);
       return [{ type: "text", text: `Not allowed here: ${output.split("\n")[0]}` }];
     }
     // After reporting, the turn tries to create a trigger, as data in a fire could make it do; the engine refuses.
@@ -101,12 +107,16 @@ function respond(request: Json, session: string): Block[] {
   const said = textOf(last);
   const fireId = /fire_id="(fire_[a-z0-9]+)"/.exec(said)?.[1];
   if (fireId && said.includes("[self-starter]")) {
-    seen.push({ kind: "report", session, detail: fireId });
+    note("report", session, fireId);
     return [{ type: "tool_use", name: tool("trigger_report")!, input: { fire_id: fireId, summary: `handled in session ${session}`, notify: false } }];
   }
   if (said.includes("belongs to the trigger")) {
-    seen.push({ kind: "seed", session, detail: /\(([a-z0-9-]+)\)\./.exec(said)?.[1] ?? "" });
+    note("seed", session, /\(([a-z0-9-]+)\)\./.exec(said)?.[1] ?? "");
     return [{ type: "text", text: "Ready." }];
+  }
+  if (said.includes("think for a while")) {
+    note("slow-start", session);
+    return { blocks: [{ type: "text", text: "Done thinking." }], delayMs: SLOW_TURN_MS };
   }
   const asked = /set up the (\w+) watch/.exec(said)?.[1];
   if (asked && WATCHES[asked]) return [{ type: "tool_use", name: tool("trigger_draft")!, input: { definition: WATCHES[asked], code: PROBE } }];
@@ -120,7 +130,7 @@ async function body(request: IncomingMessage): Promise<string> {
 }
 
 const model = createServer((request, response) => {
-  void body(request).then((text) => {
+  void body(request).then(async (text) => {
     if (request.method !== "POST" || !request.url?.startsWith("/v1/messages")) {
       response.writeHead(404).end("{}");
       return;
@@ -131,7 +141,10 @@ const model = createServer((request, response) => {
     }
     const parsed = JSON.parse(text) as Json;
     const session = String(request.headers["x-claude-code-session-id"] ?? "");
-    const blocks = respond(parsed, session);
+    const reply = respond(parsed, session);
+    const [blocks, delayMs] = Array.isArray(reply) ? [reply, 0] : [reply.blocks, reply.delayMs];
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    if (delayMs > 0) note("slow-done", session);
     const usage = { input_tokens: 1, output_tokens: 1 };
     const send = (type: string, data: Json) => response.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
     response.writeHead(200, { "content-type": "text/event-stream" });
@@ -169,9 +182,9 @@ writeFileSync(
     projects: { [project]: { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true } },
   }),
 );
-// The user allows the plugin's tools once, as Claude Code offers the first time one runs. Manual mode:
-// in auto mode a classifier model would review each tool call, which the stand-in does not play.
-writeFileSync(join(configDir, "settings.json"), JSON.stringify({ permissions: { defaultMode: "default", allow: ["mcp__plugin_self-starter_self_starter"] } }));
+// Manual mode, with no rules: the user answers the permission prompts (in auto mode a classifier model
+// would review each tool call, which the stand-in does not play).
+writeFileSync(join(configDir, "settings.json"), JSON.stringify({ permissions: { defaultMode: "default" } }));
 
 // TMPDIR too: where the test, the daemon and the MCP server look for sockets whose paths are too long.
 const passed = Object.entries(process.env).filter(([name]) => /PROXY|CA_CERT|CAFILE|SSL_CERT|EXTRA_CA|^TMPDIR$/i.test(name));
@@ -186,8 +199,6 @@ const environment: Record<string, string> = {
   DISABLE_TELEMETRY: "1",
   DISABLE_ERROR_REPORTING: "1",
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-  // The plugin's first start installs the runtime, which can take longer than the default 30 seconds.
-  MCP_TIMEOUT: "240000",
   SELF_STARTER_HOME: paths.home,
   ...Object.fromEntries(passed.map(([name, value]) => [name, value ?? ""])),
   NO_PROXY: "127.0.0.1,localhost",
@@ -219,6 +230,22 @@ const explain = async () => {
   return `${history}\nstand-in saw: ${JSON.stringify(seen)}\n${existsSync(logs) ? readFileSync(logs, "utf8").split("\n").slice(-25).join("\n") : ""}`;
 };
 const screen = () => tmux("capture-pane", "-t", "user", "-p");
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The user, answering Claude Code's permission prompts with Yes; what each prompt was for. */
+const prompts: string[] = [];
+let answering = true;
+async function answerPrompts(): Promise<void> {
+  while (answering) {
+    const shown = spawnSync("tmux", ["-L", tmuxServer, "capture-pane", "-t", "user", "-p"], { encoding: "utf8" }).stdout ?? "";
+    if (shown.includes("Do you want to proceed?")) {
+      prompts.push(/self_starter — (.+?) \(MCP\)/.exec(shown)?.[1] ?? shown);
+      spawnSync("tmux", ["-L", tmuxServer, "send-keys", "-t", "user", "Enter"]);
+      await sleep(1500);
+    }
+    await sleep(250);
+  }
+}
 
 try {
   writeWrapper({ SELF_STARTER_RUNTIME: packRuntime(scratch) });
@@ -231,6 +258,7 @@ try {
   console.log("\n1. In an interactive session, the user has three triggers set up.");
   tmux("new-session", "-d", "-s", "user", "-x", "200", "-y", "50", "-c", project, wrapper);
   await waitFor("the session's prompt", async () => (/^❯\s*$/m.test(screen()) ? true : undefined), { timeoutMs: 60_000, explain: async () => screen() });
+  const user = answerPrompts();
   // The plugin's MCP server listens for fires once its first start has installed the runtime.
   await waitFor("the plugin's MCP server", async () => (existsSync(paths.inboxes) && readdirSync(paths.inboxes).some((name) => name.endsWith(".sock")) ? true : undefined), {
     timeoutMs: 300_000,
@@ -254,12 +282,20 @@ try {
   show("self-starter list", await selfStarter(["list"]));
   const own = await waitFor("the trigger's own session", async () => seen.find((entry) => entry.kind === "seed" && entry.detail === "flag-own")?.session, { timeoutMs: 120_000, explain });
 
-  console.log("\n2. The first flag appears while the session is open: the fire comes into it.");
+  console.log("\n2. Claude is busy with something the user asked when the first flag appears: the fire waits for that turn, then comes in.");
+  tmux("send-keys", "-t", "user", "-l", "please think for a while");
+  tmux("send-keys", "-t", "user", "Enter");
+  await waitFor("the slow turn", async () => seen.find((entry) => entry.kind === "slow-start"), { timeoutMs: 30_000 });
   writeFileSync(flags.open, "build finished\n");
   const open = await waitFor("the fire of flag-open", () => fireOf("flag-open"), { timeoutMs: 120_000, everyMs: 2000, explain: async () => `${screen()}\n${await explain()}` });
-  const user = /handled in session (\S+)/.exec(open.receipt!.summary)?.[1];
-  if (!user || open.target?.via !== "inbox" || open.wokenAt) throw new Error(`flag-open was not handled in the open session: ${JSON.stringify(open)}`);
-  if (!readFileSync(join(paths.logs, "daemon.log"), "utf8").includes(`message relayed into session ${user}`)) throw new Error("the fire did not go through the plugin's relay");
+  const session = /handled in session (\S+)/.exec(open.receipt!.summary)?.[1];
+  if (!session || open.target?.via !== "inbox" || open.wokenAt) throw new Error(`flag-open was not handled in the open session: ${JSON.stringify(open)}`);
+  if (!readFileSync(join(paths.logs, "daemon.log"), "utf8").includes(`relayed into session ${session}`)) throw new Error("the fire did not go through the plugin's relay");
+  const slowDone = seen.find((entry) => entry.kind === "slow-done")!.at;
+  const reported = seen.find((entry) => entry.kind === "report" && entry.detail === open.fireId)!.at;
+  if (!(Date.parse(open.firedAt) < slowDone && slowDone < reported)) {
+    throw new Error(`the fire did not wait for the user's turn: fired ${open.firedAt}, turn over ${new Date(slowDone).toISOString()}, handled ${new Date(reported).toISOString()}`);
+  }
 
   console.log("\n3. The user quits. The other two flags appear: Self-Starter resumes the sessions headless.");
   tmux("send-keys", "-t", "user", "-l", "/exit");
@@ -275,7 +311,7 @@ try {
   writeFileSync(flags.own, "deploy done\n");
   const closed = await waitFor("the fire of flag-closed", () => fireOf("flag-closed"), { timeoutMs: 180_000, everyMs: 2000, explain });
   const dedicated = await waitFor("the fire of flag-own", () => fireOf("flag-own"), { timeoutMs: 180_000, everyMs: 2000, explain });
-  if (closed.target?.via !== "headless" || !closed.wokenAt || !closed.receipt!.summary.endsWith(user)) throw new Error(`flag-closed was not handled in the user's session: ${JSON.stringify(closed)}`);
+  if (closed.target?.via !== "headless" || !closed.wokenAt || !closed.receipt!.summary.endsWith(session)) throw new Error(`flag-closed was not handled in the user's session: ${JSON.stringify(closed)}`);
   if (dedicated.target?.via !== "headless" || !dedicated.receipt!.summary.endsWith(own) || dedicated.target.threadId !== `cc:${own}`) {
     throw new Error(`flag-own was not handled in its own session: ${JSON.stringify(dedicated)}`);
   }
@@ -287,12 +323,19 @@ try {
     if (!refused) throw new Error(`the turn of ${fire.fireId} was not refused a new trigger: ${JSON.stringify(seen)}`);
   }
   if (existsSync(join(paths.triggers, "injected"))) throw new Error("a fire's turn created a trigger");
+  answering = false;
+  await user;
+  // Asked about creating and turning on triggers (Claude Code shortens the tools' titles); never about reporting a fire.
+  const kinds = new Set(prompts.map((title) => (title.startsWith("Draft a") ? "draft" : title.startsWith("Activate a") ? "activate" : title)));
+  if (kinds.size !== 2 || !kinds.has("draft") || !kinds.has("activate")) throw new Error(`unexpected permission prompts: ${JSON.stringify(prompts)}`);
+  console.log(`\nThe user was asked ${prompts.length} time(s), only to draft and to turn on triggers.`);
   show("self-starter history", await selfStarter(["history"]));
   console.log("\nAll good: fires reached the open session through its inbox, and closed sessions headless, each reported from the right session.");
 } catch (error) {
   console.error(`\nFAILED: ${(error as Error).stack ?? String(error)}`);
   process.exitCode = 1;
 } finally {
+  answering = false;
   spawnSync("tmux", ["-L", tmuxServer, "kill-server"]);
   await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
   model.close();

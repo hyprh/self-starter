@@ -4,15 +4,17 @@
 
 Self-Starter now works in Claude Code too, with the same triggers, background service and command line.
 
-```sh
-claude plugin install self-starter --marketplace hyprh/self-starter
+```
+/plugin install self-starter --marketplace hyprh/self-starter
 ```
 
-- **Fires come back to your session.** While a terminal has the session open, the fire arrives there as a message from another session, posted by the plugin's MCP server inside that session, so Claude Code delivers it in every permission mode. When no terminal has it open, Self-Starter resumes the session in the background (`claude -p --resume`), in its folder, with a permission mode from the trigger's `action.sandbox`. Triggers of their own get a session named "Trigger: <name>".
-- **The plugin follows your sessions.** Its hooks record which session each Claude Code process shows (through `/clear` and `/resume`), and whether a fire started the current turn: such a turn cannot create or change triggers, except to make that trigger quieter.
-- **A slow first start no longer starts over.** The plugin installs its runtime in a process of its own, which finishes even when the host gives up waiting (Claude Code waits 30 seconds), so the next start is ready.
+- **Fires come back to your session, between turns.** While a terminal has the session open, the fire arrives there as soon as Claude is done with what it is doing (it never interrupts a turn), posted by the plugin's MCP server inside that session, so Claude Code delivers it in every permission mode. When no terminal has it open, Self-Starter resumes the session in the background (`claude -p --resume`), in its folder, with a permission mode from the trigger's `action.sandbox`. Triggers of their own get a session named "Trigger: <name>".
+- **Fires report while you are away.** The plugin lets its tools that report a fire, make a trigger quieter or only read run without a permission prompt; creating, changing and deleting triggers still ask.
+- **The plugin follows your sessions.** Its hooks record which session each Claude Code process shows (through `/clear` and `/resume`), whether a turn is running there, and whether a fire started it: such a turn cannot create or change triggers, except to make that trigger quieter.
+- **A slow first start no longer fails.** The plugin installs its runtime in a process of its own, which finishes even if the host stops waiting. When that takes longer than Claude Code waits (30 seconds), the plugin answers anyway, and its tools appear once it is ready.
+- **`self-starter install` sets up every agent it finds**, Codex and Claude Code, and `self-starter doctor` checks each. A `claude` installed with npm runs with Self-Starter's own node, like `codex`, so the background service needs no node on its PATH.
 
-Checked by unit tests, and end to end with the real Claude Code CLI and a stand-in model (`test/e2e/cc-agent.ts`): installing from the marketplace, a fire into an open session, and fires in closed sessions and in a trigger's own session.
+Checked by unit tests, and end to end with the real Claude Code CLI and a stand-in model (`test/e2e/cc-agent.ts`): installing from the marketplace, answering permission prompts as a user would, a fire waiting for the user's turn and then coming into the open session, and fires in closed sessions and in a trigger's own session.
 
 ## 0.0.1 (2026-10-13)
 

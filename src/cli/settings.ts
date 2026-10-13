@@ -133,5 +133,5 @@ async function setUpEmail(paths: Paths, address: string | undefined, args: Args)
     const hint = /\b535\b|auth|credential|password|login/i.test(message) ? " Check the app password and run this command again." : "";
     throw new Error(`the test email failed: ${message}.${hint}`);
   }
-  out("Sent. Ask Codex to email you about a trigger, or make email a default: self-starter channel default desktop,email");
+  out("Sent. Ask your agent to email you about a trigger, or make email a default: self-starter channel default desktop,email");
 }

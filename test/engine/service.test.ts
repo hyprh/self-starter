@@ -455,6 +455,29 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     }
   });
 
+  it("wakes one thread at a time when there is one run slot", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      await t.activate({ id: "other", name: "Other", target: { kind: "origin" } }, STATE_PROBE, fromThread({ threadId: "thread-other" }));
+      let finish = () => {};
+      t.codex.wakeGate = new Promise((resolve) => (finish = resolve));
+      server.price = 200;
+      const fireIds = [(await t.engine.runNow("price-alert"))!.fireId!, (await t.engine.runNow("other"))!.fireId!];
+      await eventually(() => fireIds.every((fireId) => t.fires.get(fireId)?.status === "delivered"));
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      await eventually(() => t.codex.wakes.length === 1);
+      await t.executor.tick();
+      assert.equal(t.codex.wakes.length, 1, "the other thread waits for the run slot");
+      finish();
+      await eventually(() => t.codex.wakes.length === 2);
+      assert.deepEqual(t.codex.wakes.map((wake) => wake.threadId).sort(), [ORIGIN, "thread-other"].sort());
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it("keeps looking at a thread that a Codex app holds without running the fire", async () => {
     const t = setup(server);
     try {
@@ -680,12 +703,22 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
     mkdirSync(t.paths.sessions, { recursive: true });
     writeFileSync(join(t.paths.sessions, `${sessionId}.json`), JSON.stringify({ sessionId, cwd: t.paths.home, startedAt: new Date().toISOString(), ...fields }));
   };
-  /** Fires the trigger and waits until the fire is handed over. */
+  /** Fires the trigger and returns the fire once it is in its session, or running there, or done. */
   const fire = async (id = "price-alert") => {
     server.price += 100;
     const fireId = (await t.engine.runNow(id))!.fireId!;
-    return eventually(() => (t.fires.get(fireId)?.status === "delivered" || t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
+    return eventually(() => (t.fires.get(fireId)?.target?.via || t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
   };
+  /** Fires the trigger and returns the fire's id once it is handed to its session. */
+  const handOver = async (id = "price-alert") => {
+    server.price += 100;
+    const fireId = (await t.engine.runNow(id))!.fireId!;
+    await eventually(() => t.fires.get(fireId)?.status === "delivered");
+    return fireId;
+  };
+  /** What the plugin's hooks record when a turn starts (running) or ends. */
+  const turn = (sessionId: string, running: boolean, minutesAgo = 0) =>
+    record(sessionId, { turn: { at: new Date(t.clock.at - minutesAgo * 60_000).toISOString(), running, trigger: false } });
 
   beforeEach(async () => {
     server = await startServer();
@@ -739,14 +772,14 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
       await gate;
       t.service.report({ fireId, summary: `reported ${fireId}`, notify: false }, fromSession());
     };
-    const first = await fire();
-    const second = await fire("other");
+    const first = (await fire()).fireId;
+    const second = await handOver("other");
     await eventually(() => t.claude.runs.length === 1);
     await t.executor.tick();
     assert.equal(t.claude.runs.length, 1, "the second fire waits for the session's turn to end");
     release();
     await eventually(() => t.claude.runs.length === 2);
-    for (const { fireId } of [first, second]) {
+    for (const fireId of [first, second]) {
       const receipt = await eventually(() => t.fires.get(fireId)?.receipt);
       assert.deepEqual([receipt.source, receipt.summary], ["tool", `reported ${fireId}`]);
     }
@@ -762,13 +795,56 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
     t.claude.during = (options) => (options.sessionId === "s2" ? new Promise<void>((resolve) => (release = resolve)) : undefined);
     await fire("other");
     await eventually(() => t.claude.runs.length === 1);
-    const waiting = await fire();
-    assert.equal(waiting.target?.via, "headless");
+    const waiting = await handOver();
+    await t.executor.tick();
+    assert.equal(t.fires.get(waiting)?.target?.via, undefined, "handed over, waiting for a run slot");
     t.openSessions.add("s1");
     release();
     await eventually(() => t.inboxes.length === 1);
     assert.equal(t.claude.runs.length, 1, "s1 never ran headless");
-    assert.equal(t.fires.get(waiting.fireId)?.target?.via, "inbox");
+    assert.equal(t.fires.get(waiting)?.target?.via, "inbox");
+  });
+
+  it("waits for the turn running in the session, and brings the fire in once it is over", async () => {
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.openSessions.add("s1");
+    turn("s1", true); // the user's turn
+    const fireId = await handOver();
+    await t.executor.tick();
+    assert.deepEqual(t.inboxes, [], "not in the middle of the user's turn");
+    assert.equal(t.claude.runs.length, 0, "nor headless: the session is open");
+
+    turn("s1", false);
+    await t.executor.tick();
+    await eventually(() => t.inboxes.length === 1);
+    assert.equal(t.fires.get(fireId)?.target?.via, "inbox");
+  });
+
+  it("does not wait forever for a turn that never said it ended", async () => {
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.openSessions.add("s1");
+    turn("s1", true, 11); // interrupted 11 minutes ago, so its end was never recorded
+    await handOver();
+    await eventually(() => t.inboxes.length === 1);
+  });
+
+  it("sends a second fire for the same session after the first one's turn", async () => {
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    await t.activate({ id: "other", name: "Other", target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.openSessions.add("s1");
+    await handOver();
+    await eventually(() => t.inboxes.length === 1);
+    const second = await handOver("other");
+    await t.executor.tick();
+    assert.equal(t.inboxes.length, 1, "the first fire's turn has not started yet");
+    t.clock.at += 1000;
+    turn("s1", true); // it starts...
+    await t.executor.tick();
+    assert.equal(t.inboxes.length, 1);
+    turn("s1", false); // ...and ends
+    await t.executor.tick();
+    await eventually(() => t.inboxes.length === 2);
+    assert.equal(t.fires.get(second)?.target?.via, "inbox");
   });
 
   it("starts a session of its own for a dedicated trigger and runs its fires there", async () => {

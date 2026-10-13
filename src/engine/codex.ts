@@ -3,10 +3,10 @@
 // Codex app does. Arguments are passed as an array, never through a shell.
 
 import { spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
 import type { Sandbox } from "../core/definition.js";
 import { MESSAGE_PREFIX } from "../core/envelope.js";
 import { AppServerSession, shortError, type RpcMessage } from "./app-server.js";
+import { cliCommand } from "./config.js";
 
 export interface TurnResult {
   ok: boolean;
@@ -151,26 +151,12 @@ export interface CodexRunner {
   wakeThread(options: WakeOptions): Promise<TurnResult>;
 }
 
-/**
- * How to run a codex binary. The npm package's `codex` is a node script; it runs
- * with this node, so that it works even when node is not on the daemon's PATH.
- */
-export function codexCommand(bin: string): { command: string; prefix: string[] } {
-  let real = bin;
-  try {
-    real = realpathSync(bin);
-  } catch {
-    // keep the path as given
-  }
-  return /\.[cm]?js$/.test(real) ? { command: process.execPath, prefix: [real] } : { command: bin, prefix: [] };
-}
-
 export class CodexCli implements CodexRunner {
   private readonly command: string;
   private readonly prefix: string[];
 
   constructor(bin: string) {
-    ({ command: this.command, prefix: this.prefix } = codexCommand(bin));
+    ({ command: this.command, prefix: this.prefix } = cliCommand(bin));
   }
 
   async queue(threadId: string, message: string): Promise<{ submissionId?: string }> {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import {
 import { PACKAGE_ROOT } from "../../src/runtime.js";
 
 const HOOK = join(PACKAGE_ROOT, "cc-plugin", "bin", "session-hook.mjs");
+const APPROVE = join(PACKAGE_ROOT, "cc-plugin", "bin", "approve.mjs");
 
 let scratch: string;
 let paths: Paths;
@@ -30,9 +31,9 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
-/** Runs the plugin's hook as Claude Code does: the event on stdin, the session's variables in the environment. */
-function hook(input: Record<string, unknown>, env: Record<string, string> = {}): string {
-  const out = spawnSync(process.execPath, [HOOK], {
+/** Runs one of the plugin's hooks as Claude Code does: the event on stdin, the session's variables in the environment. */
+function hook(input: Record<string, unknown>, env: Record<string, string> = {}, script = HOOK): string {
+  const out = spawnSync(process.execPath, [script], {
     input: JSON.stringify(input),
     env: { PATH: process.env.PATH, HOME: scratch, SELF_STARTER_HOME: paths.home, ...env },
     encoding: "utf8",
@@ -47,6 +48,8 @@ const start = (sessionId: string, extra: Record<string, unknown> = {}, env: Reco
   hook({ session_id: sessionId, hook_event_name: "SessionStart", source: "startup", cwd: "/work", transcript_path: `/t/${sessionId}.jsonl`, ...extra }, env);
 const prompt = (sessionId: string, text: string) => hook({ session_id: sessionId, hook_event_name: "UserPromptSubmit", cwd: "/work", prompt: text }, processEnv);
 const end = (sessionId: string, reason: string, env: Record<string, string> = processEnv) => hook({ session_id: sessionId, hook_event_name: "SessionEnd", cwd: "/work", reason }, env);
+const event = (sessionId: string, name: string, extra: Record<string, unknown> = {}) => hook({ session_id: sessionId, hook_event_name: name, cwd: "/work", ...extra }, processEnv);
+const running = (sessionId: string) => readSession(paths, sessionId)?.turn?.running;
 
 describe("the plugin's session hook", () => {
   it("records each session and the session each process shows, the way the engine reads them, and prints nothing", () => {
@@ -87,6 +90,20 @@ describe("the plugin's session hook", () => {
     assert.ok(readSession(paths, "s1")?.endedAt);
   });
 
+  it("records whether a turn is running, whichever way it ends", () => {
+    start("s1");
+    assert.equal(running("s1"), undefined);
+    for (const ending of [{ name: "Stop" }, { name: "StopFailure" }, { name: "Notification", extra: { notification_type: "idle_prompt" } }]) {
+      prompt("s1", "do something");
+      assert.equal(running("s1"), true, ending.name);
+      event("s1", ending.name, ending.extra);
+      assert.equal(running("s1"), false, ending.name);
+    }
+    prompt("s1", "one more");
+    end("s1", "prompt_input_exit", { CLAUDE_PID: "4242" });
+    assert.equal(running("s1"), false, "a session that ended runs no turn");
+  });
+
   it("records whether a Self-Starter message started the current turn, through compaction", () => {
     start("s1");
     prompt("s1", "[self-starter] Flag (flag-a · fire #2 · fire_k3x9a1b2c3d4)\n\nTask: ...");
@@ -100,6 +117,12 @@ describe("the plugin's session hook", () => {
     // Only the first line of a fire is kept, never what the user types.
     prompt("s1", "my password is hunter2");
     assert.doesNotMatch(readFileSync(join(paths.sessions, "s1.json"), "utf8"), /hunter2|Task:/);
+  });
+
+  it("lets the plugin's reporting and read-only tools run without asking", () => {
+    const decision = JSON.parse(hook({ session_id: "s1", hook_event_name: "PreToolUse", tool_name: "mcp__plugin_self-starter_self_starter__trigger_report" }, {}, APPROVE));
+    assert.deepEqual(decision.hookSpecificOutput.permissionDecision, "allow");
+    assert.equal(decision.hookSpecificOutput.hookEventName, "PreToolUse");
   });
 
   it("leaves headless runs out unless asked, and ignores what it cannot use", () => {
@@ -215,6 +238,26 @@ describe("headless turns", () => {
     const slow = new ClaudeCli(fakeClaude("exec sleep 5"));
     const result = await slow.run({ sessionId: "s1", cwd: scratch, message: "x", sandbox: "workspace-write", timeoutMs: 200 });
     assert.deepEqual(result, { ok: false, error: "claude -p: timed out after 0s" });
+  });
+
+  it("runs a claude installed with npm, a node script, with this node", async () => {
+    const script = join(scratch, "claude-code", "cli.js");
+    mkdirSync(join(scratch, "claude-code"));
+    writeFileSync(
+      script,
+      `#!/usr/bin/env node\nprocess.stdin.resume().on("end", () => console.log(JSON.stringify({ is_error: false, result: process.execPath })));\n`,
+      { mode: 0o755 },
+    );
+    const bin = join(scratch, "claude");
+    symlinkSync(script, bin);
+    const saved = process.env.PATH;
+    process.env.PATH = join(scratch, "nothing"); // a service whose PATH has no node
+    try {
+      const result = await new ClaudeCli(bin).run({ sessionId: "s1", cwd: scratch, message: "x", sandbox: "read-only", timeoutMs: 10_000 });
+      assert.deepEqual(result, { ok: true, lastMessage: process.execPath });
+    } finally {
+      process.env.PATH = saved;
+    }
   });
 
   it("finds claude through CLAUDE_BIN first", () => {
