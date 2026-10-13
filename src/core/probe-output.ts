@@ -126,8 +126,9 @@ export function parseProbeOutput(mode: Mode, stdout: string): ParseResult {
   for (const [i, item] of obj.events.entries()) {
     if (typeof item !== "object" || item === null) return { ok: false, error: `events[${i}] must be an object` };
     const event = item as Record<string, unknown>;
-    if (typeof event.key !== "string" || event.key === "" || event.key.length > OUTPUT_LIMITS.eventKeyChars) {
-      return { ok: false, error: `events[${i}].key must be a non-empty string` };
+    if (typeof event.key !== "string" || event.key === "") return { ok: false, error: `events[${i}].key must be a non-empty string` };
+    if (event.key.length > OUTPUT_LIMITS.eventKeyChars) {
+      return { ok: false, error: `events[${i}].key is longer than ${OUTPUT_LIMITS.eventKeyChars} characters; use a shorter id, or a hash of a long one` };
     }
     const parsed: ProbeEvent = { key: event.key };
     if (typeof event.summary === "string") parsed.summary = truncate(event.summary, OUTPUT_LIMITS.summaryChars);

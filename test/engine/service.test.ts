@@ -373,6 +373,30 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     }
   });
 
+  it("takes a woken turn's answer even when the receipt timed out while it ran", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      let finish = () => {};
+      t.codex.wakeGate = new Promise((resolve) => (finish = resolve));
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      await eventually(() => t.codex.wakes.length === 1);
+      t.clock.at += 31 * 60_000;
+      await t.executor.tick();
+      assert.equal(t.fires.get(fireId)?.receipt?.source, "timeout", "the turn is still running when the receipt times out");
+      finish();
+      const receipt = await eventually(() => (t.fires.get(fireId)?.receipt?.source === "final-answer" ? t.fires.get(fireId)?.receipt : undefined));
+      assert.equal(receipt.summary, "The price moved on earnings; details in the thread.");
+      assert.ok(t.notifier.sent.some((n) => n.body === receipt.summary), "the user gets the answer");
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it("keeps looking at a thread that a Codex app holds without running the fire", async () => {
     const t = setup(server);
     try {
@@ -669,6 +693,9 @@ describe("recipes", { skip: deno ? false : "the deno npm package is not installe
       );
       const update = t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { threshold: 300 } } } }, fromThread({ turnId: "turn-21" }));
       assert.deepEqual(update.changes, ["probe.params.threshold: 150 → 300"]);
+      const reset = t.service.updateTrigger({ triggerId: "from-recipe", changes: { probe: { params: { threshold: null } } } }, fromThread({ turnId: "turn-22" }));
+      assert.deepEqual(reset.changes, ["probe.params.threshold: 300 → 150"], "a removed parameter gets the recipe's default back");
+      assert.equal(t.store.loadTrigger("from-recipe").definition.probe.params.threshold, 150);
     } finally {
       t.cleanup();
       await server.close();

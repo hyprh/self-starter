@@ -51,7 +51,10 @@ describe("parseProbeOutput", () => {
     if (ok.output.mode === "event") assert.deepEqual(ok.output.events.map((e) => e.key), ["a", "b"]);
     const bad = parseProbeOutput("event", JSON.stringify({ summary: "x", events: [{ summary: "no key" }] }));
     assert.ok(!bad.ok);
-    assert.match(bad.error, /events\[0\]\.key/);
+    assert.match(bad.error, /events\[0\]\.key must be a non-empty string/);
+    const long = parseProbeOutput("event", JSON.stringify({ summary: "x", events: [{ key: `https://example.com/${"a".repeat(200)}` }] }));
+    assert.ok(!long.ok);
+    assert.match(long.error, /events\[0\]\.key is longer than 200 characters/);
   });
 
   it("truncates long summaries but rejects oversized data", () => {

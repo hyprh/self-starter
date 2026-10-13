@@ -66,6 +66,8 @@ export class FakeCodex implements CodexRunner {
   wakeAnswer = "The price moved on earnings; details in the thread.";
   /** Makes every wake fail with this error, such as when a Codex app has the thread open. */
   wakeError: string | undefined;
+  /** Keeps woken turns running until it resolves. */
+  wakeGate: Promise<void> | undefined;
   private threads = 0;
 
   async inspectThread(threadId: string): Promise<ThreadView> {
@@ -76,6 +78,7 @@ export class FakeCodex implements CodexRunner {
     this.wakes.push(options);
     if (this.wakeError) return { ok: false, threadId: options.threadId, error: this.wakeError };
     options.onOpen?.();
+    await this.wakeGate;
     return { ok: true, threadId: options.threadId, lastMessage: this.wakeAnswer };
   }
 

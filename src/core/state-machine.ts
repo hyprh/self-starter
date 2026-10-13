@@ -141,8 +141,12 @@ function evaluateEvents(
   now: Date,
 ): FireDraft | undefined {
   const seenAt = now.toISOString();
-  const fresh = output.events.filter((event) => rt.seenKeys[event.key] === undefined);
-  for (const event of fresh) rt.seenKeys[event.key] = seenAt;
+  const fresh: ProbeEvent[] = [];
+  for (const event of output.events) {
+    if (rt.seenKeys[event.key] !== undefined) continue; // seen before, or earlier in this run
+    rt.seenKeys[event.key] = seenAt;
+    fresh.push(event);
+  }
   rt.seenKeys = pruneSeenKeys(rt.seenKeys, now);
 
   if (!rt.hasBaseline) {

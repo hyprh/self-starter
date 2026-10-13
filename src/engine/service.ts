@@ -416,16 +416,18 @@ export class TriggerService {
         `trigger_update cannot change ${locked.join(", ")}: ${why}a new probe (code or mode) goes through trigger_draft with replace=true.`,
       );
     }
-    const merged = deepMerge(JSON.parse(JSON.stringify(existing.definition)) as Record<string, unknown>, changes);
+    let candidate = deepMerge(JSON.parse(JSON.stringify(existing.definition)) as Record<string, unknown>, changes);
     if (recipeId) {
       const recipe = this.recipe(recipeId).recipe;
-      const probe = isRecord(merged.probe) ? { ...merged.probe } : {};
+      const probe = isRecord(candidate.probe) ? { ...candidate.probe } : {};
       delete probe.permissions;
       delete probe.access;
-      const checked = applyRecipe(recipe, { ...merged, mode: recipe.mode, probe });
+      const checked = applyRecipe(recipe, { ...candidate, mode: recipe.mode, probe });
       if (checked.errors.length > 0) throw new ServiceError("invalid", `these changes do not fit the ${recipe.id} recipe:\n- ${checked.errors.join("\n- ")}`);
+      // As in trigger_draft: a parameter set to null falls back to the recipe's default.
+      candidate = checked.definition;
     }
-    const validated = validateDefinition(merged);
+    const validated = validateDefinition(candidate);
     if (!validated.ok) throw new ServiceError("invalid", `the changed definition has problems:\n- ${validated.errors.join("\n- ")}`);
     const def = validated.definition;
     const changed = describeChanges(existing.definition, def, BOOKKEEPING);

@@ -297,8 +297,10 @@ export class Executor {
       return;
     }
     this.outcome.set(fire.fireId, "woken");
-    // Usually the turn reported through trigger_report; otherwise its last message is the receipt.
-    if (this.deps.fires.get(fire.fireId)?.receipt) return;
+    // Usually the turn reported through trigger_report; otherwise its last message is the receipt,
+    // which, like a late report, replaces a "no reply" receipt written while the turn ran.
+    const existing = this.deps.fires.get(fire.fireId)?.receipt;
+    if (existing && existing.source !== "timeout") return;
     const at = this.now().toISOString();
     const receipt: Receipt = { ...receiptFrom(result.lastMessage, fire.summary), at, source: "final-answer" };
     this.deps.fires.record({ type: "receipt", fireId: fire.fireId, receipt, at });

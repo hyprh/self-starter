@@ -52,6 +52,7 @@ export class SystemNotifier implements Notifier {
       if (notifySend) delivered = await runQuietly(notifySend, ["--app-name=Self-Starter", title, body + hint]);
     }
 
-    this.log(`notification${delivered ? "" : " (no notifier available)"}: ${title}: ${body}`);
+    if (!delivered) throw new Error(`no notifier available for "${title}" (${process.platform === "darwin" ? "install terminal-notifier" : "install notify-send, from libnotify"})`);
+    this.log(`notification: ${title}: ${body}`);
   }
 }

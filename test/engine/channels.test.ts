@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type Socket } from "node:net";
@@ -160,6 +160,21 @@ describe("notification channels", () => {
     assert.match(outlook.stderr, /requires OAuth/);
     const unknown = await setUp("me@example.org");
     assert.match(unknown.stderr, /no preset for me@example\.org; give its SMTP server with --host/);
+  });
+
+  it("says so when a test notification reached no one", () => {
+    const test = (channel: string) =>
+      spawnSync(process.execPath, [CLI, "channel", "test", channel], {
+        // No PATH: no notify-send, terminal-notifier or osascript to show a desktop notification.
+        env: { SELF_STARTER_HOME: home.paths.home, PATH: "" },
+        encoding: "utf8",
+      });
+    const unknown = test("sms");
+    assert.equal(unknown.status, 2);
+    assert.match(unknown.stderr, /usage: self-starter channel test \[desktop\|email\]/);
+    const desktop = test("desktop");
+    assert.equal(desktop.status, 1);
+    assert.match(desktop.stderr, /desktop notification failed: no notifier available/);
   });
 
   it("logs a failed delivery instead of throwing", async () => {

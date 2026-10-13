@@ -2,6 +2,7 @@
 // once, in a terminal, so that keys and passwords never pass through the chat.
 
 import {
+  CHANNEL_NAMES,
   ChannelNotifier,
   channelSettings,
   composeEmail,
@@ -9,6 +10,7 @@ import {
   saveEmailChannel,
   sendEmail,
   setDefaultChannels,
+  type ChannelName,
   type EmailSettings,
 } from "../engine/channels.js";
 import { loadConfig } from "../engine/config.js";
@@ -69,7 +71,8 @@ export async function channelCommand(paths: Paths, args: Args): Promise<void> {
       return;
     }
     case "test": {
-      const channel = (name ?? "email") as "desktop" | "email";
+      const channel = (name ?? "email") as ChannelName;
+      if (!CHANNEL_NAMES.includes(channel)) throw new UsageError(`usage: self-starter channel test [${CHANNEL_NAMES.join("|")}]`);
       const errors: string[] = [];
       const notifier = new ChannelNotifier(paths, new SystemNotifier(), (line) => {
         if (/failed|not set up|no email channel/.test(line)) errors.push(line);

@@ -159,6 +159,16 @@ describe("event mode", () => {
     assert.deepEqual(Object.keys(rt.seenKeys).sort(), ["a", "b", "c"]);
   });
 
+  it("counts a key that a run repeats once", () => {
+    const def = makeDefinition({ mode: "event" });
+    let rt = evaluate(def, initialRuntime(1), eventRun(["a"]), atSeconds(0)).runtime;
+    const result = evaluate(def, rt, eventRun(["b", "b", "a"]), atSeconds(60));
+    assert.equal(result.fire?.reason, "1 new event");
+    assert.deepEqual(result.fire?.events?.map((event) => event.key), ["b"]);
+    rt = result.runtime;
+    assert.equal(evaluate(def, rt, eventRun(["b"]), atSeconds(120)).fire, undefined);
+  });
+
   it("holds events found during a cooldown and fires them together afterwards", () => {
     const def = makeDefinition({ mode: "event", policy: { cooldown: "10m" } });
     let rt = initialRuntime(1);
