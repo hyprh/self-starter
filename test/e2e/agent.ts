@@ -3,7 +3,8 @@
 // app-server`, the protocol the Codex app speaks) and has two triggers set up
 // on a training log: one answers in that conversation, one in a thread of its
 // own. The first run finishes while Codex is open, and Codex picks the fire up
-// in the open thread. The user closes Codex, the second run finishes, and
+// in the open thread. The user closes Codex in the middle of that turn, which
+// leaves the conversation paused as Stop does; the second run finishes, and
 // Self-Starter wakes both threads to handle their fires. Each fire must end
 // with Codex calling trigger_report from the right thread.
 // It uses its own Self-Starter and Codex folders and no background service:
@@ -35,6 +36,8 @@ mkdirSync(process.env.CODEX_HOME, { recursive: true });
 writeFileSync(log, "epoch 1/3 loss 0.91\n");
 const paths = resolvePaths();
 const selfStarter = (args: string[]) => cli(process.env, args);
+const codexBin = findCodex();
+if (!codexBin) throw new Error("codex was not found; install the Codex CLI (npm install -g @openai/codex)");
 
 const PROBE_EVENTS = `
 const input = JSON.parse(await new Response(Deno.stdin.readable).text());
@@ -106,7 +109,7 @@ function standInModel(): Promise<Server> {
 
 /** The Codex app: an app server, here with no window. */
 function openCodex(): Promise<AppServerSession> {
-  const { command, prefix } = codexCommand(findCodex()!);
+  const { command, prefix } = codexCommand(codexBin!);
   return AppServerSession.open(command, prefix, { cwd: project });
 }
 
@@ -133,11 +136,11 @@ async function reported(triggerId: string, n: number, threadId: string): Promise
   return fire;
 }
 
-/** The text of the turns in a thread that handled the fire, as the Codex app would show them. */
+/** The status of each turn in a thread that handled the fire, as the Codex app lists them. */
 async function turnsAbout(codex: AppServerSession, threadId: string, fireId: string): Promise<string[]> {
   const page = await codex.request("thread/turns/list", { threadId, limit: 10, itemsView: "full" });
   const turns: Json[] = page.data ?? [];
-  return turns.filter((turn) => JSON.stringify(turn.items).includes(fireId)).map((turn) => `${turn.status}: ${JSON.stringify(turn.items).length} bytes`);
+  return turns.filter((turn) => JSON.stringify(turn.items).includes(fireId)).map((turn) => String(turn.status));
 }
 
 async function main(): Promise<void> {
@@ -173,7 +176,8 @@ async function main(): Promise<void> {
 
     // The user closes Codex while that turn is finishing, which leaves the thread paused, as Stop does.
     codex.close();
-    await waitFor("Codex to close", async () => ((await new CodexCli(findCodex()!).inspectThread(threadId, "")).paused ? true : undefined), { timeoutMs: 20_000 });
+    const outside = new CodexCli(codexBin!);
+    await waitFor("Codex to close", async () => ((await outside.inspectThread(threadId, "")).paused ? true : undefined), { timeoutMs: 20_000 });
     console.log("✓ closing Codex in the middle of the turn left the thread paused");
     appendFileSync(log, "epoch 1/3 loss 0.88\nFinished run 2 in 2h58m, loss 0.39\n");
     console.log(`\n$ echo "Finished run 2 ..." >> train.log   (Codex closed)`);
@@ -185,8 +189,8 @@ async function main(): Promise<void> {
     for (const [thread, fire] of [[threadId, second], [ownThread, own]] as const) {
       await waitFor(
         `the turn that handled ${fire.fireId} to end`,
-        async () => ((await turnsAbout(codex!, thread, fire.fireId)).some((turn) => turn.startsWith("completed")) ? true : undefined),
-        { timeoutMs: 60_000, explain: async () => `thread ${thread} shows: ${(await turnsAbout(codex!, thread, fire.fireId)).join(", ") || "nothing"}` },
+        async () => ((await turnsAbout(codex!, thread, fire.fireId)).includes("completed") ? true : undefined),
+        { timeoutMs: 60_000, explain: async () => `thread ${thread} lists: ${(await turnsAbout(codex!, thread, fire.fireId)).join(", ") || "no such turn"}` },
       );
     }
     console.log("✓ opening Codex again shows both answers in their threads");
