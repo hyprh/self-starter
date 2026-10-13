@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "license": "MIT",
   "private": true,
-  "description": "Give Codex eyes. When CI fails, a training run finishes, your server goes down or NVDA crosses your price, Codex notices and gets to work in your conversation, even if it's closed. Zero tokens while it waits.",
+  "description": "Give Codex eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, Codex starts working on its own, right in your conversation, even if it's closed. Zero tokens while it waits.",
   "homepage": "https://hyprh.github.io/self-starter/",
   "repository": {
     "type": "git",
