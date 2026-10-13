@@ -415,6 +415,17 @@ export class Executor {
     return out;
   }
 
+  /** How often the trigger fired up to this fire, so that Codex can tell when it is too noisy. */
+  private recentFires(definition: TriggerDefinition, fire: FireRecord): { lastDay: number; lastHour: number } {
+    const at = Date.parse(fire.createdAt);
+    const since = Math.max(Date.parse(definition.meta.created_at), at - 86_400_000);
+    const times = this.deps.fires
+      .forTrigger(definition.id)
+      .map((other) => Date.parse(other.createdAt))
+      .filter((time) => time >= since && time <= at);
+    return { lastDay: times.length, lastHour: times.filter((time) => time > at - 3_600_000).length };
+  }
+
   private envelope(definition: TriggerDefinition, fire: FireRecord): EnvelopeInput {
     const merged = this.mergedFires(fire);
     const byKey = new Map<string, ProbeEvent>();
@@ -430,6 +441,7 @@ export class Executor {
       data: fire.data,
       merged: 1 + merged.length,
       previous: previous?.receipt ? { firedAt: previous.createdAt, summary: previous.receipt.summary } : null,
+      recentFires: this.recentFires(definition, fire),
     };
     if (byKey.size > 0) base.events = [...byKey.values()];
     return base;

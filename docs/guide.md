@@ -34,7 +34,7 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 
 - **Probes are code, the engine owns the rules.** A probe answers "what do I see now, and does it count?". The engine runs it on a schedule the probe can adapt (more often near a threshold), fires only when a condition becomes true (with optional minimum duration, re-arm hysteresis, cooldown, max fires and expiry), deduplicates events, retries, and alerts you when a probe keeps failing.
 - **Probes run on your machine, as you.** A probe can read files and logs, run the commands you have (`git`, `gh`, `docker`, a skill's scripts), talk to local services and call web APIs. When a probe only needs a few web APIs, it can run in a sandbox instead (`probe.access: sandbox`): network to the hosts it declares, no files, no commands.
-- **Fires are data, not instructions.** What a probe saw is passed to Codex in a block marked untrusted; the task itself comes from the trigger's definition. A turn handling a fire cannot create or change triggers.
+- **Fires are data, not instructions.** What a probe saw is passed to Codex in a block marked untrusted; the task itself comes from the trigger's definition. A turn handling a fire cannot create or change triggers, with one exception: when a trigger fires far more often than is useful, Codex can make it quieter (check less often, wait longer after a fire, require the condition to hold longer, fire fewer times, or pause it) and tells you what it changed and why. Making a trigger more sensitive always goes through you.
 
 ## Where Codex answers
 

@@ -6,7 +6,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { describeState, describeTrigger } from "../core/describe.js";
-import { definitionToYaml, validateDefinition, type TriggerDefinition } from "../core/definition.js";
+import { definitionToYaml, probeTimings, validateDefinition, type TriggerDefinition } from "../core/definition.js";
+import { parseDuration } from "../core/duration.js";
 import { deepMerge, describeChanges, isRecord, patchPaths } from "../core/patch.js";
 import type { ProbeRunResult } from "./probe-runner.js";
 import { channelSettings } from "./channels.js";
@@ -136,7 +137,8 @@ export function fireView(fire: FireRecord) {
 export type FireView = ReturnType<typeof fireView>;
 
 export class TriggerService {
-  private readonly reportedTurns = new Set<string>();
+  /** Turns that reported a fire, and the trigger of that fire. */
+  private readonly reportedTurns = new Map<string, string>();
   readonly startedAt = new Date().toISOString();
 
   constructor(private readonly deps: ServiceDeps) {
@@ -155,17 +157,35 @@ export class TriggerService {
    * themselves. Requests from the terminal are the user's own.
    */
   private guard(caller: Caller, action: string): void {
-    if (caller.via !== "mcp") return;
-    const refuse = (why: string): never => {
-      throw new ServiceError("refused", `Cannot ${action} now: ${why} Triggers cannot be created, changed or deleted while a trigger fire is being handled; the user can ask again in a new message.`);
-    };
-    if (caller.threadId && this.deps.fires.threadBusy(caller.threadId)) {
-      refuse("this thread is handling a trigger fire that has not been reported yet.");
+    const why = this.handlingFire(caller);
+    if (why) {
+      throw new ServiceError(
+        "refused",
+        `Cannot ${action} now: ${why} Triggers cannot be created, changed or deleted while a trigger fire is being handled (trigger_tune can only make the trigger that fired quieter); the user can ask again in a new message.`,
+      );
     }
-    if (caller.turnId && this.reportedTurns.has(caller.turnId)) refuse("this turn handled a trigger fire.");
+  }
+
+  /** Why the caller's turn counts as handling a trigger fire, or undefined when it does not. */
+  private handlingFire(caller: Caller): string | undefined {
+    if (caller.via !== "mcp") return undefined;
+    if (caller.threadId && this.deps.fires.threadBusy(caller.threadId)) return "this thread is handling a trigger fire that has not been reported yet.";
+    if (caller.turnId && this.reportedTurns.has(caller.turnId)) return "this turn handled a trigger fire.";
     if (caller.turnTrigger === "queue" && caller.threadId && this.recentFireIn(caller.threadId)) {
-      refuse("this turn was started by a queued message, and this thread recently received a trigger fire.");
+      return "this turn was started by a queued message, and this thread recently received a trigger fire.";
     }
+    return undefined;
+  }
+
+  /** The triggers whose fires the caller's turn is handling or handled. */
+  private firingTriggers(caller: Caller): Set<string> {
+    const ids = new Set<string>();
+    const reported = caller.turnId ? this.reportedTurns.get(caller.turnId) : undefined;
+    if (reported) ids.add(reported);
+    for (const fire of this.deps.fires.all()) {
+      if (fire.status === "delivered" && caller.threadId && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
+    }
+    return ids;
   }
 
   private recentFireIn(threadId: string): boolean {
@@ -437,6 +457,84 @@ export class TriggerService {
     return { changes: changed, trigger: this.get({ triggerId: def.id }) };
   }
 
+  /**
+   * Makes a trigger quieter, keeping its state: checks less often, a longer
+   * cooldown or `for`, fewer fires, or a pause. It is the one change a turn that
+   * handles a fire may make, and only to the trigger that fired: whatever fire
+   * data could make Codex do, the worst is a trigger that tells less, and the
+   * user is told what changed and why.
+   */
+  async tuneTrigger(params: { triggerId?: unknown; reason?: unknown; checkEvery?: unknown; cooldown?: unknown; for?: unknown; maxFires?: unknown; pause?: unknown }, caller: Caller) {
+    const existing = this.load(params.triggerId);
+    const before = existing.definition;
+    const fromFire = this.handlingFire(caller) !== undefined;
+    if (fromFire && !this.firingTriggers(caller).has(before.id)) {
+      throw new ServiceError("refused", `While handling a fire, only the trigger that fired can be made quieter, not ${before.id}; the user can ask in a new message.`);
+    }
+    if (typeof params.reason !== "string" || params.reason.trim() === "") throw new ServiceError("invalid", "reason is required: one sentence the user will read");
+    const reason = params.reason.trim();
+    const def = JSON.parse(JSON.stringify(before)) as TriggerDefinition;
+    const problems: string[] = [];
+    const changes: string[] = [];
+    /** The duration given for `name` in milliseconds, when it is valid and longer than `currentMs`. */
+    const longer = (name: string, value: unknown, currentMs: number, current: string): number | undefined => {
+      if (value === undefined) return undefined;
+      const ms = typeof value === "string" ? parseDuration(value) : undefined;
+      if (ms === undefined) problems.push(`${name} must be a duration such as 15m or 2h`);
+      else if (ms <= currentMs) problems.push(`${name} can only be longer than now (${current}); to make the trigger more sensitive, ask the user and use trigger_update`);
+      else return ms;
+      return undefined;
+    };
+    const timings = probeTimings(before);
+    const every = longer("check_every", params.checkEvery, timings.defaultMs, before.probe.interval.default);
+    if (every !== undefined) {
+      const value = params.checkEvery as string;
+      def.probe.interval.default = value;
+      if (every > timings.minMs) def.probe.interval.min = value;
+      if (every > timings.maxMs) def.probe.interval.max = value;
+      changes.push(`checks every ${value} (was ${before.probe.interval.default})`);
+    }
+    if (longer("cooldown", params.cooldown, timings.cooldownMs, before.policy.cooldown ?? "none") !== undefined) {
+      def.policy.cooldown = params.cooldown as string;
+      changes.push(`waits ${def.policy.cooldown} after a fire (was ${before.policy.cooldown ?? "no wait"})`);
+    }
+    if (params.for !== undefined && before.mode !== "state") problems.push("for applies to state triggers only");
+    else if (longer("for", params.for, timings.forMs, before.for ?? "none") !== undefined) {
+      def.for = params.for as string;
+      changes.push(`fires when the condition held ${def.for} (was ${before.for ?? "at once"})`);
+    }
+    if (params.maxFires !== undefined) {
+      const max = params.maxFires;
+      if (typeof max !== "number" || !Number.isInteger(max) || max < 1) problems.push("max_fires must be a whole number of at least 1");
+      else if (before.policy.max_fires !== undefined && max >= before.policy.max_fires) problems.push(`max_fires can only be lower than now (${before.policy.max_fires})`);
+      else {
+        def.policy.max_fires = max;
+        changes.push(`stops after ${max} fire(s) (was ${before.policy.max_fires ?? "no limit"})`);
+      }
+    }
+    if (params.pause !== undefined && params.pause !== true) problems.push("pause can only be true; the user resumes a trigger");
+    if (problems.length > 0) throw new ServiceError("invalid", `trigger_tune: ${problems.join("; ")}`);
+    if (changes.length === 0 && params.pause !== true) throw new ServiceError("invalid", "trigger_tune needs at least one of check_every, cooldown, for, max_fires or pause");
+
+    const validated = validateDefinition(def);
+    if (!validated.ok) throw new ServiceError("invalid", `the tuned definition has problems:\n- ${validated.errors.join("\n- ")}`);
+    const tuned = validated.definition;
+    if (changes.length > 0) {
+      tuned.meta = { ...before.meta, revision: before.meta.revision + 1 };
+      this.deps.store.saveDefinition(tuned);
+      this.deps.engine.retune(tuned.id, tuned);
+    }
+    if (params.pause === true) {
+      this.deps.engine.pause(tuned.id);
+      changes.push("paused until you resume it");
+    }
+    this.deps.log(`tuned ${tuned.id} (${caller.via}${fromFire ? ", while handling a fire" : ""}): ${changes.join("; ")}; reason: ${reason}`);
+    if (fromFire) {
+      await this.deps.executor.notifyAbout(tuned, { title: `${tuned.name}: Codex made it quieter`, body: `${changes.join("; ")}. Why: ${reason}` });
+    }
+    return { changes, reason, trigger: this.get({ triggerId: tuned.id }) };
+  }
+
   pause(params: { triggerId?: unknown }, caller: Caller) {
     this.guard(caller, "pause a trigger");
     const id = this.requireTrigger(params.triggerId);
@@ -547,8 +645,8 @@ export class TriggerService {
       throw new ServiceError(message.startsWith("no such fire") ? "not_found" : "refused", message);
     }
     if (caller.turnId) {
-      this.reportedTurns.add(caller.turnId);
-      if (this.reportedTurns.size > REPORTED_TURNS_MAX) this.reportedTurns.delete(this.reportedTurns.values().next().value!);
+      this.reportedTurns.set(caller.turnId, fire.triggerId);
+      if (this.reportedTurns.size > REPORTED_TURNS_MAX) this.reportedTurns.delete(this.reportedTurns.keys().next().value!);
     }
     const when = this.tryLoad(fire.triggerId)?.definition.notify.when ?? "never";
     return { fireId: fire.fireId, status: fire.status, userNotified: when === "always" || (when === "receipt" && notify) };
@@ -597,6 +695,7 @@ export class TriggerService {
       "trigger.pause": (p, c) => this.pause(p, c),
       "trigger.resume": (p, c) => this.resume(p, c),
       "trigger.delete": (p, c) => this.delete(p, c),
+      "trigger.tune": (p, c) => this.tuneTrigger(p, c),
       "fire.history": (p) => this.history(p),
       "fire.report": (p, c) => this.report(p, c),
     };

@@ -112,6 +112,55 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.throws(() => t.service.report({ fireId: fired.fireId, summary: "again", notify: false }, fromThread()), /already has a receipt/);
   });
 
+  it("lets the turn that handles a fire make that trigger quieter, keeping its state, and tells the user", async () => {
+    await t.activate();
+    await t.activate({ id: "other", name: "Other" });
+    server.price = 180;
+    const fired = await t.engine.runNow("price-alert");
+    assert.ok(fired?.fireId);
+    const queued = await eventually(() => t.codex.queued[0]);
+    assert.match(queued.message, /How often it fired: 1 time\(s\) in the last 24 hours, 1 in the last hour\./);
+    assert.match(queued.message, /trigger_tune can make it quieter/);
+    // The turn that handles the fire, in the trigger's own thread.
+    const handling = fromThread({ threadId: queued.threadId, turnId: "fire-turn" });
+
+    const tune = (changes: Record<string, unknown>) => t.service.tuneTrigger({ triggerId: "price-alert", reason: "It fired 14 times in an hour on a flapping feed.", ...changes }, handling);
+    await assert.rejects(tune({ checkEvery: "30s" }), /check_every can only be longer than now \(1m\)/);
+    await assert.rejects(tune({ maxFires: 0 }), /max_fires must be a whole number of at least 1/);
+    await assert.rejects(tune({}), /needs at least one of/);
+    await assert.rejects(t.service.tuneTrigger({ triggerId: "price-alert", cooldown: "1h" }, handling), /reason is required/);
+    await assert.rejects(t.service.tuneTrigger({ triggerId: "other", reason: "noisy", cooldown: "1h" }, handling), (error: ServiceError) => error.code === "refused");
+    assert.throws(() => t.service.updateTrigger({ triggerId: "price-alert", changes: { policy: { cooldown: "1h" } } }, handling), (error: ServiceError) => error.code === "refused");
+
+    const tuned = await tune({ checkEvery: "15m", cooldown: "2h" });
+    assert.deepEqual(tuned.changes, ["checks every 15m (was 1m)", "waits 2h after a fire (was no wait)"]);
+    const notice = await eventually(() => t.notifier.sent.find((sent) => sent.title === "Price above 150: Codex made it quieter"));
+    assert.equal(notice.body, "checks every 15m (was 1m); waits 2h after a fire (was no wait). Why: It fired 14 times in an hour on a flapping feed.");
+
+    const runtime = t.engine.runtime("price-alert");
+    assert.equal(runtime.revision, 2);
+    assert.equal(runtime.fireCount, 1, "the trigger kept its state");
+    assert.equal(runtime.cooldownUntil, new Date(Date.parse(runtime.lastFireAt!) + 2 * 3_600_000).toISOString(), "the longer cooldown counts from the last fire");
+    assert.equal(Date.parse(runtime.nextRunAt!) - Date.parse(runtime.last!.ranAt), 15 * 60_000, "and the next check moved out");
+    assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "the price is still above 150, but that fired already");
+  });
+
+  it("can pause the trigger that fired, or end it with a lower max_fires", async () => {
+    await t.activate();
+    server.price = 180;
+    await t.engine.runNow("price-alert");
+    const queued = await eventually(() => t.codex.queued[0]);
+    const tuned = await t.service.tuneTrigger({ triggerId: "price-alert", reason: "The user only wanted the first one.", maxFires: 1 }, fromThread({ threadId: queued.threadId, turnId: "fire-turn" }));
+    assert.deepEqual(tuned.changes, ["stops after 1 fire(s) (was no limit)"]);
+    assert.equal(t.engine.runtime("price-alert").lifecycle, "exhausted");
+
+    await t.activate({ id: "second", name: "Second" }, STATE_PROBE, fromThread({ turnId: "turn-20" }));
+    const paused = await t.service.tuneTrigger({ triggerId: "second", reason: "Noisy at night.", pause: true }, fromThread({ turnId: "turn-21" }));
+    assert.deepEqual(paused.changes, ["paused until you resume it"]);
+    assert.equal(t.engine.runtime("second").lifecycle, "paused");
+    assert.equal(t.notifier.sent.filter((sent) => /made it quieter/.test(sent.title)).length, 1, "only the change made while handling a fire is announced");
+  });
+
   it("fires only on the transition and stops after max_fires", async () => {
     await t.activate({ policy: { max_fires: 2 } });
     server.price = 200;

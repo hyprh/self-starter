@@ -70,7 +70,7 @@ Or from a clone of this repository: `npm install && npm link && self-starter ins
 ## How it works
 
 - **Probes, not prompts.** Codex writes a few lines of TypeScript once; the background service runs them on a schedule. No model is called while waiting.
-- **The engine owns the rules.** It fires only when the condition becomes true, with optional minimum duration, cooldown and limits, deduplicates events, retries, and tells you when a probe keeps failing.
+- **The engine owns the rules.** It fires only when the condition becomes true, with optional minimum duration, cooldown and limits, deduplicates events, retries, and tells you when a probe keeps failing. When a trigger turns out noisy, Codex can make it quieter on its own, never louder, and tells you.
 - **The conversation answers by itself.** The task goes back to the conversation where you asked, or to a thread of the trigger's own. If Codex is closed, Self-Starter opens the conversation in the background.
 - **You stay in control.** Codex asks before turning on triggers that act for you. API keys are typed in a terminal, never in the chat. What a probe saw reaches Codex as data, not instructions.
 

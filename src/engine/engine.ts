@@ -5,7 +5,7 @@
 // take effect at the next check.
 
 import { existsSync, renameSync, statSync } from "node:fs";
-import type { TriggerDefinition } from "../core/definition.js";
+import { probeTimings, type TriggerDefinition } from "../core/definition.js";
 import {
   evaluate,
   FAILURES_BEFORE_DEGRADED,
@@ -188,6 +188,30 @@ export class Engine {
       }
     }
     this.schedule(0);
+  }
+
+  /**
+   * Takes a revision that only makes the trigger quieter (trigger_tune) without
+   * starting over, so that it keeps its baseline and does not fire again for a
+   * condition that already held. A longer cooldown counts from the last fire, a
+   * lower max_fires can end the trigger now, and the next check moves out to
+   * the new interval.
+   */
+  retune(id: string, definition: TriggerDefinition): RuntimeState {
+    const runtime: RuntimeState = { ...this.runtime(id), revision: definition.meta.revision };
+    const { cooldownMs, defaultMs } = probeTimings(definition);
+    const later = (current: string | undefined, candidate: number) =>
+      current === undefined || candidate > Date.parse(current) ? new Date(candidate).toISOString() : current;
+    if (cooldownMs > 0 && runtime.lastFireAt) runtime.cooldownUntil = later(runtime.cooldownUntil, Date.parse(runtime.lastFireAt) + cooldownMs);
+    if (runtime.last) runtime.nextRunAt = later(runtime.nextRunAt, Date.parse(runtime.last.ranAt) + defaultMs);
+    const maxFires = definition.policy.max_fires;
+    if (maxFires !== undefined && runtime.fireCount >= maxFires && runtime.lifecycle === "active") {
+      runtime.lifecycle = "exhausted";
+      delete runtime.nextRunAt;
+    }
+    this.save(id, runtime);
+    this.schedule(0);
+    return runtime;
   }
 
   pause(id: string): RuntimeState {
