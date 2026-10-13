@@ -45,6 +45,12 @@
       "advanced": true,
       "description": "Items fetched per stock and type on each check (at most 50)."
     },
+    "request_spacing_ms": {
+      "type": "number",
+      "default": 500,
+      "advanced": true,
+      "description": "Pause between requests, to be gentle with Futu's API."
+    },
     "base_url": {
       "type": "string",
       "default": "https://ai-news-search.futunn.com",

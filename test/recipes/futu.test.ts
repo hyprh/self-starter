@@ -22,6 +22,8 @@ class FakeNewsSearch {
   /** Items by keyword and news type, newest first, such as items.set("NVDA/3", [...]). */
   items = new Map<string, Item[]>();
   failure: { status: number } | { code: number; message: string } | undefined;
+  /** Answer 429 with this Retry-After once this many requests were served. */
+  rateLimit: { after: number; retryAfter: string } | undefined;
   requests: URLSearchParams[] = [];
   private server: Server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -30,6 +32,10 @@ class FakeNewsSearch {
       return res.end();
     }
     this.requests.push(url.searchParams);
+    if (this.rateLimit && this.requests.length > this.rateLimit.after) {
+      res.writeHead(429, { "retry-after": this.rateLimit.retryAfter });
+      return res.end("too many requests");
+    }
     if (this.failure && "status" in this.failure) {
       res.statusCode = this.failure.status;
       return res.end("unavailable");
@@ -82,7 +88,7 @@ describe("Futu news watch recipe", { skip: deno ? false : "the deno npm package 
       id: "futu-watch",
       name: "Futu watch",
       intent: "Tell me when analysts change their view on the stocks I follow",
-      probe: { params: { base_url: search.origin, ...params } },
+      probe: { params: { base_url: search.origin, request_spacing_ms: 0, ...params } },
       action: { type: "notify" },
     });
     assert.deepEqual(applied.errors, []);
@@ -157,6 +163,19 @@ describe("Futu news watch recipe", { skip: deno ? false : "the deno npm package 
       events.map((event) => event.summary),
       ["00700 · announcement: 腾讯控股：股份回购公告", "00700 · news: 腾讯回购动作持续"],
     );
+  });
+
+  it("keeps what it found and checks again later when Futu asks to slow down", async () => {
+    search.requests = [];
+    search.rateLimit = { after: 1, retryAfter: "600" };
+    search.items.set("腾讯控股/3", [item("1000932788", "大摩：维持<em>腾讯控股</em>(00700)“增持”评级 目标价550港元", "2026-10-13T01:18:00Z")]);
+    const result = await run(definition({ stocks: ["腾讯控股", "英伟达", "苹果"] }));
+    search.rateLimit = undefined;
+    assert.ok(result.ok, result.ok ? "" : result.error);
+    assert.deepEqual(result.output.mode === "event" && result.output.events.map((event) => event.key), ["1000932788"]);
+    assert.equal(result.output.summary, "1 item(s) from the last 48 h on Futu (腾讯控股 1); Futu asked to slow down, next check in 10 min");
+    assert.equal(result.output.nextCheckInMs, 10 * 60_000);
+    assert.equal(search.requests.length, 2, "it stops asking once told to slow down");
   });
 
   it("explains what went wrong", async () => {
