@@ -375,7 +375,7 @@ JSON files are written through a temporary file and a rename; the fire log toler
 
 | Purpose | Mechanism | Status |
 |---|---|---|
-| Distribution and installation | `self-starter install` writes a local marketplace (`.agents/plugins/marketplace.json` plus the plugin with an `.mcp.json` that starts this installation's MCP server through absolute paths) and runs `codex plugin marketplace add` and `codex plugin add self-starter@self-starter` | Verified; the app listing it is H1 |
+| Distribution and installation | `self-starter install` writes a local marketplace (`.agents/plugins/marketplace.json` plus the plugin with an `.mcp.json` that starts this installation's MCP server through absolute paths) and runs `codex plugin marketplace add` and `codex plugin add self-starter@self-starter` | Verified, also in CI on macOS and Linux with the background service; the app listing it is H1 |
 | Tools offered to the model | The plugin's MCP tools appear to the model as one namespace, `mcp__self_starter` | Verified |
 | Identify the calling thread and turn | `_meta.threadId` and `_meta["x-codex-turn-metadata"]` (`thread_id`, `turn_id`, `turn_trigger`) on each tool call, set by Codex, not by the model | Verified |
 | Tool approval | Tools annotated `readOnlyHint`, or neither destructive nor open-world, run without a Codex approval prompt; `trigger_draft` (runs agent-written code once) and `trigger_delete` are annotated so that Codex asks when the thread's approval policy calls for it | By annotation |
@@ -445,7 +445,7 @@ The trade-off: a full-access probe runs outside Codex's own sandbox, so a Codex 
 - Both target threads, the `notify` and `agent` actions, receipts, reminders and timeouts
 - Notifications on macOS and Linux, and by email; the `self-starter` command-line tool
 - Ready-made recipes, starting with the IBKR account watch, and a landing page for GitHub Pages
-- Tests: unit tests for the firing rules, integration tests with real Deno probes, the daemon, the control socket and the MCP protocol; end-to-end runs against the Codex CLI
+- Tests: unit tests for the firing rules, integration tests with real Deno probes, the daemon, the control socket and the MCP protocol; end-to-end runs against the Codex CLI. CI runs the tests on Linux and macOS, installs for real on both (Codex CLI, launchd or systemd, a trigger firing, crash recovery, reinstall, uninstall) and sends real email through a throwaway mailbox
 
 **Out**
 

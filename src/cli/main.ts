@@ -171,8 +171,9 @@ async function main(argv: string[]): Promise<void> {
   const [command, id] = args.positional;
   switch (command) {
     case undefined:
+      out(args.flags.has("version") ? VERSION : HELP);
+      return;
     case "help":
-    case "--help":
       out(HELP);
       return;
     case "version":

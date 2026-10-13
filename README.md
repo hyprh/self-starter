@@ -18,7 +18,7 @@ You:    Yes.
         exp42 finished: val loss 0.412 vs 0.437 for exp41, same accuracy. Keep exp42.
 ```
 
-Status: working MVP, verified end to end with the Codex CLI and app server on Linux; see the [design](docs/design.md) for what is still to be checked in the Codex app on your machine.
+Status: working MVP, verified end to end with the Codex CLI and app server. CI installs it for real on macOS (launchd) and Linux (systemd) and sends real email. What is left to check in the Codex desktop app is listed in section 11 of the [design](docs/design.md#11-hypotheses-to-validate-in-the-codex-app).
 
 ## How it works
 
