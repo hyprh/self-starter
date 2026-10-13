@@ -81,6 +81,10 @@ p { margin: 0; }
 .eyebrow { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .hero h1 { font-weight: 800; font-size: clamp(2.6rem, 1.8rem + 3.6vw, 4.3rem); line-height: 1.02; letter-spacing: -0.025em; margin: 0.7rem 0 1.1rem; }
 .lede { font-size: 1.15rem; max-width: 34rem; }
+.uses { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 0.5rem; max-width: 34rem; }
+.uses li { position: relative; padding-left: 1.15rem; line-height: 1.45; }
+.uses li::before { content: ""; position: absolute; left: 0; top: 0.5em; width: 0.45rem; height: 0.45rem; border-radius: 50%; background: var(--signal); }
+.uses span { color: var(--muted); }
 .start { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 1.8rem; max-width: 34rem; }
 .cmd { display: flex; align-items: stretch; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
 .cmd pre { margin: 0; padding: 0.75rem 0.9rem; font-size: 0.82rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; min-width: 0; }
@@ -155,6 +159,12 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
       <p class="eyebrow">A plugin for Codex</p>
       <h1>Give Codex eyes.</h1>
       <p class="lede">Tell Codex what to keep an eye on. A small probe watches it on your machine without spending tokens, and when something changes, Codex comes back to your conversation with what it found and what it did.</p>
+      <ul class="uses" aria-label="What it does today">
+        <li><b>CI fails on main.</b> <span>Codex finds the cause and proposes a fix.</span></li>
+        <li><b>A training run finishes.</b> <span>Codex compares it with the last one.</span></li>
+        <li><b>An error shows up in your app log.</b> <span>Codex traces it to the code.</span></li>
+        <li><b>Your PR gets review comments.</b> <span>Codex addresses them.</span></li>
+      </ul>
       <div class="start">
         <div class="cmd">
           <pre id="install"><code>git clone https://github.com/hyprh/self-starter.git
@@ -204,7 +214,7 @@ self-starter install</code></pre>
 
   <section aria-labelledby="runs">
     <div class="wrap">
-      <h2 id="runs">Five real runs</h2>
+      <h2 id="runs">Six real runs</h2>
       <p class="sub">Recorded on October 12 and 13, 2026 with Self-Starter 0.1.0. Each line is what the probe reported, unedited; times are UTC.</p>
       <div class="runs">
         <article class="run">
@@ -215,6 +225,15 @@ self-starter install</code></pre>
             <p><time datetime="2026-10-12T17:25:00Z">17:25:00</time>finished: Finished training in 3h12m  best val_loss 0.412 (epoch 3) <span class="fired">· fired</span></p>
           </div>
           <p class="then"><b>Then Codex</b> compares the two runs and says which one to keep.</p>
+        </article>
+        <article class="run">
+          <header><h3>An error shows up in the app log</h3><span class="tag">local file</span></header>
+          <p class="say">“When a new error shows up in logs/app.log, find the cause and propose a fix.”</p>
+          <div class="log">
+            <p><time datetime="2026-10-13T06:41:25Z">06:41:25</time>0 error(s) in logs/app.log</p>
+            <p><time datetime="2026-10-13T06:41:35Z">06:41:35</time>ERROR POST /api/orders 500 TypeError: Cannot read properties of undefined (reading 'id') <span class="fired">· fired</span></p>
+          </div>
+          <p class="then"><b>Then Codex</b> reads the stack trace and the code it points to, and proposes a fix.</p>
         </article>
         <article class="run">
           <header><h3>The dev server stops answering</h3><span class="tag">local service</span></header>
@@ -243,7 +262,7 @@ self-starter install</code></pre>
           </div>
           <p class="then"><b>Then Codex</b> upgrades, tests and reports (with full access, to install packages).</p>
         </article>
-        <article class="run wide">
+        <article class="run">
           <header><h3>Analysts change their view on a stock</h3><span class="tag">Futu news search</span></header>
           <p class="say">“Tell me when analysts change their rating or price target on Tencent or NVIDIA, and what the community thinks.”</p>
           <div class="log">
@@ -263,7 +282,7 @@ self-starter install</code></pre>
       <ul class="ideas">
         <li>“Whenever CI fails on main, find the cause and propose a fix.”<span class="tag">gh run list</span></li>
         <li>“When my PR gets review comments, address them and push.”<span class="tag">gh pr view</span></li>
-        <li>“When a new error shows up in logs/app.log, find the cause.”<span class="tag">log file</span></li>
+        <li>“When tonight's benchmark is 5% slower, find the commit.”<span class="tag">results file</span></li>
         <li>“If the disk gets 90% full, find what grew and what can go.”<span class="tag">df</span></li>
         <li>“When the GPU is idle for 10 min, start the next experiment.”<span class="tag">nvidia-smi</span></li>
         <li>“When a speculative decoding paper hits arXiv, sum it up.”<span class="tag">arXiv API</span></li>
