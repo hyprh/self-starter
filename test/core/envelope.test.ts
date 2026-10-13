@@ -30,6 +30,10 @@ describe("renderEnvelope", () => {
     assert.match(renderEnvelope({ ...base, receipt: "final-answer" }), /final answer as JSON/);
   });
 
+  it("tells Codex not to wait for the user", () => {
+    assert.match(renderEnvelope({ ...base, receipt: "tool" }), /may not be watching: do the task without waiting for answers/);
+  });
+
   it("mentions merged fires", () => {
     assert.match(renderEnvelope({ ...base, merged: 3, receipt: "tool" }), /3 fires merged/);
   });
