@@ -214,7 +214,7 @@ codex plugin add self-starter@self-starter</code></pre>
   <section aria-labelledby="runs">
     <div class="wrap">
       <h2 id="runs">Six real runs</h2>
-      <p class="sub">Recorded on October 12 and 13, 2026, before the first release. Each line is what the probe reported, unedited; times are UTC.</p>
+      <p class="sub">Recorded on October 12 and 13, 2026. Each line is what the probe reported, unedited; times are UTC.</p>
       <div class="runs">
         <article class="run">
           <header><h3>A training run finishes</h3><span class="tag">local file</span></header>
@@ -254,12 +254,12 @@ codex plugin add self-starter@self-starter</code></pre>
         </article>
         <article class="run">
           <header><h3>A dependency ships a new version</h3><span class="tag">npm registry</span></header>
-          <p class="say">“When a new version of zod is out, upgrade it on a branch, run the tests and tell me if it is safe to merge.”</p>
+          <p class="say">“When TypeScript's nightly build is out, type-check this project with it and tell me what would break.”</p>
           <div class="log">
-            <p><time datetime="2026-10-12T17:24:40Z">17:24:40</time>latest zod: 4.6.7</p>
-            <p><time></time>4.6.7 counts as seen; the next version fires</p>
+            <p><time datetime="2026-10-13T08:31:26Z">08:31:26</time>typescript@next: 7.1.0-dev.20261012.1</p>
+            <p><time datetime="2026-10-13T08:36:27Z">08:36:27</time>typescript 7.1.0-dev.20261013.1 is out <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> upgrades, tests and reports (with full access, to install packages).</p>
+          <p class="then"><b>Then Codex</b> installs it in a scratch copy, runs <code>tsc</code> and lists what would break.</p>
         </article>
         <article class="run">
           <header><h3>Analysts change their view on a stock</h3><span class="tag">Futu news search</span></header>
