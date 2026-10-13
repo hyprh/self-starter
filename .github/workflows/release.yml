@@ -1,0 +1,30 @@
+# Publishes a GitHub release when a version tag is pushed, with its section of CHANGELOG.md.
+# The plugin's launcher installs the runtime from this tag (github:hyprh/self-starter#v<version>).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag against the package and the plugin
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$(node -p 'require("./package.json").version')" = "$version"
+          test "$(node -p 'require("./plugin/.codex-plugin/plugin.json").version')" = "$version"
+      - name: Take the notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## $version " 'index($0, heading) == 1 { found = 1; next } found && /^## / { exit } found' CHANGELOG.md > notes.md
+          test -s notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "Self-Starter $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
