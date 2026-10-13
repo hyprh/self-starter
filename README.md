@@ -79,6 +79,7 @@ Or from a clone of this repository: `npm install && npm link && self-starter ins
 - [Guide](docs/guide.md): using triggers, where Codex answers, secrets, email, recipes, the command line
 - [Design](docs/design.md): how it is built, and what was verified against Codex
 - [Checklist for the Codex app](docs/codex-app-checklist.md): four checks on your machine, about ten minutes
+- [Changelog](CHANGELOG.md)
 - Development: `npm test` runs the unit and integration tests. CI also installs it for real on macOS and Linux, runs fires through the real Codex CLI with a stand-in model (`test/e2e/agent.ts`), and sends real email (`test/e2e/email.ts`).
 
 ## License
