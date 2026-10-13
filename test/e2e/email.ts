@@ -5,25 +5,19 @@
 // IMAP to check what arrived. It needs the network, so `npm test` leaves it out;
 // the Email workflow runs it: npm run build && node dist/test/e2e/email.js
 
-import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { createInterface } from "node:readline";
 import { connect, type TLSSocket } from "node:tls";
-import { fileURLToPath } from "node:url";
 import nodemailer, { type TestAccount, type TestAccountService } from "nodemailer";
+import { cli, createTrigger, show, waitFor } from "./harness.js";
 
-type Json = Record<string, any>;
+const env = { ...process.env, SELF_STARTER_HOME: mkdtempSync(join(tmpdir(), "self-starter-email-")) };
+const selfStarter = (args: string[], input?: string) => cli(env, args, input);
 
-const CLI = fileURLToPath(new URL("../../src/cli/main.js", import.meta.url));
-const home = mkdtempSync(join(tmpdir(), "self-starter-email-"));
-const env = { ...process.env, SELF_STARTER_HOME: home };
-
-const TRIGGER = "email-e2e";
 const DEFINITION = {
-  id: TRIGGER,
+  id: "email-check",
   name: "Email check",
   intent: "Email me the result of the end-to-end check",
   probe: { params: { runner: hostname() } },
@@ -44,64 +38,6 @@ const EXPECTED = {
   "the trigger's fire": `[Self-Starter] ${DEFINITION.name}: the probe ran on`,
 };
 
-/** Runs the CLI as a user would in a terminal, with `input` typed at its prompt. */
-function cli(args: string[], input = ""): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [CLI, ...args], { env });
-    let output = "";
-    child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
-    child.stderr.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
-    child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve(output.trim()) : reject(new Error(`self-starter ${args.join(" ")} exited with ${code}: ${output.trim()}`))));
-    child.stdin.on("error", () => undefined);
-    child.stdin.end(input);
-  });
-}
-
-/** Talks to `self-starter mcp` over stdio, the way Codex does, from a user's turn in one thread. */
-class Mcp {
-  private readonly child = spawn(process.execPath, [CLI, "mcp"], { env, stdio: ["pipe", "pipe", "inherit"] });
-  private readonly waiting = new Map<number, { resolve: (message: Json) => void; reject: (error: Error) => void }>();
-  private nextId = 1;
-  private readonly meta = {
-    threadId: "email-e2e-thread",
-    "x-codex-turn-metadata": JSON.stringify({ thread_id: "email-e2e-thread", turn_id: "turn-1", turn_trigger: "user" }),
-  };
-
-  constructor() {
-    createInterface({ input: this.child.stdout }).on("line", (line) => {
-      const message = JSON.parse(line) as Json;
-      if (typeof message.id !== "number") return;
-      this.waiting.get(message.id)?.resolve(message);
-      this.waiting.delete(message.id);
-    });
-    this.child.on("close", (code) => {
-      for (const { reject } of this.waiting.values()) reject(new Error(`self-starter mcp exited with ${code}`));
-      this.waiting.clear();
-    });
-  }
-
-  request(method: string, params: Json): Promise<Json> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.waiting.set(id, { resolve, reject });
-      this.child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-    });
-  }
-
-  async tool(name: string, args: Json): Promise<string> {
-    const { result, error } = await this.request("tools/call", { name, arguments: args, _meta: this.meta });
-    const text: string = result?.content?.[0]?.text ?? error?.message ?? "no answer";
-    if (error || result.isError) throw new Error(`${name} failed: ${text}`);
-    return text;
-  }
-
-  close(): void {
-    this.child.stdin.end();
-  }
-}
-
-const firstLine = (text: string) => text.split("\n")[0]!;
 const quote = (text: string) => `"${text.replace(/[\\"]/g, "\\$&")}"`;
 
 /** Just enough IMAP to read every message in a mailbox. */
@@ -201,57 +137,42 @@ function textOf(message: string): string {
   return Buffer.from(bytes, "latin1").toString("utf8").trim();
 }
 
-/** Reads the mailbox until a message has come for each expected subject. */
-async function waitForMail(account: TestAccount, timeoutMs = 120_000): Promise<Map<string, string>> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const messages = await readMailbox(account);
-    const found = new Map<string, string>();
-    for (const [what, prefix] of Object.entries(EXPECTED)) {
-      const message = messages.find((candidate) => subjectOf(candidate).startsWith(prefix));
-      if (message) found.set(what, message);
-    }
-    if (found.size === Object.keys(EXPECTED).length) return found;
-    if (Date.now() > deadline) {
-      const missing = Object.keys(EXPECTED).filter((what) => !found.has(what));
-      const subjects = messages.map(subjectOf).map((subject) => `  ${subject}`).join("\n") || "  (none)";
-      const show = await cli(["show", TRIGGER]).catch((error: Error) => error.message);
-      const logs = await cli(["logs", "-n", "30"]).catch((error: Error) => error.message);
-      throw new Error(`no email for ${missing.join(", ")}. The mailbox has:\n${subjects}\n\n${show}\n\nDaemon log:\n${logs}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+/** The message for each expected subject, once all have arrived. */
+async function expectedMail(account: TestAccount): Promise<Map<string, string> | undefined> {
+  const messages = await readMailbox(account);
+  const found = new Map<string, string>();
+  for (const [what, prefix] of Object.entries(EXPECTED)) {
+    const message = messages.find((candidate) => subjectOf(candidate).startsWith(prefix));
+    if (message) found.set(what, message);
   }
+  return found.size === Object.keys(EXPECTED).length ? found : undefined;
 }
 
 async function main(): Promise<void> {
   const account = await nodemailer.createTestAccount();
   if (process.env.GITHUB_ACTIONS) console.log(`::add-mask::${account.pass}`);
-  console.log(`Mailbox: ${account.user}\n`);
+  console.log(`Mailbox: ${account.user}`);
 
   const { host, port, secure } = account.smtp;
-  console.log(`$ self-starter channel email ${account.user} --host ${host} --port ${port}${secure ? "" : " --starttls"}`);
-  console.log(await cli(["channel", "email", account.user, "--host", host, "--port", String(port), ...(secure ? [] : ["--starttls"])], `${account.pass}\n`));
-  console.log("\n$ self-starter channel test email");
-  console.log(await cli(["channel", "test", "email"]));
+  const setup = ["channel", "email", account.user, "--host", host, "--port", String(port), ...(secure ? [] : ["--starttls"])];
+  show(`self-starter ${setup.join(" ")}`, await selfStarter(setup, `${account.pass}\n`));
+  show("self-starter channel test email", await selfStarter(["channel", "test", "email"]));
+  show("(Codex, through MCP) trigger_draft, trigger_activate", await createTrigger(env, DEFINITION, PROBE));
 
-  console.log("\nCodex, through MCP: trigger_draft, then trigger_activate");
-  const mcp = new Mcp();
-  try {
-    await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "email-e2e", version: "1" } });
-    const draft = await mcp.tool("trigger_draft", { definition: DEFINITION, code: PROBE });
-    const draftId = /Draft (\S+) saved/.exec(draft)?.[1];
-    if (!draftId) throw new Error(`trigger_draft returned no draft id: ${draft}`);
-    const activated = await mcp.tool("trigger_activate", { draft_id: draftId });
-    console.log(`${firstLine(draft)}\n${firstLine(activated)}`);
-  } finally {
-    mcp.close();
-  }
-
-  const found = await waitForMail(account);
+  const found = await waitFor("the emails", () => expectedMail(account), {
+    timeoutMs: 120_000,
+    everyMs: 5000,
+    explain: async () => {
+      const subjects = (await readMailbox(account)).map((message) => `  ${subjectOf(message)}`).join("\n") || "  (none)";
+      const state = await selfStarter(["show", DEFINITION.id]).catch((error: Error) => error.message);
+      const logs = await selfStarter(["logs", "-n", "30"]).catch((error: Error) => error.message);
+      return `The mailbox has:\n${subjects}\n\n${state}\n\nDaemon log:\n${logs}`;
+    },
+  });
   console.log("\nThe mailbox received:");
   for (const [what, message] of found) console.log(`  ${what}: ${subjectOf(message)}`);
   console.log(`\nThe fire's email:\n${textOf(found.get("the trigger's fire")!)}`);
-  console.log(`\n$ self-starter history ${TRIGGER}\n${await cli(["history", TRIGGER])}`);
+  show(`self-starter history ${DEFINITION.id}`, await selfStarter(["history", DEFINITION.id]));
 }
 
 try {
@@ -260,6 +181,6 @@ try {
   console.error(`\nFAILED: ${(error as Error).message}`);
   process.exitCode = 1;
 } finally {
-  await cli(["service", "stop"]).catch(() => undefined);
-  rmSync(home, { recursive: true, force: true });
+  await selfStarter(["service", "stop"]).catch(() => undefined);
+  rmSync(env.SELF_STARTER_HOME, { recursive: true, force: true });
 }

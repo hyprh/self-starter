@@ -32,3 +32,35 @@ jobs:
       - name: Check the bundled Deno
         run: node --input-type=module -e "import { bundledDeno } from './dist/src/engine/config.js'; if (!bundledDeno()) throw new Error('the deno npm package has no binary');"
       - run: npm test
+
+  # Installs for real, as the README says: Codex CLI, launchd or systemd, then
+  # a trigger, a crash, a reinstall and an uninstall (test/e2e/install.ts).
+  install:
+    name: Install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @openai/codex && codex --version
+      - name: Start a systemd user session, and get notify-send
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libnotify-bin
+          sudo loginctl enable-linger "$USER"
+          echo "XDG_RUNTIME_DIR=/run/user/$(id -u)" >> "$GITHUB_ENV"
+          for _ in $(seq 30); do
+            XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user show-environment > /dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          exit 1
+      - run: npm link && self-starter version
+      - run: node dist/test/e2e/install.js

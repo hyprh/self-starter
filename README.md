@@ -118,7 +118,7 @@ npm test                         # builds, then runs unit and integration tests 
 node dist/test/e2e/email.js      # real email: sets up the email channel and lets a trigger fire into a throwaway Ethereal mailbox
 ```
 
-CI runs the tests on Linux and macOS; the Email workflow runs the email check when the email code changes, or on demand.
+CI runs the tests on Linux and macOS, and installs for real on both (test/e2e/install.ts: the Codex CLI, launchd or systemd, a trigger, a crash, a reinstall and an uninstall). The Email workflow runs the email check when the email code changes, or on demand.
 
 - [docs/design.md](docs/design.md): design and the verified Codex integration points
 - [plugin/](plugin): the Codex plugin (manifest and skills)
