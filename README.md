@@ -6,7 +6,7 @@ Codex works when you talk to it, and its Automations run on a clock. Many things
 
 You tell Codex in one sentence what to watch and what to do. Codex writes a small **probe** (a few lines of TypeScript) that checks the condition, and a background service keeps running it. No model is called while waiting. When the condition is met, the task goes back to Codex, in the conversation where you asked, even if the Codex app is closed, or in a thread of its own. You get a notification or an email with the result.
 
-Landing page: [site/index.html](site/index.html), published to GitHub Pages.
+Landing page: https://hyprh.github.io/self-starter/ (source in [site/](site)).
 
 ```
 You:    When the training run in runs/exp42 finishes, compare its metrics with exp41
