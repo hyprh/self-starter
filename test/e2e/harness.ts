@@ -104,23 +104,23 @@ export function packRuntime(dir: string): string {
   return join(dir, out.stdout.trim().split("\n").at(-1)!);
 }
 
-function codex(env: NodeJS.ProcessEnv, args: string[]): string {
+/** Runs the codex CLI; what it prints on stdout, and its warnings on stderr. */
+function codex(env: NodeJS.ProcessEnv, args: string[]): { stdout: string; stderr: string } {
   const out = spawnSync(findCodex() ?? "codex", args, { env, encoding: "utf8" });
   if (out.status !== 0) throw new Error(`codex ${args.join(" ")} failed: ${out.stdout}${out.stderr}`);
-  return `${out.stdout}${out.stderr}`.trim();
+  return { stdout: out.stdout.trim(), stderr: out.stderr.trim() };
 }
 
 /** The two commands of the README's install, with this checkout as the marketplace instead of the GitHub repository. */
 export function installFromMarketplace(env: NodeJS.ProcessEnv): string {
-  return [
-    `$ codex plugin marketplace add ${PACKAGE_ROOT}\n${codex(env, ["plugin", "marketplace", "add", PACKAGE_ROOT])}`,
-    `$ codex plugin add ${PLUGIN_ID}\n${codex(env, ["plugin", "add", PLUGIN_ID])}`,
-  ].join("\n");
+  return [["plugin", "marketplace", "add", PACKAGE_ROOT], ["plugin", "add", PLUGIN_ID]]
+    .map((args) => `$ codex ${args.join(" ")}\n${codex(env, args).stdout}`)
+    .join("\n");
 }
 
 /** How Codex starts the installed plugin's MCP server, as `codex mcp list` reports it. */
 export function pluginServer(env: NodeJS.ProcessEnv): ServerCommand {
-  const servers = JSON.parse(codex(env, ["mcp", "list", "--json"])) as Array<{ name: string; transport: ServerCommand }>;
+  const servers = JSON.parse(codex(env, ["mcp", "list", "--json"]).stdout) as Array<{ name: string; transport: ServerCommand }>;
   const server = servers.find((candidate) => candidate.name === MCP_SERVER_NAME);
   if (!server) throw new Error(`Codex lists no ${MCP_SERVER_NAME} MCP server`);
   return server.transport;

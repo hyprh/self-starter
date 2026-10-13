@@ -86,17 +86,24 @@ function standInModel(): Promise<Server> {
     for await (const chunk of request) body += chunk;
     if (request.method !== "POST") return response.end('{"object":"list","data":[]}');
     const { input = [], tools = [] } = JSON.parse(body || "{}") as { input?: Json[]; tools?: Json[] };
-    const lastUser = input.map((item) => item.type === "message" && item.role === "user").lastIndexOf(true);
-    const said = (input[lastUser]?.content ?? []).map((part: Json) => part.text ?? "").join("\n");
-    const reported = input.slice(lastUser + 1).some((item) => item.type === "function_call_output");
-    const fireId = /fire_id="(fire_[a-z0-9]+)"/.exec(said)?.[1];
+    // This turn's input: everything after the model's last answer. Codex can add its own user
+    // messages after the fire (such as the environment of a thread resumed in another folder).
+    const lastAnswer = input.map((item) => item.type === "message" && item.role === "assistant").lastIndexOf(true);
+    const turn = input.slice(lastAnswer + 1);
+    const said = turn
+      .filter((item) => item.type === "message" && item.role === "user")
+      .flatMap((item) => item.content ?? [])
+      .map((part: Json) => part.text ?? "")
+      .join("\n");
+    const fireId = [...said.matchAll(/fire_id="(fire_[a-z0-9]+)"/g)].at(-1)?.[1];
+    const reported = fireId !== undefined && input.some((item) => item.type === "function_call" && String(item.arguments).includes(fireId));
     if (fireId && reported) await new Promise((resolve) => setTimeout(resolve, 3000));
     const namespace = tools.find((tool) => tool.type === "namespace" && (tool.tools ?? []).some((f: Json) => f.name === "trigger_report"));
 
     const output: Json =
       fireId && !reported && namespace
         ? { type: "function_call", call_id: `call_${fireId}`, name: "trigger_report", namespace: namespace.name, arguments: JSON.stringify({ fire_id: fireId, summary: `Codex handled ${fireId}`, notify: true }) }
-        : { type: "message", role: "assistant", content: [{ type: "output_text", text: reported ? "Reported." : said.includes("This thread belongs to the trigger") ? "Ready." : "Hello." }] };
+        : { type: "message", role: "assistant", content: [{ type: "output_text", text: reported ? "Reported." : fireId ? `No trigger_report tool for ${fireId}.` : said.includes("This thread belongs to the trigger") ? "Ready." : "Hello." }] };
     const events = [
       { type: "response.created", response: { id: "resp" } },
       { type: "response.output_item.done", output_index: 0, item: output },
