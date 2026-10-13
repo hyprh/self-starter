@@ -17,25 +17,27 @@ These were verified on Linux with Codex CLI 0.162.1 and its app-server, so there
 - The local marketplace registers, the plugin installs with `codex plugin add` (copied into `~/.codex/plugins/cache/...`), and the uninstall script cleans everything up.
 - Codex starts both MCP servers from the plugin, with the installed plugin folder as their working directory; the skill shows up as `trigger-spike:run`.
 - When a plugin tool is called through the app-server, `_meta` carries `threadId`.
-- The confirmation dialog path works end to end: an elicitation request from the MCP server reaches the client as `mcpServer/elicitation/request`, and the client's answer makes it back to the server.
+- The confirmation dialog path works end to end: an elicitation request from the MCP server reaches the client as `mcpServer/elicitation/request`, and the client's answer makes it back to the server. (Self-Starter no longer uses a confirmation dialog.)
 - The first line of `codex exec --json` output is `thread.started` with the thread ID.
 - `codex queue` stores messages in the queue even when no background daemon is running.
 
 The MVP's end-to-end runs (with a stand-in model endpoint so that turns complete) settled more:
 
 - A queued message reaches a thread loaded in the app server within about 10 seconds and runs as a turn; the turn can call the plugin's tools, and `_meta["x-codex-turn-metadata"]` carries `turn_trigger: "queue"`. `codex queue` needs a thread that already had a turn.
-- H6, answered at the protocol level: threads created by `codex exec` have source `exec`, which the app server leaves out of its default thread list. codex-triggers therefore creates dedicated threads through the app server (`thread/start`, then `thread/name/set`), which records them as interactive; they stay that way after `codex exec resume`.
-- The plugin's tools reach the model as one namespace, `mcp__codex_triggers`.
+- H6, answered at the protocol level: threads created by `codex exec` have source `exec`, which the app server leaves out of its default thread list. Self-Starter therefore creates dedicated threads through the app server (`thread/start`, then `thread/name/set`), which records them as interactive; they stay that way after `codex exec resume`.
+- The plugin's tools reach the model as one namespace, `mcp__self_starter`.
 
 Every script has also been run end to end with scripted answers. What the Codex app actually does can only be seen on your machine.
 
 ## What to check
 
+Only H1, H5, H7 and H9 are still open (section 11 of the design); the kit records the others too.
+
 | ID | What to confirm | Where |
 |---|---|---|
 | H1 | A plugin installed with the CLI is usable in the app | `01-install.sh` |
 | H2 | The plugin's MCP server starts in the app, and whether bare `node` is found (the PATH question) | Running the skill in the app |
-| H3 | The app shows the MCP confirmation dialog (elicitation) | Skill step 5 |
+| H3 | The app shows the MCP confirmation dialog (elicitation); no longer needed by Self-Starter | Skill step 5 |
 | H4 | Commands run in the app can read `CODEX_THREAD_ID` | Skill step 1 |
 | H5 | What `codex queue` does with a thread that is idle, busy, or whose app is closed | `02-queue.sh` |
 | H6 | Threads created by `codex exec` show up in the app and accept queued messages (expected: not listed by default; see above) | `03-dedicated-thread.sh` |
