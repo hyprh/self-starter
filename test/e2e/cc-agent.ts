@@ -25,7 +25,7 @@ import { callDaemon } from "../../src/client/client.js";
 import { saveConfig, loadConfig, which } from "../../src/engine/config.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import type { FireView } from "../../src/engine/service.js";
-import { findClaude } from "../../src/engine/sessions.js";
+import { findClaude, relaySocket } from "../../src/engine/sessions.js";
 import { PACKAGE_ROOT } from "../../src/runtime.js";
 import { cli, packRuntime, show, waitFor } from "./harness.js";
 
@@ -260,8 +260,11 @@ try {
   tmux("new-session", "-d", "-s", "user", "-x", "200", "-y", "50", "-c", project, wrapper);
   await waitFor("the session's prompt", async () => (/^❯\s*$/m.test(screen()) ? true : undefined), { timeoutMs: 60_000, explain: async () => screen() });
   const user = answerPrompts();
-  // The plugin's MCP server listens for fires once its first start has installed the runtime.
-  await waitFor("the plugin's MCP server", async () => (existsSync(paths.inboxes) && readdirSync(paths.inboxes).some((name) => name.endsWith(".sock")) ? true : undefined), {
+  // The plugin's MCP server listens for fires once its first start has installed the runtime, on the relay socket
+  // of the process that shows the session (in the temporary folder when the path would be too long, as on macOS).
+  const relayListening = () =>
+    existsSync(paths.inboxes) && readdirSync(paths.inboxes).some((name) => name.endsWith(".json") && existsSync(relaySocket(paths, name.slice(0, -".json".length))));
+  await waitFor("the plugin's MCP server", async () => (relayListening() ? true : undefined), {
     timeoutMs: 300_000,
     everyMs: 2000,
     explain: async () => `${screen()}\n${existsSync(join(paths.logs, "install.log")) ? readFileSync(join(paths.logs, "install.log"), "utf8") : "no install log"}`,
