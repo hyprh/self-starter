@@ -144,6 +144,8 @@ export interface WakeOptions {
   cwd?: string;
   /** In a paused thread, start this queued message (its id from `codex queue`) instead of waiting for Codex to. */
   startQueued?: string;
+  /** Called once the thread is open here, before its queued messages run. */
+  onOpen?: () => void;
   /** For each turn. */
   timeoutMs: number;
   /** How long to wait for the first queued message to start running (one minute by default). */
@@ -253,6 +255,7 @@ export class CodexCli implements CodexRunner {
       const started = session.listen(turnEvent("turn/started", threadId));
       const completed = session.listen(turnEvent("turn/completed", threadId));
       await session.request("thread/resume", { threadId, sandbox: options.sandbox, excludeTurns: true, ...(options.cwd ? { cwd: options.cwd } : {}) });
+      options.onOpen?.();
       if (options.startQueued) await session.request("thread/queue/start", { threadId, queuedSubmissionId: options.startQueued });
       const startTimeoutMs = options.startTimeoutMs ?? 60_000;
       let ran = 0;

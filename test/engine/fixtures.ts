@@ -75,6 +75,7 @@ export class FakeCodex implements CodexRunner {
   async wakeThread(options: WakeOptions): Promise<TurnResult> {
     this.wakes.push(options);
     if (this.wakeError) return { ok: false, threadId: options.threadId, error: this.wakeError };
+    options.onOpen?.();
     return { ok: true, threadId: options.threadId, lastMessage: this.wakeAnswer };
   }
 

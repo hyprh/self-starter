@@ -32,8 +32,11 @@ const WAKE_AFTER_MS = 20_000;
 /** While someone is in the middle of a turn in the thread, look again this much later. */
 const BUSY_RECHECK_MS = 60_000;
 
-/** What became of a fire queued into a thread. paused: Codex holds the queue of the user's thread, so the fire waits for them. */
-type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "unreachable";
+/**
+ * What became of a fire queued into a thread. paused: Codex holds the queue of the user's thread, so the
+ * fire waits for them. open: a Codex app has the thread open but has not run the fire; the engine looks again.
+ */
+type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "open" | "unreachable";
 /** Where a fire was queued; submissionId is the message's id from `codex queue`. */
 type QueuedTarget = { kind: "origin" | "dedicated"; threadId: string; submissionId?: string };
 /** Errors from codex that mean the thread no longer exists. */
@@ -213,14 +216,15 @@ export class Executor {
     const outcome = this.outcome.get(fire.fireId);
     // The trigger's own thread is always woken; the user can keep Self-Starter out of their own threads.
     const wake = fire.target?.kind === "dedicated" || this.deps.config.wakeClosedThreads;
-    if (wake && outcome === undefined) {
+    if (wake && (outcome === undefined || outcome === "open")) {
       const uptime = this.uptime();
       if (!this.queuedAt.has(fire.fireId)) this.queuedAt.set(fire.fireId, uptime); // queued before a restart
       const waited = uptime - this.queuedAt.get(fire.fireId)!;
-      if (waited >= WAKE_AFTER_MS && (this.nextCheck.get(fire.fireId) ?? 0) <= uptime) this.startWake(fire);
-      return;
+      if (waited >= WAKE_AFTER_MS && (this.nextCheck.get(fire.fireId) ?? 0) <= uptime) return this.startWake(fire);
+      if (outcome === undefined) return;
     }
-    const remind = wake ? outcome === "unreachable" : true;
+    // The fire is still waiting in the thread: tell the user after a while.
+    const remind = !wake || outcome === "open" || outcome === "unreachable";
     if (remind && age > this.deps.config.originReminderMinutes * 60_000 && !fire.notifiedAt && !this.reminded.has(fire.fireId)) {
       this.reminded.add(fire.fireId);
       await this.remind(fire);
@@ -276,11 +280,18 @@ export class Executor {
       // The trigger's own thread follows target.cwd; a thread of the user's keeps its folder.
       ...(own ? { cwd: this.cwdFor(definition) } : {}),
       ...(view.paused ? { startQueued: submissionId } : {}),
+      onOpen: () => this.deps.fires.record({ type: "woken", fireId: fire.fireId, at: this.now().toISOString() }),
       timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
     });
+    if (!result.ok && OPEN_ELSEWHERE.test(result.error ?? "")) {
+      // A Codex app has the thread open after all. With the queue held, the user is there to continue it.
+      if (view.paused) return this.waitInPausedThread(fire);
+      // Otherwise the app runs the fire; look again in case it lets go of the thread first.
+      this.outcome.set(fire.fireId, "open");
+      this.nextCheck.set(fire.fireId, this.uptime() + BUSY_RECHECK_MS);
+      return;
+    }
     if (!result.ok) {
-      // A Codex app has the paused thread open after all: the user is there to continue it.
-      if (view.paused && OPEN_ELSEWHERE.test(result.error ?? "")) return this.waitInPausedThread(fire);
       this.outcome.set(fire.fireId, "unreachable");
       this.log(`fire ${fire.fireId} did not run in thread ${threadId}: ${result.error}`);
       return;
@@ -573,7 +584,7 @@ export class Executor {
     return `${fire.summary} (new: ${names.join("; ")}${more})`;
   }
 
-  private async remind(fire: FireRecord, note = "waiting for Codex in your thread"): Promise<void> {
+  private async remind(fire: FireRecord, note = `waiting for Codex in ${fire.target?.kind === "dedicated" ? "the trigger's thread" : "your thread"}`): Promise<void> {
     if (!this.deps.store.hasTrigger(fire.triggerId)) return;
     const { definition } = this.deps.store.loadTrigger(fire.triggerId);
     if (definition.notify.when === "never") return;

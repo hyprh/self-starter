@@ -19,12 +19,11 @@ import { callDaemon } from "../../src/client/client.js";
 import { findCodex } from "../../src/cli/install.js";
 import { AppServerSession, type RpcMessage } from "../../src/engine/app-server.js";
 import { CodexCli, codexCommand } from "../../src/engine/codex.js";
-import type { fireView } from "../../src/engine/service.js";
+import type { FireView } from "../../src/engine/service.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { cli, createTrigger, show, waitFor } from "./harness.js";
 
 type Json = Record<string, any>;
-type FireView = ReturnType<typeof fireView>;
 
 const scratch = mkdtempSync(join(tmpdir(), "self-starter-agent-"));
 const project = join(scratch, "project");
@@ -157,9 +156,9 @@ async function main(): Promise<void> {
     // The user talks to Codex, and asks for the two triggers.
     codex = await openCodex();
     const threadId: string = (await codex.request("thread/start", { cwd: project })).thread.id;
-    const first = codex.listen(turnCompleted(threadId));
+    const userTurn = codex.listen(turnCompleted(threadId));
     await codex.request("turn/start", { threadId, input: [{ type: "text", text: "Watch train.log for me.", text_elements: [] }] });
-    if (!(await first.next(60_000))) throw new Error("the user's turn did not complete");
+    if (!(await userTurn.next(60_000))) throw new Error("the user's turn did not complete");
     show("(Codex, in the user's thread) trigger_draft, trigger_activate", await createTrigger(process.env, ORIGIN, PROBE_EVENTS, threadId));
     show("(Codex, in the user's thread) trigger_draft, trigger_activate", await createTrigger(process.env, DEDICATED, PROBE_STATE, threadId));
     const ownThread = await waitFor(
@@ -172,7 +171,7 @@ async function main(): Promise<void> {
     // The first run finishes while Codex is open: the open thread picks the fire up.
     appendFileSync(log, "Finished run 1 in 3h12m, loss 0.41\n");
     console.log(`\n$ echo "Finished run 1 ..." >> train.log   (Codex open)`);
-    await reported(ORIGIN.id, 1, threadId);
+    const first = await reported(ORIGIN.id, 1, threadId);
 
     // The user closes Codex while that turn is finishing, which leaves the thread paused, as Stop does.
     codex.close();
@@ -194,7 +193,12 @@ async function main(): Promise<void> {
       );
     }
     console.log("✓ opening Codex again shows both answers in their threads");
-    show(`self-starter history`, await selfStarter(["history"]));
+    const history = await selfStarter(["history"]);
+    show("self-starter history", history);
+    for (const [fire, where] of [[first, "your thread, open in Codex"], [second, "your thread, opened in the background"], [own, "its own thread, opened in the background"]] as const) {
+      if (!history.includes(`${fire.receipt?.summary}  (${where})`)) throw new Error(`history does not say that ${fire.fireId} was answered in ${where}`);
+    }
+    console.log("✓ the history says where each answer happened");
   } finally {
     codex?.close();
     model.close();

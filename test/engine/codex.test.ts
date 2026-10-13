@@ -174,15 +174,19 @@ describe("codex CLI wrapper", () => {
 
     it("leaves a thread alone that a Codex app has open", async () => {
       threads({ open: { turns: [], queued: ["[self-starter] CI failed (ci · fire #5 · fire_o1)"], openElsewhere: true } });
-      const result = await codex.wakeThread({ threadId: "open", marker: "fire_o1", sandbox: "workspace-write", timeoutMs: 10_000 });
+      let opened = 0;
+      const result = await codex.wakeThread({ threadId: "open", marker: "fire_o1", sandbox: "workspace-write", timeoutMs: 10_000, onOpen: () => opened++ });
       assert.equal(result.ok, false);
+      assert.equal(opened, 0);
       assert.match(result.error ?? "", /already has an active writer/);
     });
 
     it("wakes a thread and stays until every message queued for it ran", async () => {
       const queued = ["[self-starter] Deploy done (deploy · fire #1 · fire_q0)", "[self-starter] CI failed (ci · fire #2 · fire_q1)"];
       threads({ closed: { turns: [], queued } });
-      const result = await codex.wakeThread({ threadId: "closed", marker: "fire_q0", sandbox: "workspace-write", timeoutMs: 10_000 });
+      let opened = 0;
+      const result = await codex.wakeThread({ threadId: "closed", marker: "fire_q0", sandbox: "workspace-write", timeoutMs: 10_000, onOpen: () => opened++ });
+      assert.equal(opened, 1);
       assert.deepEqual(result, { ok: true, threadId: "closed", lastMessage: `handled: ${queued[0]}` }, "the answer to the marker's own message");
       const thread = JSON.parse(readFileSync(process.env.FAKE_THREADS!, "utf8")).closed;
       assert.equal(thread.turns.length, 2, "the second message ran too, instead of being cut off");

@@ -366,7 +366,40 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       assert.equal(wake.sandbox, "workspace-write");
       const fire = await eventually(() => (t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
       assert.equal(fire.receipt?.summary, "The price moved on earnings; details in the thread.");
+      assert.ok(fire.wokenAt, "recorded as run in the background");
       assert.equal((await eventually(() => t.notifier.sent[0])).threadId, ORIGIN);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("keeps looking at a thread that a Codex app holds without running the fire", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      t.codex.wakeError = `thread ${ORIGIN} already has an active writer`;
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      await eventually(() => t.codex.wakes.length === 1);
+      t.clock.at += 30_000;
+      await t.executor.tick();
+      assert.equal(t.codex.wakes.length, 1, "it gives the app a minute");
+
+      t.clock.at += 5 * 60_000;
+      await t.executor.tick();
+      await eventually(() => t.codex.wakes.length === 2);
+      t.clock.at += 1000;
+      await t.executor.tick();
+      assert.match((await eventually(() => t.notifier.sent[0])).body, /waiting for Codex in your thread/);
+
+      t.codex.wakeError = undefined; // the app lets go of the thread
+      t.clock.at += 61_000;
+      await t.executor.tick();
+      await eventually(() => t.fires.get(fireId)?.status === "done");
+      assert.ok(t.fires.get(fireId)?.wokenAt);
     } finally {
       t.cleanup();
     }
@@ -387,6 +420,7 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       assert.equal(t.codex.wakes.length, 0, "the open app is on it");
       assert.equal(t.notifier.sent.length, 0, "and no reminder is needed");
       t.service.report({ fireId: first, summary: "done in the app", notify: false }, fromThread({ turnId: "turn-30" }));
+      assert.equal(t.fires.get(first)?.wokenAt, undefined, "recorded as run in the open app");
 
       server.price = 100;
       await t.engine.runNow("price-alert");

@@ -128,6 +128,7 @@ export function fireView(fire: FireRecord) {
     status: fire.status,
     target: fire.target ?? null,
     deliveredAt: fire.deliveredAt ?? null,
+    wokenAt: fire.wokenAt ?? null,
     receipt: fire.receipt ?? null,
     error: fire.error ?? null,
     skippedBecause: fire.skippedBecause ?? null,
@@ -135,6 +136,8 @@ export function fireView(fire: FireRecord) {
     merged: fire.merged.length,
   };
 }
+
+export type FireView = ReturnType<typeof fireView>;
 
 export class TriggerService {
   private readonly reportedTurns = new Set<string>();

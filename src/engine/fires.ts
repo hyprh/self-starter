@@ -40,6 +40,8 @@ export interface FireRecord {
   /** Where the fire went; submissionId is the queued message's id from `codex queue`. */
   target?: { kind: TargetKind | "none"; threadId?: string; submissionId?: string };
   deliveredAt?: string;
+  /** When the engine opened the fire's thread itself, because no Codex app had run the fire. */
+  wokenAt?: string;
   error?: string;
   receipt?: Receipt;
   notifiedAt?: string;
@@ -51,6 +53,7 @@ export type FireEvent =
   | { type: "merged"; fireId: string; into: string; at: string }
   | { type: "skipped"; fireId: string; why: string; at: string }
   | { type: "delivered"; fireId: string; target: FireRecord["target"]; at: string }
+  | { type: "woken"; fireId: string; at: string }
   | { type: "attempt_failed"; fireId: string; error: string; at: string }
   | { type: "failed"; fireId: string; error: string; at: string }
   | { type: "receipt"; fireId: string; receipt: Receipt; at: string }
@@ -80,6 +83,9 @@ function apply(index: Map<string, FireRecord>, event: FireEvent): void {
       fire.target = event.target;
       fire.deliveredAt = event.at;
       fire.error = undefined;
+      break;
+    case "woken":
+      fire.wokenAt = event.at;
       break;
     case "attempt_failed":
       fire.status = "pending";

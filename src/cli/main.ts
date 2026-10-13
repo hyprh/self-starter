@@ -8,7 +8,7 @@ import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js"
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
 import { loadConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
-import type { DraftView, TriggerSummary } from "../engine/service.js";
+import type { DraftView, FireView, TriggerSummary } from "../engine/service.js";
 import { runMcpServer } from "../mcp/server.js";
 import { VERSION } from "../runtime.js";
 import { ensureDaemon, serviceManager, serviceSpec } from "../service/manager.js";
@@ -78,6 +78,14 @@ function printSummary(t: TriggerSummary): void {
   out(`${t.id}  ${t.name}`);
   out(`  ${t.state} · ${last}`);
   out(`  next check ${when(t.nextCheck)} · ${t.fires} fire(s) · ${target}`);
+}
+
+/** Where Codex answered a fire: in a Codex app that had the thread open, or in the thread opened in the background. */
+function answeredWhere(fire: FireView): string {
+  const source = fire.receipt?.source;
+  if (!fire.target?.threadId || (source !== "tool" && source !== "final-answer")) return "";
+  const thread = fire.target.kind === "dedicated" ? "its own thread" : "your thread";
+  return `  (${thread}, ${fire.wokenAt ? "opened in the background" : "open in Codex"})`;
 }
 
 async function activate(draftId: string): Promise<void> {
@@ -234,14 +242,13 @@ async function main(argv: string[]): Promise<void> {
     case "history": {
       const params: Record<string, unknown> = { limit: Number(args.flags.get("n") ?? 10) };
       if (id) params.triggerId = id;
-      const fires = await daemonCall<Array<Record<string, unknown>>>("fire.history", params);
+      const fires = await daemonCall<FireView[]>("fire.history", params);
       if (fires.length === 0) return out("No fires yet.");
       for (const f of fires) {
-        const receipt = f.receipt as { summary: string } | null;
-        out(`${when(f.firedAt as string)}  ${String(f.triggerId)} #${String(f.fireNumber)}  ${String(f.status)}  ${String(f.summary)}`);
-        if (receipt) out(`    → ${receipt.summary}`);
-        else if (f.error) out(`    ! ${String(f.error)}`);
-        else if (f.skippedBecause) out(`    skipped: ${String(f.skippedBecause)}`);
+        out(`${when(f.firedAt)}  ${f.triggerId} #${f.fireNumber}  ${f.status}  ${f.summary}`);
+        if (f.receipt) out(`    → ${f.receipt.summary}${answeredWhere(f)}`);
+        else if (f.error) out(`    ! ${f.error}`);
+        else if (f.skippedBecause) out(`    skipped: ${f.skippedBecause}`);
       }
       return;
     }

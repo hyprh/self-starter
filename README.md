@@ -18,7 +18,7 @@ You:    Yes.
         exp42 finished: val loss 0.412 vs 0.437 for exp41, same accuracy. Keep exp42.
 ```
 
-Status: working MVP, verified end to end with the Codex CLI and app server. CI installs it for real on macOS (launchd) and Linux (systemd) and sends real email. What is left to check in the Codex desktop app is listed in section 11 of the [design](docs/design.md#11-hypotheses-to-validate-in-the-codex-app).
+Status: working MVP, verified end to end with the Codex CLI and app server. CI installs it for real on macOS (launchd) and Linux (systemd) and sends real email. What is left to check in the Codex desktop app takes about ten minutes: [docs/codex-app-checklist.md](docs/codex-app-checklist.md).
 
 ## How it works
 
@@ -52,7 +52,7 @@ No API keys needed. This also shows a conversation answering while the Codex app
 1. In a Codex conversation, say: "Tell me when the file /tmp/self-starter-demo/done appears, and what it says."
 2. Codex sets up the trigger (it may ask first). Close the Codex app if you like.
 3. In a terminal: `mkdir -p /tmp/self-starter-demo && echo "build finished in 4m12s" > /tmp/self-starter-demo/done`
-4. At the next check (Codex picks how often; ask for "every 30 seconds" if you are impatient), Codex answers in that same conversation and you get a notification. If the app was closed, this takes about 20 seconds longer, and the answer is there when you open the conversation again. `self-starter history` shows what happened.
+4. At the next check (Codex picks how often; ask for "every 30 seconds" if you are impatient), Codex answers in that same conversation and you get a notification. If the app was closed, this takes about 20 seconds longer, and the answer is there when you open the conversation again. `self-starter history` shows what happened, and where Codex answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
 
 ## Use
 
@@ -126,7 +126,7 @@ CI runs the tests on Linux and macOS, and on both installs for real (test/e2e/in
 - [recipes/](recipes): ready-made probes, such as the IBKR account watch
 - [site/](site): the landing page, published to GitHub Pages by `.github/workflows/pages.yml` (Settings > Pages > Source: GitHub Actions)
 - [src/](src): `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`
-- [spike/](spike/README.md): scripts that check the remaining assumptions in the Codex app
+- [docs/codex-app-checklist.md](docs/codex-app-checklist.md): what to check in the Codex app on your machine (about ten minutes)
 
 ## License
 
