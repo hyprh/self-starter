@@ -13,17 +13,54 @@ export interface RpcMessage {
   error?: { message?: string };
 }
 
-interface Waiter {
-  match: (message: RpcMessage) => boolean;
-  resolve: (message: RpcMessage) => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
+/**
+ * The notifications that match, kept in order from the moment it was created,
+ * so none is missed between two awaits. One `next` at a time.
+ */
+export class Inbox {
+  private readonly kept: RpcMessage[] = [];
+  private waiting: { resolve: (message: RpcMessage | undefined) => void; reject: (error: Error) => void; timer: NodeJS.Timeout } | undefined;
+  private error: Error | undefined;
+
+  constructor(readonly match: (message: RpcMessage) => boolean) {}
+
+  /** The next matching notification, or undefined when none arrives within `timeoutMs`. */
+  next(timeoutMs: number): Promise<RpcMessage | undefined> {
+    const kept = this.kept.shift();
+    if (kept) return Promise.resolve(kept);
+    if (this.error) return Promise.reject(this.error);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.waiting = undefined;
+        resolve(undefined);
+      }, timeoutMs);
+      this.waiting = { resolve, reject, timer };
+    });
+  }
+
+  deliver(message: RpcMessage): void {
+    const waiting = this.take();
+    if (waiting) waiting.resolve(message);
+    else this.kept.push(message);
+  }
+
+  fail(error: Error): void {
+    this.error ??= error;
+    this.take()?.reject(error);
+  }
+
+  private take() {
+    const waiting = this.waiting;
+    if (waiting) clearTimeout(waiting.timer);
+    this.waiting = undefined;
+    return waiting;
+  }
 }
 
 export class AppServerSession {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly replies = new Map<number, (message: RpcMessage) => void>();
-  private readonly waiters = new Set<Waiter>();
+  private readonly inboxes = new Set<Inbox>();
   private nextId = 1;
   private stderr = "";
   private exitError: Error | undefined;
@@ -69,12 +106,7 @@ export class AppServerSession {
     } else if (message.id !== undefined) {
       this.send({ id: message.id, error: { code: -32601, message: "self-starter does not answer this request" } });
     } else {
-      for (const waiter of [...this.waiters]) {
-        if (!waiter.match(message)) continue;
-        this.waiters.delete(waiter);
-        clearTimeout(waiter.timer);
-        waiter.resolve(message);
-      }
+      for (const inbox of this.inboxes) if (inbox.match(message)) inbox.deliver(message);
     }
   }
 
@@ -82,11 +114,7 @@ export class AppServerSession {
     this.exitError ??= error;
     for (const reply of this.replies.values()) reply({ error: { message: error.message } });
     this.replies.clear();
-    for (const waiter of this.waiters) {
-      clearTimeout(waiter.timer);
-      waiter.reject(error);
-    }
-    this.waiters.clear();
+    for (const inbox of this.inboxes) inbox.fail(error);
   }
 
   /** Sends a request and returns its result; a JSON-RPC error becomes an exception. */
@@ -99,26 +127,16 @@ export class AppServerSession {
     });
   }
 
-  /** Resolves with the first notification that matches. Register it before the request that causes it. */
-  next(match: (message: RpcMessage) => boolean, timeoutMs: number, what: string): Promise<RpcMessage> {
-    if (this.exitError) return Promise.reject(this.exitError);
-    return new Promise((resolve, reject) => {
-      const waiter: Waiter = {
-        match,
-        resolve,
-        reject,
-        timer: setTimeout(() => {
-          this.waiters.delete(waiter);
-          reject(new Error(`timed out after ${Math.round(timeoutMs / 1000)}s waiting for ${what}`));
-        }, timeoutMs),
-      };
-      this.waiters.add(waiter);
-    });
+  /** Keeps the notifications that match from now on. Create it before the request that causes them. */
+  listen(match: (message: RpcMessage) => boolean): Inbox {
+    const inbox = new Inbox(match);
+    if (this.exitError) inbox.fail(this.exitError);
+    this.inboxes.add(inbox);
+    return inbox;
   }
 
   close(): void {
-    for (const waiter of this.waiters) clearTimeout(waiter.timer);
-    this.waiters.clear();
+    for (const inbox of this.inboxes) inbox.fail(new Error("the app server session was closed"));
     this.child.kill("SIGTERM");
     setTimeout(() => this.child.kill("SIGKILL"), 3000).unref();
   }

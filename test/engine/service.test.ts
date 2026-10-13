@@ -345,6 +345,7 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       await t.executor.tick();
       const wake = await eventually(() => t.codex.wakes[0]);
       assert.equal(wake.threadId, ORIGIN);
+      assert.equal(wake.marker, fireId, "the answer is taken from the turn this fire started");
       assert.equal(wake.sandbox, "workspace-write");
       const fire = await eventually(() => (t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
       assert.equal(fire.receipt?.summary, "The price moved on earnings; details in the thread.");

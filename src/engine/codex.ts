@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Sandbox } from "../core/definition.js";
-import { AppServerSession } from "./app-server.js";
+import { AppServerSession, type RpcMessage } from "./app-server.js";
 
 export interface ExecResult {
   ok: boolean;
@@ -110,8 +110,19 @@ function turnResult(turn: TurnLike): ExecResult {
   return result;
 }
 
-const turnCompletedIn = (threadId: string) => (message: { method?: string; params?: Record<string, any> }) =>
-  message.method === "turn/completed" && message.params?.threadId === threadId;
+/** Whether a turn, as listed with `itemsView: "full"`, was started by a message containing the marker, such as a fire id. */
+function startedBy(turn: TurnLike, marker: string): boolean {
+  const items: Array<{ type?: string }> = Array.isArray(turn?.items) ? turn.items : [];
+  return items.some((item) => item.type === "userMessage" && JSON.stringify(item).includes(marker));
+}
+
+const turnEvent = (method: "turn/started" | "turn/completed", threadId: string) => (message: RpcMessage) =>
+  message.method === method && message.params?.threadId === threadId;
+
+const timedOut = (ms: number, what: string) => new Error(`timed out after ${Math.round(ms / 1000)}s waiting for ${what}`);
+
+/** A queued message starts as soon as the previous turn in its thread ends; this long without one means none is left. */
+const NEXT_TURN_MS = 3000;
 
 export interface StartThreadOptions {
   cwd: string;
@@ -125,7 +136,7 @@ export interface StartThreadOptions {
 
 /** A thread as seen from outside, without loading it. */
 export interface ThreadView {
-  /** Whether one of its recent turns contains the marker, such as a fire id. */
+  /** Whether one of its recent turns was started by a message containing the marker, such as a fire id. */
   mentions: boolean;
   /** Whether its latest turn is still running somewhere. */
   busy: boolean;
@@ -133,10 +144,13 @@ export interface ThreadView {
 
 export interface WakeOptions {
   threadId: string;
-  /** For this turn only; the thread keeps its own folder and approval policy. */
+  /** Text in the queued message, such as a fire id: the answer of the turn it started is returned. */
+  marker: string;
+  /** For these turns only; the thread keeps its own folder and approval policy. */
   sandbox: Sandbox;
+  /** For each turn. */
   timeoutMs: number;
-  /** How long to wait for the queued message to start running (one minute by default). */
+  /** How long to wait for the first queued message to start running (one minute by default). */
   startTimeoutMs?: number;
 }
 
@@ -208,11 +222,13 @@ export class CodexCli implements CodexRunner {
       threadId = (await session.request("thread/start", { cwd: options.cwd })).thread?.id as string | undefined;
       if (!threadId) throw new Error("thread/start returned no thread");
       await session.request("thread/name/set", { threadId, name: options.name });
-      const completed = session.next(turnCompletedIn(threadId), options.timeoutMs, "the first turn");
+      const completed = session.listen(turnEvent("turn/completed", threadId));
       const params: Record<string, unknown> = { threadId, input: [{ type: "text", text: options.prompt, text_elements: [] }] };
       if (options.outputSchema !== undefined) params.outputSchema = options.outputSchema;
       await session.request("turn/start", params);
-      return { ...turnResult((await completed).params?.turn), threadId };
+      const turn = await completed.next(options.timeoutMs);
+      if (!turn) throw timedOut(options.timeoutMs, "the first turn");
+      return { ...turnResult(turn.params?.turn), threadId };
     } catch (error) {
       return { ok: false, ...(threadId ? { threadId } : {}), error: `codex app-server: ${(error as Error).message}` };
     } finally {
@@ -225,36 +241,44 @@ export class CodexCli implements CodexRunner {
     const session = await this.appServer();
     try {
       const page = await session.request("thread/turns/list", { threadId, limit: 5, itemsView: "full" });
-      const turns: Array<{ status?: string }> = Array.isArray(page.data) ? page.data : [];
-      return { mentions: JSON.stringify(turns).includes(marker), busy: turns[0]?.status === "inProgress" };
+      const turns: TurnLike[] = Array.isArray(page.data) ? page.data : [];
+      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: turns[0]?.status === "inProgress" };
     } finally {
       session.close();
     }
   }
 
   /**
-   * Loads a thread that no Codex process has open. A message queued for it is
-   * then picked up here and runs as a turn in that same thread, as it would in
-   * the Codex app; this returns when that turn ends. The turn runs in the
-   * thread's own folder, under its own approval policy (an override of either
-   * would stick to the thread), and in the given sandbox. Requests for approval
-   * are declined, since nobody is there to answer them.
+   * Loads a thread that no Codex process has open. The messages queued for it
+   * are then picked up here and run as turns in that same thread, one after
+   * another, as they would in the Codex app. This returns when the last one
+   * has ended (closing earlier would cut the next one off), with the answer of
+   * the turn that the marker's message started. The turns run in the thread's
+   * own folder, under its own approval policy (an override of either would
+   * stick to the thread), and in the given sandbox. Requests for approval are
+   * declined, since nobody is there to answer them.
    */
   async wakeThread(options: WakeOptions): Promise<ExecResult> {
+    const { threadId } = options;
     const session = await this.appServer();
     try {
-      const started = session.next(
-        (m) => m.method === "turn/started" && m.params?.threadId === options.threadId,
-        options.startTimeoutMs ?? 60_000,
-        "the queued message to start",
-      );
-      const completed = session.next(turnCompletedIn(options.threadId), options.timeoutMs, "the turn to finish");
-      completed.catch(() => {}); // settled below, or abandoned when nothing started
-      await session.request("thread/resume", { threadId: options.threadId, sandbox: options.sandbox, excludeTurns: true });
-      await started;
-      return { ...turnResult((await completed).params?.turn), threadId: options.threadId };
+      const started = session.listen(turnEvent("turn/started", threadId));
+      const completed = session.listen(turnEvent("turn/completed", threadId));
+      await session.request("thread/resume", { threadId, sandbox: options.sandbox, excludeTurns: true });
+      const startTimeoutMs = options.startTimeoutMs ?? 60_000;
+      let ran = 0;
+      while (await started.next(ran === 0 ? startTimeoutMs : NEXT_TURN_MS)) {
+        if (!(await completed.next(options.timeoutMs))) throw timedOut(options.timeoutMs, "the turn to finish");
+        ran += 1;
+      }
+      if (ran === 0) throw timedOut(startTimeoutMs, "the queued message to start");
+      const page = await session.request("thread/turns/list", { threadId, limit: ran, itemsView: "full" });
+      const turns: TurnLike[] = Array.isArray(page.data) ? page.data : [];
+      const turn = turns.find((candidate) => startedBy(candidate, options.marker));
+      if (!turn) return { ok: false, threadId, error: "the woken thread did not run the queued message" };
+      return { ...turnResult(turn), threadId };
     } catch (error) {
-      return { ok: false, threadId: options.threadId, error: (error as Error).message };
+      return { ok: false, threadId, error: (error as Error).message };
     } finally {
       session.close();
     }

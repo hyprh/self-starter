@@ -33,7 +33,8 @@ if (args[0] === "queue") {
   const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
   const turnOf = (text, reply) => ({ id: "turn-" + Math.random().toString(36).slice(2), status: "completed", items: [{ type: "userMessage", text }, { type: "agentMessage", text: reply }] });
   const started = (threadId, turn) => send({ method: "turn/started", params: { threadId, turn: { id: turn.id, status: "inProgress", items: [] } } });
-  const completed = (threadId, turn) => send({ method: "turn/completed", params: { threadId, turn } });
+  // Like the real server, a completed turn carries only its agent messages ("summary" view).
+  const completed = (threadId, turn) => send({ method: "turn/completed", params: { threadId, turn: { ...turn, items: turn.items.filter((item) => item.type === "agentMessage") } } });
   const answers = new Map(); // id of a request sent to the client -> what happens once it answers
   createInterface({ input: process.stdin }).on("line", (line) => {
     const message = JSON.parse(line);
@@ -52,20 +53,31 @@ if (args[0] === "queue") {
       started(params.threadId, turn);
       return completed(params.threadId, turn);
     }
-    if (method === "thread/turns/list") return send({ id, result: { data: [...(load()[params.threadId]?.turns ?? [])].reverse() } });
+    if (method === "thread/turns/list") {
+      const turns = [...(load()[params.threadId]?.turns ?? [])].reverse();
+      return send({ id, result: { data: turns.slice(0, params.limit ?? turns.length) } });
+    }
     if (method === "thread/resume") {
       send({ id, result: { thread: { id: params.threadId } } });
-      const threads = load();
-      const thread = threads[params.threadId] ?? { turns: [], queued: [] };
-      const next = (thread.queued ?? []).shift();
-      if (next === undefined) return;
-      const turn = turnOf(next, "handled: " + next);
-      thread.turns.push(turn);
-      save({ ...threads, [params.threadId]: thread }); // before the turn is announced, like a rollout on disk
-      started(params.threadId, turn);
-      // Mid-turn, it asks to run a command outside the sandbox; the turn ends once the client answers.
-      answers.set("approval-1", () => completed(params.threadId, turn));
-      return send({ id: "approval-1", method: "item/commandExecution/requestApproval", params: { threadId: params.threadId, command: "curl https://example.com" } });
+      // Each queued message runs as soon as the previous turn ends.
+      const runNext = () => {
+        const threads = load();
+        const thread = threads[params.threadId] ?? { turns: [], queued: [] };
+        const next = (thread.queued ?? []).shift();
+        if (next === undefined) return;
+        const turn = turnOf(next, "handled: " + next);
+        thread.turns.push(turn);
+        save({ ...threads, [params.threadId]: thread }); // before the turn is announced, like a rollout on disk
+        started(params.threadId, turn);
+        // Mid-turn, it asks to run a command outside the sandbox; the turn ends once the client answers.
+        const request = "approval-" + thread.turns.length;
+        answers.set(request, () => {
+          completed(params.threadId, turn);
+          runNext();
+        });
+        send({ id: request, method: "item/commandExecution/requestApproval", params: { threadId: params.threadId, command: "curl https://example.com" } });
+      };
+      return runNext();
     }
     send({ id, error: { code: -32601, message: "unknown method " + method } });
   });
@@ -138,17 +150,21 @@ describe("codex CLI wrapper", () => {
       assert.equal(appServerCalls("thread/resume").length, 0, "inspecting never resumes");
     });
 
-    it("wakes a thread so the message queued for it runs there", async () => {
-      threads({ closed: { turns: [], queued: ["[self-starter] CI failed (ci · fire #2 · fire_q1)"] } });
-      const result = await codex.wakeThread({ threadId: "closed", sandbox: "workspace-write", timeoutMs: 10_000 });
-      assert.deepEqual(result, { ok: true, threadId: "closed", lastMessage: "handled: [self-starter] CI failed (ci · fire #2 · fire_q1)" });
+    it("wakes a thread and stays until every message queued for it ran", async () => {
+      const queued = ["[self-starter] Deploy done (deploy · fire #1 · fire_q0)", "[self-starter] CI failed (ci · fire #2 · fire_q1)"];
+      threads({ closed: { turns: [], queued } });
+      const result = await codex.wakeThread({ threadId: "closed", marker: "fire_q0", sandbox: "workspace-write", timeoutMs: 10_000 });
+      assert.deepEqual(result, { ok: true, threadId: "closed", lastMessage: `handled: ${queued[0]}` }, "the answer to the marker's own message");
+      const thread = JSON.parse(readFileSync(process.env.FAKE_THREADS!, "utf8")).closed;
+      assert.equal(thread.turns.length, 2, "the second message ran too, instead of being cut off");
+      assert.deepEqual(thread.queued, []);
       const resume = appServerCalls("thread/resume").at(-1)!;
       assert.deepEqual(resume.params, { threadId: "closed", sandbox: "workspace-write", excludeTurns: true }, "the thread keeps its own folder and approval policy");
-      const answer = appServerCalls("answer").at(-1)!.params;
-      assert.equal(answer.id, "approval-1");
-      assert.ok(answer.error && !answer.result, "nobody is there to approve anything");
+      const answers = appServerCalls("answer").map((call) => call.params);
+      assert.deepEqual(answers.map((answer) => answer.id), ["approval-1", "approval-2"]);
+      assert.ok(answers.every((answer) => answer.error && !answer.result), "nobody is there to approve anything");
 
-      const nothing = await codex.wakeThread({ threadId: "closed", sandbox: "workspace-write", timeoutMs: 10_000, startTimeoutMs: 300 });
+      const nothing = await codex.wakeThread({ threadId: "closed", marker: "fire_q2", sandbox: "workspace-write", timeoutMs: 10_000, startTimeoutMs: 300 });
       assert.equal(nothing.ok, false);
       assert.match(nothing.error ?? "", /waiting for the queued message to start/);
     });
