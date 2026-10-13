@@ -22,7 +22,7 @@ const params = input.params ?? {};
 const now = new Date(input.now).getTime();
 
 const stocks: string[] = params.stocks ?? [];
-if (stocks.length === 0) throw new Error('set probe.params.stocks, such as ["腾讯控股", "NVDA"]');
+if (stocks.length === 0) throw new Error('set probe.params.stocks, such as ["Tencent", "NVDA"]');
 const types: string[] = params.types;
 const unknown = types.filter((type) => !(type in TYPES));
 if (unknown.length > 0) throw new Error(`unknown type ${unknown.join(", ")}; use research, notice or news`);

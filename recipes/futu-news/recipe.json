@@ -16,7 +16,7 @@
     "stocks": {
       "type": "string[]",
       "required": true,
-      "description": "Stocks to watch, as you would search for them on Futu: a name, ticker or code, such as 腾讯控股, NVDA or 00700."
+      "description": "Stocks to watch, as you would search for them on Futu: a name, ticker or code, such as Tencent, NVDA or 00700."
     },
     "types": {
       "type": "string[]",
@@ -26,7 +26,7 @@
     "match": {
       "type": "string",
       "default": "",
-      "description": "Only report items whose title matches this regular expression, ignoring case, such as 目标价|评级|target|rating; empty reports every item."
+      "description": "Only report items whose title matches this regular expression, ignoring case, such as target|rating|upgrade|downgrade; empty reports every item."
     },
     "lang": {
       "type": "string",
