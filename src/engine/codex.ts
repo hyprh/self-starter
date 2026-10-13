@@ -5,6 +5,7 @@
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Sandbox } from "../core/definition.js";
+import { MESSAGE_PREFIX } from "../core/envelope.js";
 import { AppServerSession, type RpcMessage } from "./app-server.js";
 
 export interface TurnResult {
@@ -84,9 +85,24 @@ function stillRunning(turn: TurnLike): boolean {
   return turn?.status === "inProgress" || (turn?.status === "interrupted" && turn.completedAt === null);
 }
 
-/** Whether a listed turn was stopped (it has an end time); Codex then holds the thread's queued messages until the user sends one. */
+/**
+ * Whether a listed turn was stopped (it has an end time); Codex then holds the
+ * thread's queued messages until the user sends one. Pressing Stop, closing the
+ * app in the middle of a turn and a crash all look the same.
+ */
 function stopped(turn: TurnLike): boolean {
   return turn?.status === "interrupted" && typeof turn.completedAt === "number";
+}
+
+/** Whether a message other than Self-Starter's waits in the thread's queue; when the queue cannot be read, assume one does. */
+async function holdsOtherMessages(session: AppServerSession, threadId: string): Promise<boolean> {
+  try {
+    const page = await session.request("thread/queue/list", { threadId });
+    const queued: Array<{ input?: Array<{ text?: string }> }> = Array.isArray(page.data) ? page.data : [];
+    return queued.some((submission) => !submission.input?.some((part) => part.text?.startsWith(MESSAGE_PREFIX)));
+  } catch {
+    return true;
+  }
 }
 
 const turnEvent = (method: "turn/started" | "turn/completed", threadId: string) => (message: RpcMessage) =>
@@ -114,6 +130,8 @@ export interface ThreadView {
   busy: boolean;
   /** Whether its latest turn was stopped, so Codex holds the messages queued for it until the user sends one. */
   paused: boolean;
+  /** In a paused thread, whether messages other than Self-Starter's are held there, such as the user's own. */
+  holdsOthers: boolean;
 }
 
 export interface WakeOptions {
@@ -139,26 +157,26 @@ export interface CodexRunner {
   wakeThread(options: WakeOptions): Promise<TurnResult>;
 }
 
+/**
+ * How to run a codex binary. The npm package's `codex` is a node script; it runs
+ * with this node, so that it works even when node is not on the daemon's PATH.
+ */
+export function codexCommand(bin: string): { command: string; prefix: string[] } {
+  let real = bin;
+  try {
+    real = realpathSync(bin);
+  } catch {
+    // keep the path as given
+  }
+  return /\.[cm]?js$/.test(real) ? { command: process.execPath, prefix: [real] } : { command: bin, prefix: [] };
+}
+
 export class CodexCli implements CodexRunner {
   private readonly command: string;
   private readonly prefix: string[];
 
   constructor(bin: string) {
-    // The npm package's `codex` is a node script; run it with this node so that
-    // it works even when node is not on the daemon's PATH.
-    let real = bin;
-    try {
-      real = realpathSync(bin);
-    } catch {
-      // keep the path as given
-    }
-    if (/\.[cm]?js$/.test(real)) {
-      this.command = process.execPath;
-      this.prefix = [real];
-    } else {
-      this.command = bin;
-      this.prefix = [];
-    }
+    ({ command: this.command, prefix: this.prefix } = codexCommand(bin));
   }
 
   async queue(threadId: string, message: string): Promise<{ submissionId?: string }> {
@@ -199,13 +217,19 @@ export class CodexCli implements CodexRunner {
     }
   }
 
-  /** Reads a thread's recent turns without loading it, so a Codex app that has it open is not disturbed. */
+  /** Reads a thread's recent turns and held messages without loading it, so a Codex app that has it open is not disturbed. */
   async inspectThread(threadId: string, marker: string): Promise<ThreadView> {
-    const session = await this.appServer();
+    const session = await this.appServer({ experimental: true });
     try {
       const page = await session.request("thread/turns/list", { threadId, limit: 5, itemsView: "full" });
       const turns: TurnLike[] = Array.isArray(page.data) ? page.data : [];
-      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: stillRunning(turns[0]), paused: stopped(turns[0]) };
+      const paused = stopped(turns[0]);
+      return {
+        mentions: turns.some((turn) => startedBy(turn, marker)),
+        busy: stillRunning(turns[0]),
+        paused,
+        holdsOthers: paused && (await holdsOtherMessages(session, threadId)),
+      };
     } finally {
       session.close();
     }

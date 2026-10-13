@@ -14,7 +14,8 @@ if (args[0] === "queue") {
   if (args[2] === "missing") { console.error("Error: thread not found: missing"); process.exit(1); }
   console.log("Queued message q-123 for thread " + args[2] + ".");
 } else if (args[0] === "app-server") {
-  // JSON-RPC over stdio. Threads live in FAKE_THREADS: { [id]: { turns: [...], queued: [text | {id, text}], paused } }.
+  // JSON-RPC over stdio. Threads live in FAKE_THREADS:
+  // { [id]: { turns: [...], queued: [text | {id, text}], paused, openElsewhere, noQueueList } }.
   const { createInterface } = await import("node:readline");
   const { existsSync, readFileSync, renameSync, writeFileSync } = await import("node:fs");
   const file = process.env.FAKE_THREADS;
@@ -55,9 +56,16 @@ if (args[0] === "queue") {
       const turns = [...(load()[params.threadId]?.turns ?? [])].reverse();
       return send({ id, result: { data: turns.slice(0, params.limit ?? turns.length) } });
     }
+    if (method === "thread/queue/list") {
+      const thread = load()[params.threadId] ?? {};
+      if (thread.noQueueList) return send({ id, error: { code: -32601, message: "unknown method " + method } });
+      const data = (thread.queued ?? []).map((item, i) => (typeof item === "string" ? { id: "q" + i, text: item } : item));
+      return send({ id, result: { data: data.map((item) => ({ id: item.id, input: [{ type: "text", text: item.text }] })), nextCursor: null } });
+    }
     if (method === "thread/resume" || method === "thread/queue/start") {
       const threads = load();
       const thread = threads[params.threadId] ?? { turns: [], queued: [] };
+      if (thread.openElsewhere) return send({ id, error: { code: -32600, message: "thread " + params.threadId + " already has an active writer" } });
       if (method === "thread/queue/start") {
         const index = thread.queued.findIndex((item) => item.id === params.queuedSubmissionId);
         if (index < 0) return send({ id, error: { code: -32600, message: "no such queued message" } });
@@ -120,7 +128,13 @@ describe("codex CLI wrapper", () => {
   });
 
   describe("through the app server", () => {
-    type FakeThread = { turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>; queued?: Array<string | { id: string; text: string }>; paused?: boolean };
+    type FakeThread = {
+      turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>;
+      queued?: Array<string | { id: string; text: string }>;
+      paused?: boolean;
+      openElsewhere?: boolean;
+      noQueueList?: boolean;
+    };
     const threads = (state: Record<string, FakeThread>) =>
       writeFileSync(process.env.FAKE_THREADS!, JSON.stringify(state));
     const appServerCalls = (method: string) =>
@@ -139,17 +153,30 @@ describe("codex CLI wrapper", () => {
     });
 
     it("looks at a thread without loading it", async () => {
+      const stoppedTurns = [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: 2 }];
+      const fire = "[self-starter] CI failed (ci · fire #2 · fire_q1)";
       threads({
         idle: { turns: [{ status: "completed", completedAt: 1, items: [{ type: "userMessage", text: "[self-starter] CI failed (ci · fire #1 · fire_abc)" }] }] },
         // Seen from another process, a turn still running is listed as interrupted, without an end time.
         busy: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: null }] },
-        stopped: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: 2 }] },
+        stopped: { turns: stoppedTurns, queued: [fire] },
+        held: { turns: stoppedTurns, queued: [fire, "also run the linter"] },
+        older: { turns: stoppedTurns, queued: [fire], noQueueList: true },
       });
-      assert.deepEqual(await codex.inspectThread("idle", "fire_abc"), { mentions: true, busy: false, paused: false });
-      assert.deepEqual(await codex.inspectThread("idle", "fire_zzz"), { mentions: false, busy: false, paused: false });
-      assert.deepEqual(await codex.inspectThread("busy", "fire_abc"), { mentions: false, busy: true, paused: false });
-      assert.deepEqual(await codex.inspectThread("stopped", "fire_abc"), { mentions: false, busy: false, paused: true }, "a stopped turn pauses the queue");
+      assert.deepEqual(await codex.inspectThread("idle", "fire_abc"), { mentions: true, busy: false, paused: false, holdsOthers: false });
+      assert.deepEqual(await codex.inspectThread("idle", "fire_zzz"), { mentions: false, busy: false, paused: false, holdsOthers: false });
+      assert.deepEqual(await codex.inspectThread("busy", "fire_abc"), { mentions: false, busy: true, paused: false, holdsOthers: false });
+      assert.deepEqual(await codex.inspectThread("stopped", "fire_abc"), { mentions: false, busy: false, paused: true, holdsOthers: false }, "a stopped turn pauses the queue");
+      assert.equal((await codex.inspectThread("held", "fire_abc")).holdsOthers, true, "a message of the user's is held there too");
+      assert.equal((await codex.inspectThread("older", "fire_abc")).holdsOthers, true, "a queue that cannot be read may hold anything");
       assert.equal(appServerCalls("thread/resume").length, 0, "inspecting never resumes");
+    });
+
+    it("leaves a thread alone that a Codex app has open", async () => {
+      threads({ open: { turns: [], queued: ["[self-starter] CI failed (ci · fire #5 · fire_o1)"], openElsewhere: true } });
+      const result = await codex.wakeThread({ threadId: "open", marker: "fire_o1", sandbox: "workspace-write", timeoutMs: 10_000 });
+      assert.equal(result.ok, false);
+      assert.match(result.error ?? "", /already has an active writer/);
     });
 
     it("wakes a thread and stays until every message queued for it ran", async () => {

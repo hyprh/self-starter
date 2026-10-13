@@ -23,17 +23,15 @@ export function cli(env: NodeJS.ProcessEnv, args: string[], input = ""): Promise
   });
 }
 
-/** Talks to `self-starter mcp` over stdio, the way Codex does, from a user's turn in one thread. */
+/** Talks to `self-starter mcp` over stdio, the way Codex does, from a user's turn in a thread. */
 class Mcp {
   private readonly child;
   private readonly waiting = new Map<number, { resolve: (message: Json) => void; reject: (error: Error) => void }>();
   private nextId = 1;
-  private readonly meta = {
-    threadId: "e2e-thread",
-    "x-codex-turn-metadata": JSON.stringify({ thread_id: "e2e-thread", turn_id: "turn-1", turn_trigger: "user" }),
-  };
+  private readonly meta;
 
-  constructor(env: NodeJS.ProcessEnv) {
+  constructor(env: NodeJS.ProcessEnv, threadId: string) {
+    this.meta = { threadId, "x-codex-turn-metadata": JSON.stringify({ thread_id: threadId, turn_id: `${threadId}/user-turn`, turn_trigger: "user" }) };
     this.child = spawn(process.execPath, [CLI, "mcp"], { env, stdio: ["pipe", "pipe", "inherit"] });
     createInterface({ input: this.child.stdout }).on("line", (line) => {
       const message = JSON.parse(line) as Json;
@@ -67,9 +65,9 @@ class Mcp {
   }
 }
 
-/** Drafts a trigger and turns it on, as Codex does; returns the first line of each answer. */
-export async function createTrigger(env: NodeJS.ProcessEnv, definition: Json, code: string): Promise<string> {
-  const mcp = new Mcp(env);
+/** Drafts a trigger and turns it on, as Codex does in a user's thread; returns the first line of each answer. */
+export async function createTrigger(env: NodeJS.ProcessEnv, definition: Json, code: string, threadId = "e2e-thread"): Promise<string> {
+  const mcp = new Mcp(env, threadId);
   try {
     await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } });
     const draft = await mcp.tool("trigger_draft", { definition, code });

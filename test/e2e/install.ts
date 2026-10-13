@@ -6,7 +6,7 @@
 // the service brings the daemon back after a crash, installing again keeps the
 // triggers, and `uninstall --purge` removes everything. It replaces the
 // background service of any installation on the machine, so it only runs in CI
-// (the Install job): node dist/test/e2e/install.js
+// (the End to end job): node dist/test/e2e/install.js
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

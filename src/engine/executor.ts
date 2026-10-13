@@ -32,12 +32,14 @@ const WAKE_AFTER_MS = 20_000;
 /** While someone is in the middle of a turn in the thread, look again this much later. */
 const BUSY_RECHECK_MS = 60_000;
 
-/** What became of a fire queued into a thread. paused: a stopped turn holds the user's thread, so the fire waits for them. */
+/** What became of a fire queued into a thread. paused: Codex holds the queue of the user's thread, so the fire waits for them. */
 type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "unreachable";
 /** Where a fire was queued; submissionId is the message's id from `codex queue`. */
 type QueuedTarget = { kind: "origin" | "dedicated"; threadId: string; submissionId?: string };
 /** Errors from codex that mean the thread no longer exists. */
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
+/** What codex answers when another process, such as a Codex app, has the thread open. */
+const OPEN_ELSEWHERE = /active writer/i;
 
 export interface ExecutorDeps {
   store: Store;
@@ -262,25 +264,23 @@ export class Executor {
     }
     const own = fire.target?.kind === "dedicated";
     const submissionId = fire.target?.submissionId;
-    if (view.paused && !(own && submissionId)) {
-      // Someone stopped Codex in this thread; it runs queued messages again once they continue there.
-      this.outcome.set(fire.fireId, "paused");
-      this.reminded.add(fire.fireId);
-      await this.remind(fire, "waiting in your thread: Codex was stopped there, so it runs when you continue the conversation");
-      return;
-    }
+    // A stopped turn (Stop, or the app closed in the middle of one) makes Codex hold the thread's queue.
+    // The fire is started anyway, unless messages of the user's are held there too: those wait for the user.
+    if (view.paused && (!submissionId || (!own && view.holdsOthers))) return this.waitInPausedThread(fire);
     const { definition } = this.deps.store.loadTrigger(fire.triggerId);
     this.log(`no Codex app has thread ${threadId} open; running fire ${fire.fireId} there`);
     const result = await codex.wakeThread({
       threadId,
       marker: fire.fireId,
       sandbox: definition.action.sandbox,
-      // The trigger's own thread follows target.cwd and is not left stuck by a stopped turn; a thread of the user's keeps its folder.
+      // The trigger's own thread follows target.cwd; a thread of the user's keeps its folder.
       ...(own ? { cwd: this.cwdFor(definition) } : {}),
-      ...(own && view.paused && submissionId ? { startQueued: submissionId } : {}),
+      ...(view.paused ? { startQueued: submissionId } : {}),
       timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
     });
     if (!result.ok) {
+      // A Codex app has the paused thread open after all: the user is there to continue it.
+      if (view.paused && OPEN_ELSEWHERE.test(result.error ?? "")) return this.waitInPausedThread(fire);
       this.outcome.set(fire.fireId, "unreachable");
       this.log(`fire ${fire.fireId} did not run in thread ${threadId}: ${result.error}`);
       return;
@@ -292,6 +292,13 @@ export class Executor {
     const receipt: Receipt = { ...receiptFrom(result.lastMessage, fire.summary), at, source: "final-answer" };
     this.deps.fires.record({ type: "receipt", fireId: fire.fireId, receipt, at });
     await this.afterReceipt(fire.fireId, receipt);
+  }
+
+  /** The fire stays queued in a thread where Codex was stopped, and runs when the user continues there; the user is told now. */
+  private async waitInPausedThread(fire: FireRecord): Promise<void> {
+    this.outcome.set(fire.fireId, "paused");
+    this.reminded.add(fire.fireId);
+    await this.remind(fire, "waiting in your thread: Codex was stopped there, so it runs when you continue the conversation");
   }
 
   /** Dispatches pending fires that are ready. Never runs twice at once. */

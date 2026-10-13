@@ -46,6 +46,11 @@ export async function startServer(): Promise<TestServer> {
   });
 }
 
+/** How a thread looks from outside: by default idle, with nothing held. */
+export function view(changes: Partial<ThreadView> = {}): ThreadView {
+  return { mentions: false, busy: false, paused: false, holdsOthers: false, ...changes };
+}
+
 export class FakeCodex implements CodexRunner {
   queued: Array<{ threadId: string; message: string }> = [];
   queueAttempts = 0;
@@ -59,14 +64,17 @@ export class FakeCodex implements CodexRunner {
   threadViews = new Map<string, ThreadView>();
   wakes: WakeOptions[] = [];
   wakeAnswer = "The price moved on earnings; details in the thread.";
+  /** Makes every wake fail with this error, such as when a Codex app has the thread open. */
+  wakeError: string | undefined;
   private threads = 0;
 
   async inspectThread(threadId: string): Promise<ThreadView> {
-    return this.threadViews.get(threadId) ?? { mentions: false, busy: false, paused: false };
+    return this.threadViews.get(threadId) ?? view();
   }
 
   async wakeThread(options: WakeOptions): Promise<TurnResult> {
     this.wakes.push(options);
+    if (this.wakeError) return { ok: false, threadId: options.threadId, error: this.wakeError };
     return { ok: true, threadId: options.threadId, lastMessage: this.wakeAnswer };
   }
 

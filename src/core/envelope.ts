@@ -9,6 +9,8 @@ import type { TriggerDefinition } from "./definition.js";
 import type { ProbeEvent } from "./probe-output.js";
 
 export const DATA_BLOCK_MAX_CHARS = 16 * 1024;
+/** How every message from Self-Starter to Codex starts. */
+export const MESSAGE_PREFIX = "[self-starter]";
 
 export interface EnvelopeInput {
   definition: TriggerDefinition;
@@ -47,7 +49,7 @@ export function renderEnvelope(input: EnvelopeInput): string {
   const def = input.definition;
   const merged = input.merged && input.merged > 1 ? ` (${input.merged} fires merged)` : "";
   const lines = [
-    `[self-starter] ${def.name} (${def.id} · fire #${input.fireNumber} · ${input.fireId})`,
+    `${MESSAGE_PREFIX} ${def.name} (${def.id} · fire #${input.fireNumber} · ${input.fireId})`,
     "",
     "Task (set by the user when the trigger was created):",
     def.action.prompt ?? "Tell the user what happened.",
@@ -72,7 +74,7 @@ export function renderEnvelope(input: EnvelopeInput): string {
 /** The first message of a dedicated thread. */
 export function renderDedicatedSeed(def: TriggerDefinition): string {
   return [
-    `[self-starter] This thread belongs to the trigger "${def.name}" (${def.id}).`,
+    `${MESSAGE_PREFIX} This thread belongs to the trigger "${def.name}" (${def.id}).`,
     "",
     `The user's words: ${def.intent}`,
     `What happens when it fires: ${def.action.prompt ?? "the user is notified"}`,

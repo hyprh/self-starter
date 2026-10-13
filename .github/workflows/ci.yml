@@ -33,10 +33,11 @@ jobs:
         run: node --input-type=module -e "import { bundledDeno } from './dist/src/engine/config.js'; if (!bundledDeno()) throw new Error('the deno npm package has no binary');"
       - run: npm test
 
-  # Installs for real, as the README says: Codex CLI, launchd or systemd, then
-  # a trigger, a crash, a reinstall and an uninstall (test/e2e/install.ts).
-  install:
-    name: Install (${{ matrix.os }})
+  # With the real Codex CLI: installs as the README says (launchd or systemd, a
+  # trigger, a crash, a reinstall, an uninstall; test/e2e/install.ts), then runs
+  # fires through Codex with a stand-in model (test/e2e/agent.ts).
+  e2e:
+    name: End to end (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -64,3 +65,4 @@ jobs:
           exit 1
       - run: npm link && self-starter version
       - run: node dist/test/e2e/install.js
+      - run: node dist/test/e2e/agent.js
