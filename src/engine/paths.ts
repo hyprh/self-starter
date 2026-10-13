@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 /** Where everything lives. SELF_STARTER_HOME overrides the default ~/.self-starter. */
 export interface Paths {
@@ -24,7 +24,10 @@ export interface Paths {
 /** Unix socket paths are limited to about 100 bytes; long homes get a socket in the temp folder. */
 const SOCKET_PATH_MAX = 100;
 
-export function resolvePaths(home = process.env.SELF_STARTER_HOME || join(homedir(), ".self-starter")): Paths {
+export function resolvePaths(given = process.env.SELF_STARTER_HOME || join(homedir(), ".self-starter")): Paths {
+  // Absolute and normalized: the CLI, the service and the MCP servers Codex starts
+  // in other folders must all find the same files and the same socket.
+  const home = resolve(given);
   let socket = join(home, "daemon.sock");
   if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) {
     const digest = createHash("sha256").update(home).digest("hex").slice(0, 16);
