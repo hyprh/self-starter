@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.0.2 (2026-10-13)
 
 Self-Starter now works in Claude Code too, with the same triggers, background service and command line.
 
