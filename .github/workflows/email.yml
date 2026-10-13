@@ -1,0 +1,39 @@
+# Sends real email and reads it back: the email channel is set up through the
+# CLI and a trigger fires, all into a throwaway Ethereal mailbox (test/e2e/email.ts).
+name: Email
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/engine/channels.ts"
+      - "src/engine/mail-providers.ts"
+      - "src/cli/settings.ts"
+      - "test/e2e/email.ts"
+      - "package-lock.json"
+      - ".github/workflows/email.yml"
+  pull_request:
+    paths:
+      - "src/engine/channels.ts"
+      - "src/engine/mail-providers.ts"
+      - "src/cli/settings.ts"
+      - "test/e2e/email.ts"
+      - "package-lock.json"
+      - ".github/workflows/email.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node dist/test/e2e/email.js

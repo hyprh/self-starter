@@ -114,8 +114,11 @@ Everything lives in `~/.self-starter` (set `SELF_STARTER_HOME` to move it): read
 ## Development
 
 ```sh
-npm test               # builds, then runs unit and integration tests (real Deno probes, the daemon, the MCP protocol)
+npm test                         # builds, then runs unit and integration tests (real Deno probes, the daemon, the MCP protocol)
+node dist/test/e2e/email.js      # real email: sets up the email channel and lets a trigger fire into a throwaway Ethereal mailbox
 ```
+
+CI runs the tests on Linux and macOS; the Email workflow runs the email check when the email code changes, or on demand.
 
 - [docs/design.md](docs/design.md): design and the verified Codex integration points
 - [plugin/](plugin): the Codex plugin (manifest and skills)
