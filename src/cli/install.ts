@@ -9,6 +9,7 @@ import { accessSync, constants, cpSync, existsSync, readdirSync, readFileSync, r
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { codexCommand } from "../engine/codex.js";
 import { bundledDeno, loadConfig, resolveCodex, resolveDeno, saveConfig, which } from "../engine/config.js";
 import { ensurePrivateDir, writeJsonAtomic } from "../engine/fs-util.js";
 import type { Paths } from "../engine/paths.js";
@@ -67,9 +68,10 @@ export function findCodex(): string | undefined {
   return which("codex") ?? findInAppBundles();
 }
 
+/** Runs codex the way the daemon does, so that what doctor sees is what the daemon gets. */
 function runCodex(codexBin: string, args: string[]): { ok: boolean; output: string } {
-  const isScript = /\.[cm]?js$/.test(codexBin);
-  const out = spawnSync(isScript ? process.execPath : codexBin, isScript ? [codexBin, ...args] : args, {
+  const { command, prefix } = codexCommand(codexBin);
+  const out = spawnSync(command, [...prefix, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: 60_000,
@@ -110,7 +112,8 @@ export function buildMarketplace(paths: Paths): string {
   return pluginDir;
 }
 
-async function stopRunningDaemon(paths: Paths): Promise<void> {
+/** Asks a running daemon to stop, and waits until it no longer answers. */
+export async function stopRunningDaemon(paths: Paths): Promise<void> {
   if (!(await isDaemonRunning(paths.socket))) return;
   await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
   const deadline = Date.now() + 10_000;

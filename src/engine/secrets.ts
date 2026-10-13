@@ -6,7 +6,6 @@
 // full-access probe runs as the user and could read this file anyway, so host
 // limits do not apply to it.
 
-import { chmodSync, existsSync } from "node:fs";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
 import type { Paths } from "./paths.js";
 
@@ -40,7 +39,6 @@ export class Secrets {
 
   private save(all: Record<string, SecretEntry>): void {
     writeJsonAtomic(this.paths.secrets, all);
-    if (existsSync(this.paths.secrets)) chmodSync(this.paths.secrets, 0o600);
   }
 
   list(): Array<{ name: string; hosts: string[] | "*" }> {

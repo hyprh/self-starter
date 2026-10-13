@@ -161,12 +161,12 @@ export class Engine {
     this.deps.store.saveRuntime(id, runtime);
   }
 
-  /** Starts over when the definition has a new revision, keeping a pause the user asked for. */
+  /** Starts over when the definition has a new revision, keeping a pause. */
   private syncRevision(id: string, definition: TriggerDefinition): RuntimeState {
     const current = this.runtime(id);
     if (current.revision === definition.meta.revision) return current;
     const fresh = initialRuntime(definition.meta.revision);
-    if (current.lifecycle === "paused" && current.pausedReason === USER_PAUSE) {
+    if (current.lifecycle === "paused") {
       fresh.lifecycle = "paused";
       fresh.pausedReason = USER_PAUSE;
     }
@@ -190,8 +190,8 @@ export class Engine {
     this.schedule(0);
   }
 
-  pause(id: string, reason = USER_PAUSE): RuntimeState {
-    const runtime = { ...this.runtime(id), lifecycle: "paused" as const, pausedReason: reason };
+  pause(id: string): RuntimeState {
+    const runtime = { ...this.runtime(id), lifecycle: "paused" as const, pausedReason: USER_PAUSE };
     this.save(id, runtime);
     return runtime;
   }
@@ -206,10 +206,6 @@ export class Engine {
     this.save(id, runtime);
     this.schedule(0);
     return runtime;
-  }
-
-  isRunning(id: string): boolean {
-    return this.running.has(id);
   }
 
   recentRuns(id: string): RunRecord[] {

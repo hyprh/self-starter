@@ -12,7 +12,7 @@ import type { DraftView, FireView, TriggerSummary } from "../engine/service.js";
 import { runMcpServer } from "../mcp/server.js";
 import { VERSION } from "../runtime.js";
 import { ensureDaemon, serviceManager, serviceSpec } from "../service/manager.js";
-import { doctor, install, uninstall } from "./install.js";
+import { doctor, install, stopRunningDaemon, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
 
@@ -103,10 +103,7 @@ async function serviceCommand(action: string | undefined): Promise<void> {
   switch (action) {
     case "install": {
       if (manager.kind === "none") throw new Error("no launchd or systemd user session here; run `self-starter daemon` some other way");
-      if (await isDaemonRunning(paths.socket)) {
-        await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
+      await stopRunningDaemon(paths);
       manager.install(serviceSpec(paths, loadConfig(paths).codexBin));
       out((await waitForDaemon(paths.socket, 10_000)) ? `Installed and started (${manager.file}).` : `Installed (${manager.file}), but the daemon did not answer yet; see self-starter logs.`);
       return;
@@ -126,12 +123,8 @@ async function serviceCommand(action: string | undefined): Promise<void> {
       out("Stopped.");
       return;
     case "restart":
-      if (manager.installed()) {
-        manager.restart();
-      } else if (await isDaemonRunning(paths.socket)) {
-        await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
-        await new Promise((r) => setTimeout(r, 1000));
-      }
+      if (manager.installed()) manager.restart();
+      else await stopRunningDaemon(paths);
       await ensureDaemon(paths);
       out("Restarted.");
       return;

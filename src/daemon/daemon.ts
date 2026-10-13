@@ -122,7 +122,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     const executor = new Executor({ store, fires, paths, config, notifier, codex, log, ...clock });
     const engine = new Engine({ store, executor, secrets, paths, config, deno, log, ...clock });
     const recipesDir = options.recipesDir ?? join(PACKAGE_ROOT, "recipes");
-    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codex: codexBin, log, ...clock });
+    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, log, ...clock });
     const handlers = service.handlers();
     handlers["daemon.stop"] = () => {
       setTimeout(() => options.onStopRequest?.(), 50);

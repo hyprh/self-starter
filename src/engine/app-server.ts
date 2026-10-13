@@ -72,7 +72,7 @@ export class AppServerSession {
       if (this.stderr.length < 64 * 1024) this.stderr += chunk.toString("utf8");
     });
     this.child.on("error", (error) => this.fail(new Error(`could not start codex app-server: ${error.message}`)));
-    this.child.on("close", () => this.fail(new Error(`codex app-server exited: ${firstLines(this.stderr)}`)));
+    this.child.on("close", () => this.fail(new Error(`codex app-server exited: ${shortError(this.stderr)}`)));
     createInterface({ input: this.child.stdout }).on("line", (line) => this.receive(line));
   }
 
@@ -143,7 +143,8 @@ export class AppServerSession {
   }
 }
 
-function firstLines(text: string): string {
+/** The first lines of a command's error output, without Codex's sandbox warning. */
+export function shortError(text: string): string {
   const lines = text
     .split("\n")
     .map((line) => line.trim())

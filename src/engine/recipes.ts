@@ -8,6 +8,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isRecord } from "../core/patch.js";
 
 export interface RecipeParam {
   type: "string" | "number" | "boolean" | "string[]" | "number[]";
@@ -44,10 +45,6 @@ export interface Recipe {
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function listRecipes(dir: string): Recipe[] {
   if (!existsSync(dir)) return [];

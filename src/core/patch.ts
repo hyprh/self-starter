@@ -1,6 +1,7 @@
 // Partial changes to a definition (trigger_update), and a readable list of differences.
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** A plain mapping: not null, a list or a date (which YAML can produce). */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) && !(value instanceof Date);
 }
 

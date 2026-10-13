@@ -6,6 +6,7 @@
 
 import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
+import { isRecord } from "../core/patch.js";
 import type { Caller } from "../engine/service.js";
 import { ServiceError } from "../engine/service.js";
 
@@ -15,10 +16,6 @@ export type Handler = (params: Record<string, unknown>, caller: Caller) => unkno
 
 export interface ControlServer {
   close(): Promise<void>;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseCaller(raw: unknown): Caller {

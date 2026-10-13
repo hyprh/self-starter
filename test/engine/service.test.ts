@@ -32,7 +32,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
   const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now, uptime: () => clock.at });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
   const recipesDir = join(paths.home, "recipes");
-  const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codex: () => "/fake/codex", log, now });
+  const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codexBin: () => "/fake/codex", log, now });
 
   const definition = (overrides: Record<string, unknown> = {}) => ({
     id: "price-alert",

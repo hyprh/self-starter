@@ -1,6 +1,7 @@
 // System notifications: terminal-notifier or osascript on macOS, notify-send on Linux.
 
 import { spawn } from "node:child_process";
+import type { Channel } from "../core/definition.js";
 import { which } from "./config.js";
 
 export interface Notification {
@@ -9,7 +10,7 @@ export interface Notification {
   /** Thread to open when the notification is clicked (where supported). */
   threadId?: string;
   /** Where to send it; the configured default when left out. */
-  channels?: Array<"desktop" | "email">;
+  channels?: Channel[];
 }
 
 export interface Notifier {

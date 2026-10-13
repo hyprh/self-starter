@@ -1,8 +1,8 @@
 // `self-starter secret ...` and `self-starter channel ...`: what the user sets up
 // once, in a terminal, so that keys and passwords never pass through the chat.
 
+import { CHANNELS, type Channel } from "../core/definition.js";
 import {
-  CHANNEL_NAMES,
   ChannelNotifier,
   channelSettings,
   composeEmail,
@@ -10,10 +10,8 @@ import {
   saveEmailChannel,
   sendEmail,
   setDefaultChannels,
-  type ChannelName,
-  type EmailSettings,
 } from "../engine/channels.js";
-import { loadConfig } from "../engine/config.js";
+import { loadConfig, type EmailSettings } from "../engine/config.js";
 import { mailProviderFor, unsupportedSender } from "../engine/mail-providers.js";
 import { SystemNotifier } from "../engine/notify.js";
 import type { Paths } from "../engine/paths.js";
@@ -71,8 +69,8 @@ export async function channelCommand(paths: Paths, args: Args): Promise<void> {
       return;
     }
     case "test": {
-      const channel = (name ?? "email") as ChannelName;
-      if (!CHANNEL_NAMES.includes(channel)) throw new UsageError(`usage: self-starter channel test [${CHANNEL_NAMES.join("|")}]`);
+      const channel = (name ?? "email") as Channel;
+      if (!CHANNELS.includes(channel)) throw new UsageError(`usage: self-starter channel test [${CHANNELS.join("|")}]`);
       const errors: string[] = [];
       const notifier = new ChannelNotifier(paths, new SystemNotifier(), (line) => {
         if (/failed|not set up|no email channel/.test(line)) errors.push(line);

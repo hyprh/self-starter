@@ -141,9 +141,9 @@ export class FireLog {
   }
 
   /** The most recent finished fire of a trigger created at or after `since`, for the "previous fire" line. */
-  previousDone(triggerId: string, before: string, since: string): FireRecord | undefined {
+  previousDone(triggerId: string, since: string): FireRecord | undefined {
     return this.forTrigger(triggerId)
-      .filter((fire) => fire.status === "done" && fire.receipt && fire.fireId !== before && Date.parse(fire.createdAt) >= Date.parse(since))
+      .filter((fire) => fire.status === "done" && fire.receipt && Date.parse(fire.createdAt) >= Date.parse(since))
       .at(-1);
   }
 

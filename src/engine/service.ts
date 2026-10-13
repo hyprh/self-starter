@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { describeState, describeTrigger } from "../core/describe.js";
 import { definitionToYaml, validateDefinition, type TriggerDefinition } from "../core/definition.js";
-import { deepMerge, describeChanges, patchPaths } from "../core/patch.js";
+import { deepMerge, describeChanges, isRecord, patchPaths } from "../core/patch.js";
 import type { ProbeRunResult } from "./probe-runner.js";
 import { channelSettings } from "./channels.js";
 import { loadConfig, type Config } from "./config.js";
@@ -61,7 +61,7 @@ export interface ServiceDeps {
   /** Folder of ready-made recipes (recipes/ in the package). */
   recipesDir: string;
   deno: () => string | undefined;
-  codex: () => string | undefined;
+  codexBin: () => string | undefined;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -91,10 +91,6 @@ export interface TriggerSummary {
   fires: number;
   lastCheck: { at: string; ok: boolean; summary?: string; error?: string } | null;
   nextCheck: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function tilde(path: string): string {
@@ -571,7 +567,7 @@ export class TriggerService {
       startedAt: this.startedAt,
       home: this.deps.paths.home,
       deno: this.deps.deno() ?? null,
-      codex: this.deps.codex() ?? null,
+      codex: this.deps.codexBin() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {

@@ -4,30 +4,17 @@
 // channel-secrets.json (0600), which is never given to probes: probe secrets are a
 // different store, released only to probes that declare them.
 
-import { chmodSync, existsSync } from "node:fs";
 import { hostname } from "node:os";
 import nodemailer from "nodemailer";
-import { loadConfig, saveConfig, type Config } from "./config.js";
+import { CHANNELS, type Channel } from "../core/definition.js";
+import { loadConfig, saveConfig, type Config, type EmailSettings } from "./config.js";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { Paths } from "./paths.js";
 
-export type ChannelName = "desktop" | "email";
-export const CHANNEL_NAMES: readonly ChannelName[] = ["desktop", "email"];
-
-export interface EmailSettings {
-  to: string;
-  from?: string;
-  host: string;
-  port: number;
-  /** TLS from the first byte (port 465). Otherwise STARTTLS is used, and required whenever a password is sent. */
-  secure: boolean;
-  user?: string;
-}
-
 export interface ChannelSettings {
   /** Channels for triggers that do not choose their own. */
-  default: ChannelName[];
+  default: Channel[];
   email?: EmailSettings;
 }
 
@@ -49,7 +36,6 @@ export function saveEmailChannel(paths: Paths, settings: EmailSettings, password
   config.channels = { ...channelSettings(config), email: settings };
   saveConfig(paths, config);
   writeJsonAtomic(paths.channelSecrets, password ? { email: { password } } : {});
-  if (existsSync(paths.channelSecrets)) chmodSync(paths.channelSecrets, 0o600);
 }
 
 export function removeEmailChannel(paths: Paths): boolean {
@@ -65,13 +51,13 @@ export function removeEmailChannel(paths: Paths): boolean {
   return true;
 }
 
-export function setDefaultChannels(paths: Paths, names: string[]): ChannelName[] {
-  const unknown = names.filter((name) => !CHANNEL_NAMES.includes(name as ChannelName));
-  if (unknown.length > 0 || names.length === 0) throw new Error(`channels must be some of: ${CHANNEL_NAMES.join(", ")}`);
+export function setDefaultChannels(paths: Paths, names: string[]): Channel[] {
+  const unknown = names.filter((name) => !CHANNELS.includes(name as Channel));
+  if (unknown.length > 0 || names.length === 0) throw new Error(`channels must be some of: ${CHANNELS.join(", ")}`);
   const config = loadConfig(paths);
   const settings = channelSettings(config);
   if (names.includes("email") && !settings.email) throw new Error("set up email first: self-starter channel email you@example.com");
-  settings.default = [...new Set(names)] as ChannelName[];
+  settings.default = [...new Set(names)] as Channel[];
   config.channels = settings;
   saveConfig(paths, config);
   return settings.default;

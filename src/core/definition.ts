@@ -2,6 +2,7 @@
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { parseDuration } from "./duration.js";
+import { isRecord } from "./patch.js";
 
 export type Mode = "state" | "event";
 export type Concurrency = "skip" | "queue" | "coalesce";
@@ -12,7 +13,9 @@ export type NotifyWhen = "always" | "receipt" | "never";
 export type Sandbox = "read-only" | "workspace-write" | "danger-full-access";
 /** What a probe may do: what the user can ("full"), or only reach the hosts it lists ("sandbox"). */
 export type ProbeAccess = "full" | "sandbox";
-export type Channel = "desktop" | "email";
+/** Where notifications go. */
+export const CHANNELS = ["desktop", "email"] as const;
+export type Channel = (typeof CHANNELS)[number];
 
 export interface QuietHours {
   from: string;
@@ -94,10 +97,6 @@ export function isValidTimeZone(tz: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isIsoDate(value: unknown): value is string {
@@ -280,8 +279,8 @@ export function validateDefinition(raw: unknown): ValidationResult {
   if (!["always", "receipt", "never"].includes(notify.when)) errors.push('notify.when must be "always", "receipt" or "never"');
   if (notifyRaw.channels !== undefined && notifyRaw.channels !== null) {
     const list = notifyRaw.channels;
-    if (!Array.isArray(list) || list.length === 0 || !list.every((c) => c === "desktop" || c === "email")) {
-      errors.push('notify.channels must be a non-empty list of "desktop" and "email"');
+    if (!Array.isArray(list) || list.length === 0 || !list.every((c) => CHANNELS.includes(c))) {
+      errors.push(`notify.channels must be a non-empty list of ${CHANNELS.map((c) => `"${c}"`).join(" and ")}`);
     } else {
       notify.channels = [...new Set(list as Channel[])];
     }

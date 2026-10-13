@@ -348,11 +348,9 @@ export class Executor {
     }
   }
 
-  /** True while a fire of the trigger is being dispatched, run, or waits for its receipt. */
+  /** True while a fire of the trigger waits for its receipt. (Fires being dispatched are checked before this.) */
   private busy(triggerId: string, since: number): boolean {
-    return this.deps.fires
-      .forTrigger(triggerId)
-      .some((fire) => Date.parse(fire.createdAt) >= since && (this.inFlight.has(fire.fireId) || fire.status === "delivered"));
+    return this.deps.fires.forTrigger(triggerId).some((fire) => Date.parse(fire.createdAt) >= since && fire.status === "delivered");
   }
 
   private dispatchTrigger(triggerId: string, pending: FireRecord[]): void {
@@ -408,20 +406,20 @@ export class Executor {
   }
 
   /** All fires merged into this one, including fires merged into those. */
-  private mergedInto(fire: FireRecord): FireRecord[] {
+  private mergedFires(fire: FireRecord): FireRecord[] {
     const out: FireRecord[] = [];
     for (const id of fire.merged) {
       const child = this.deps.fires.get(id);
-      if (child) out.push(...this.mergedInto(child), child);
+      if (child) out.push(...this.mergedFires(child), child);
     }
     return out;
   }
 
   private envelope(definition: TriggerDefinition, fire: FireRecord): EnvelopeInput {
-    const merged = this.mergedInto(fire);
+    const merged = this.mergedFires(fire);
     const byKey = new Map<string, ProbeEvent>();
     for (const item of [...merged, fire]) for (const event of item.events ?? []) byKey.set(event.key, event);
-    const previous = this.deps.fires.previousDone(definition.id, fire.fireId, definition.meta.created_at);
+    const previous = this.deps.fires.previousDone(definition.id, definition.meta.created_at);
     const base: EnvelopeInput = {
       definition,
       fireId: fire.fireId,

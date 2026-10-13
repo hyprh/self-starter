@@ -34,7 +34,7 @@ export interface DraftMeta {
   draftId: string;
   createdAt: string;
   originThreadId: string | null;
-  /** Set when the draft replaces an existing trigger's code or permissions. */
+  /** Set when the draft replaces an existing trigger (trigger_draft with replace=true). */
   replaces?: string;
   dryRun?: DryRun;
 }

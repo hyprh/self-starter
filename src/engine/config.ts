@@ -3,15 +3,23 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { delimiter, dirname, join } from "node:path";
+import type { Channel } from "../core/definition.js";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
 import type { Paths } from "./paths.js";
 
+export interface EmailSettings {
+  to: string;
+  from?: string;
+  host: string;
+  port: number;
+  /** TLS from the first byte (port 465). Otherwise STARTTLS is used, and required whenever a password is sent. */
+  secure: boolean;
+  user?: string;
+}
+
 export interface Config {
   /** Notification channels; see channels.ts. */
-  channels?: {
-    default?: Array<"desktop" | "email">;
-    email?: { to: string; from?: string; host: string; port: number; secure: boolean; user?: string };
-  };
+  channels?: { default?: Channel[]; email?: EmailSettings };
   /** Absolute path of the codex CLI. Recorded by `self-starter install`; found on PATH otherwise. */
   codexBin?: string;
   /** Absolute path of deno. Defaults to the binary shipped with the deno npm package. */

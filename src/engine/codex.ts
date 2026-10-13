@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import type { Sandbox } from "../core/definition.js";
 import { MESSAGE_PREFIX } from "../core/envelope.js";
-import { AppServerSession, type RpcMessage } from "./app-server.js";
+import { AppServerSession, shortError, type RpcMessage } from "./app-server.js";
 
 export interface TurnResult {
   ok: boolean;
@@ -49,14 +49,6 @@ function run(bin: string, args: string[], timeoutMs: number): Promise<Spawned> {
       resolve({ code, stdout, stderr, timedOut });
     });
   });
-}
-
-function shortError(text: string): string {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("WARNING: proceeding"));
-  return lines.slice(0, 3).join(" | ").slice(0, 500) || "no error output";
 }
 
 type TurnLike = { status?: string; completedAt?: number | null; items?: unknown; error?: { message?: string } } | undefined;
