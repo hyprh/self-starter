@@ -62,7 +62,7 @@ export class FakeCodex implements CodexRunner {
   private threads = 0;
 
   async inspectThread(threadId: string): Promise<ThreadView> {
-    return this.threadViews.get(threadId) ?? { mentions: false, busy: false };
+    return this.threadViews.get(threadId) ?? { mentions: false, busy: false, paused: false };
   }
 
   async wakeThread(options: WakeOptions): Promise<TurnResult> {

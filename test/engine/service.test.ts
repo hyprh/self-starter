@@ -379,7 +379,7 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       server.price = 200;
       const first = (await t.engine.runNow("price-alert"))!.fireId!;
       await eventually(() => t.fires.get(first)?.status === "delivered");
-      t.codex.threadViews.set(ORIGIN, { mentions: true, busy: true });
+      t.codex.threadViews.set(ORIGIN, { mentions: true, busy: true, paused: false });
       t.clock.at += 61_000;
       await t.executor.tick();
       t.clock.at += 6 * 60_000;
@@ -393,12 +393,12 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       server.price = 200;
       const second = (await t.engine.runNow("price-alert"))!.fireId!;
       await eventually(() => t.fires.get(second)?.status === "delivered");
-      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: true });
+      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: true, paused: false });
       t.clock.at += 61_000;
       await t.executor.tick();
       await new Promise((resolve) => setTimeout(resolve, 50));
       assert.equal(t.codex.wakes.length, 0, "not while the user is in the middle of a turn");
-      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: false });
+      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: false, paused: false });
       t.clock.at += 61_000;
       await t.executor.tick();
       await eventually(() => t.codex.wakes.length === 1);
@@ -424,6 +424,44 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       t.service.report({ fireId, summary: "late but done", notify: true }, fromThread({ turnId: "turn-8" }));
       assert.equal(t.fires.get(fireId)?.receipt?.summary, "late but done");
       assert.equal((await eventually(() => t.notifier.sent[1])).body, "late but done");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("leaves a fire in a thread where Codex was stopped, and tells the user", async () => {
+    const t = setup(server);
+    try {
+      await t.activate({ target: { kind: "origin" } });
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      t.codex.threadViews.set(ORIGIN, { mentions: false, busy: false, paused: true });
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      const reminder = await eventually(() => t.notifier.sent[0]);
+      assert.match(reminder.body, /Codex was stopped there, so it runs when you continue the conversation/);
+      assert.equal(reminder.threadId, ORIGIN);
+      assert.equal(t.codex.wakes.length, 0, "the user stopped Codex in their own thread; it is not overridden");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("starts the fire in the trigger's own thread even when a stopped turn paused it", async () => {
+    const t = setup(server);
+    try {
+      await t.activate();
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      assert.equal(t.fires.get(fireId)?.target?.submissionId, "sub-1", "the queued message's id is kept");
+      t.codex.threadViews.set("thread-dedicated-1", { mentions: false, busy: false, paused: true });
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      const wake = await eventually(() => t.codex.wakes[0]);
+      assert.equal(wake.startQueued, "sub-1");
+      await eventually(() => t.fires.get(fireId)?.status === "done");
     } finally {
       t.cleanup();
     }

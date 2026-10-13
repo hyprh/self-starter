@@ -84,6 +84,11 @@ function stillRunning(turn: TurnLike): boolean {
   return turn?.status === "inProgress" || (turn?.status === "interrupted" && turn.completedAt === null);
 }
 
+/** Whether a listed turn was stopped (it has an end time); Codex then holds the thread's queued messages until the user sends one. */
+function stopped(turn: TurnLike): boolean {
+  return turn?.status === "interrupted" && typeof turn.completedAt === "number";
+}
+
 const turnEvent = (method: "turn/started" | "turn/completed", threadId: string) => (message: RpcMessage) =>
   message.method === method && message.params?.threadId === threadId;
 
@@ -107,6 +112,8 @@ export interface ThreadView {
   mentions: boolean;
   /** Whether its latest turn is still running somewhere. */
   busy: boolean;
+  /** Whether its latest turn was stopped, so Codex holds the messages queued for it until the user sends one. */
+  paused: boolean;
 }
 
 export interface WakeOptions {
@@ -117,6 +124,8 @@ export interface WakeOptions {
   sandbox: Sandbox;
   /** Moves the thread to this folder for good, so only for a thread of the trigger's own; others keep their folder. */
   cwd?: string;
+  /** In a paused thread, start this queued message (its id from `codex queue`) instead of waiting for Codex to. */
+  startQueued?: string;
   /** For each turn. */
   timeoutMs: number;
   /** How long to wait for the first queued message to start running (one minute by default). */
@@ -161,8 +170,8 @@ export class CodexCli implements CodexRunner {
     return match ? { submissionId: match[1]! } : {};
   }
 
-  private appServer(cwd?: string): Promise<AppServerSession> {
-    return AppServerSession.open(this.command, this.prefix, cwd);
+  private appServer(options: { cwd?: string; experimental?: boolean } = {}): Promise<AppServerSession> {
+    return AppServerSession.open(this.command, this.prefix, options);
   }
 
   /**
@@ -174,7 +183,7 @@ export class CodexCli implements CodexRunner {
     let session: AppServerSession | undefined;
     let threadId: string | undefined;
     try {
-      session = await this.appServer(options.cwd);
+      session = await this.appServer({ cwd: options.cwd });
       threadId = (await session.request("thread/start", { cwd: options.cwd })).thread?.id as string | undefined;
       if (!threadId) throw new Error("thread/start returned no thread");
       await session.request("thread/name/set", { threadId, name: options.name });
@@ -196,7 +205,7 @@ export class CodexCli implements CodexRunner {
     try {
       const page = await session.request("thread/turns/list", { threadId, limit: 5, itemsView: "full" });
       const turns: TurnLike[] = Array.isArray(page.data) ? page.data : [];
-      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: stillRunning(turns[0]) };
+      return { mentions: turns.some((turn) => startedBy(turn, marker)), busy: stillRunning(turns[0]), paused: stopped(turns[0]) };
     } finally {
       session.close();
     }
@@ -211,14 +220,16 @@ export class CodexCli implements CodexRunner {
    * thread's own approval policy (an override would stick to the thread) and in
    * the given sandbox, in the thread's own folder unless `cwd` moves it.
    * Requests for approval are declined, since nobody is there to answer them.
+   * In a thread paused by a stopped turn, `startQueued` starts that message.
    */
   async wakeThread(options: WakeOptions): Promise<TurnResult> {
     const { threadId } = options;
-    const session = await this.appServer();
+    const session = await this.appServer({ experimental: options.startQueued !== undefined });
     try {
       const started = session.listen(turnEvent("turn/started", threadId));
       const completed = session.listen(turnEvent("turn/completed", threadId));
       await session.request("thread/resume", { threadId, sandbox: options.sandbox, excludeTurns: true, ...(options.cwd ? { cwd: options.cwd } : {}) });
+      if (options.startQueued) await session.request("thread/queue/start", { threadId, queuedSubmissionId: options.startQueued });
       const startTimeoutMs = options.startTimeoutMs ?? 60_000;
       let ran = 0;
       for (let start = await started.next(startTimeoutMs); start; start = await started.next(NEXT_TURN_MS)) {

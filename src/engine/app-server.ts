@@ -76,11 +76,12 @@ export class AppServerSession {
     createInterface({ input: this.child.stdout }).on("line", (line) => this.receive(line));
   }
 
-  /** Starts `codex app-server` and completes the initialize handshake. */
-  static async open(command: string, args: string[], cwd?: string): Promise<AppServerSession> {
-    const session = new AppServerSession(command, args, cwd);
+  /** Starts `codex app-server` and completes the initialize handshake; `experimental` opts into the API's experimental methods. */
+  static async open(command: string, args: string[], options: { cwd?: string; experimental?: boolean } = {}): Promise<AppServerSession> {
+    const session = new AppServerSession(command, args, options.cwd);
     try {
-      await session.request("initialize", { clientInfo: { name: "self-starter", version: "1" } });
+      const capabilities = options.experimental ? { capabilities: { experimentalApi: true } } : {};
+      await session.request("initialize", { clientInfo: { name: "self-starter", version: "1" }, ...capabilities });
       session.send({ method: "initialized" });
       return session;
     } catch (error) {

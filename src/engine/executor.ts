@@ -32,8 +32,10 @@ const WAKE_AFTER_MS = 20_000;
 /** While someone is in the middle of a turn in the thread, look again this much later. */
 const BUSY_RECHECK_MS = 60_000;
 
-/** What became of a fire queued into a thread. */
-type QueuedOutcome = "picked-up" | "waking" | "woken" | "unreachable";
+/** What became of a fire queued into a thread. paused: a stopped turn holds the user's thread, so the fire waits for them. */
+type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "unreachable";
+/** Where a fire was queued; submissionId is the message's id from `codex queue`. */
+type QueuedTarget = { kind: "origin" | "dedicated"; threadId: string; submissionId?: string };
 /** Errors from codex that mean the thread no longer exists. */
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
 
@@ -258,14 +260,24 @@ export class Executor {
       this.nextCheck.set(fire.fireId, this.uptime() + BUSY_RECHECK_MS);
       return;
     }
+    const own = fire.target?.kind === "dedicated";
+    const submissionId = fire.target?.submissionId;
+    if (view.paused && !(own && submissionId)) {
+      // Someone stopped Codex in this thread; it runs queued messages again once they continue there.
+      this.outcome.set(fire.fireId, "paused");
+      this.reminded.add(fire.fireId);
+      await this.remind(fire, "waiting in your thread: Codex was stopped there, so it runs when you continue the conversation");
+      return;
+    }
     const { definition } = this.deps.store.loadTrigger(fire.triggerId);
     this.log(`no Codex app has thread ${threadId} open; running fire ${fire.fireId} there`);
     const result = await codex.wakeThread({
       threadId,
       marker: fire.fireId,
       sandbox: definition.action.sandbox,
-      // The trigger's own thread follows target.cwd; a thread of the user's keeps its folder.
-      ...(fire.target?.kind === "dedicated" ? { cwd: this.cwdFor(definition) } : {}),
+      // The trigger's own thread follows target.cwd and is not left stuck by a stopped turn; a thread of the user's keeps its folder.
+      ...(own ? { cwd: this.cwdFor(definition) } : {}),
+      ...(own && view.paused && submissionId ? { startQueued: submissionId } : {}),
       timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
     });
     if (!result.ok) {
@@ -432,15 +444,19 @@ export class Executor {
     }
 
     const message = renderEnvelope(this.envelope(definition, fire));
-    /** Queues the message into a thread; returns why it could not. */
-    const queueInto = (threadId: string) => codex.queue(threadId, message).then(() => undefined, (error: Error) => error.message);
+    /** Queues the message into a thread: where it went, or why it could not go there. */
+    const queueInto = (kind: QueuedTarget["kind"], threadId: string): Promise<QueuedTarget | string> =>
+      codex.queue(threadId, message).then(
+        ({ submissionId }) => ({ kind, threadId, ...(submissionId ? { submissionId } : {}) }),
+        (error: Error) => error.message,
+      );
 
     const origin = definition.target.kind === "origin" ? definition.meta.origin_thread_id : undefined;
     if (origin) {
-      const problem = await queueInto(origin);
-      if (problem === undefined) return this.queued(definition, fire, { kind: "origin", threadId: origin });
-      if (!THREAD_GONE.test(problem)) return this.failAttempt(definition, fire, problem);
-      this.log(`the origin thread of ${definition.id} is gone (${problem}); using a thread of its own`);
+      const sent = await queueInto("origin", origin);
+      if (typeof sent !== "string") return this.queued(definition, fire, sent);
+      if (!THREAD_GONE.test(sent)) return this.failAttempt(definition, fire, sent);
+      this.log(`the origin thread of ${definition.id} is gone (${sent}); using a thread of its own`);
     }
     let threadId: string;
     try {
@@ -448,14 +464,14 @@ export class Executor {
     } catch (error) {
       return this.failAttempt(definition, fire, (error as Error).message);
     }
-    const problem = await queueInto(threadId);
-    if (problem === undefined) return this.queued(definition, fire, { kind: "dedicated", threadId });
-    if (THREAD_GONE.test(problem)) this.forgetDedicatedThread(definition.id, threadId);
-    return this.failAttempt(definition, fire, problem);
+    const sent = await queueInto("dedicated", threadId);
+    if (typeof sent !== "string") return this.queued(definition, fire, sent);
+    if (THREAD_GONE.test(sent)) this.forgetDedicatedThread(definition.id, threadId);
+    return this.failAttempt(definition, fire, sent);
   }
 
   /** Records a fire as handed to Codex, and looks again once an open Codex app would have picked it up. */
-  private async queued(definition: TriggerDefinition, fire: FireRecord, target: { kind: "origin" | "dedicated"; threadId: string }): Promise<void> {
+  private async queued(definition: TriggerDefinition, fire: FireRecord, target: QueuedTarget): Promise<void> {
     this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target, at: this.now().toISOString() });
     this.queuedAt.set(fire.fireId, this.uptime());
     const check = setTimeout(() => {
@@ -550,11 +566,11 @@ export class Executor {
     return `${fire.summary} (new: ${names.join("; ")}${more})`;
   }
 
-  private async remind(fire: FireRecord): Promise<void> {
+  private async remind(fire: FireRecord, note = "waiting for Codex in your thread"): Promise<void> {
     if (!this.deps.store.hasTrigger(fire.triggerId)) return;
     const { definition } = this.deps.store.loadTrigger(fire.triggerId);
     if (definition.notify.when === "never") return;
-    const notification: Notification = { title: definition.name, body: `${this.describe(fire)} (waiting for Codex in your thread)` };
+    const notification: Notification = { title: definition.name, body: `${this.describe(fire)} (${note})` };
     if (fire.target?.threadId) notification.threadId = fire.target.threadId;
     await this.sendNotification(definition, fire.fireId, notification);
   }

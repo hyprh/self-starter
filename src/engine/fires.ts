@@ -37,7 +37,8 @@ export interface FireRecord {
   /** Fires merged into this one by the coalesce policy. */
   merged: string[];
   mergedInto?: string;
-  target?: { kind: TargetKind | "none"; threadId?: string };
+  /** Where the fire went; submissionId is the queued message's id from `codex queue`. */
+  target?: { kind: TargetKind | "none"; threadId?: string; submissionId?: string };
   deliveredAt?: string;
   error?: string;
   receipt?: Receipt;

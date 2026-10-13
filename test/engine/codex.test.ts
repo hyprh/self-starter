@@ -14,7 +14,7 @@ if (args[0] === "queue") {
   if (args[2] === "missing") { console.error("Error: thread not found: missing"); process.exit(1); }
   console.log("Queued message q-123 for thread " + args[2] + ".");
 } else if (args[0] === "app-server") {
-  // JSON-RPC over stdio. Threads live in FAKE_THREADS: { [id]: { turns: [...], queued: [text] } }.
+  // JSON-RPC over stdio. Threads live in FAKE_THREADS: { [id]: { turns: [...], queued: [text | {id, text}], paused } }.
   const { createInterface } = await import("node:readline");
   const { existsSync, readFileSync, renameSync, writeFileSync } = await import("node:fs");
   const file = process.env.FAKE_THREADS;
@@ -55,14 +55,27 @@ if (args[0] === "queue") {
       const turns = [...(load()[params.threadId]?.turns ?? [])].reverse();
       return send({ id, result: { data: turns.slice(0, params.limit ?? turns.length) } });
     }
-    if (method === "thread/resume") {
-      send({ id, result: { thread: { id: params.threadId } } });
+    if (method === "thread/resume" || method === "thread/queue/start") {
+      const threads = load();
+      const thread = threads[params.threadId] ?? { turns: [], queued: [] };
+      if (method === "thread/queue/start") {
+        const index = thread.queued.findIndex((item) => item.id === params.queuedSubmissionId);
+        if (index < 0) return send({ id, error: { code: -32600, message: "no such queued message" } });
+        thread.queued.unshift(...thread.queued.splice(index, 1));
+        thread.paused = false;
+        save({ ...threads, [params.threadId]: thread });
+        send({ id, result: { turn: { id: "turn-q", status: "inProgress" } } });
+      } else {
+        send({ id, result: { thread: { id: params.threadId } } });
+        if (thread.paused) return; // like Codex, after a stopped turn the queue waits for the user
+      }
       // Each queued message runs as soon as the previous turn ends.
       const runNext = () => {
         const threads = load();
         const thread = threads[params.threadId] ?? { turns: [], queued: [] };
-        const next = (thread.queued ?? []).shift();
-        if (next === undefined) return;
+        const item = (thread.queued ?? []).shift();
+        if (item === undefined) return;
+        const next = typeof item === "string" ? item : item.text;
         const turn = turnOf(next, "handled: " + next);
         thread.turns.push(turn);
         save({ ...threads, [params.threadId]: thread }); // before the turn is announced, like a rollout on disk
@@ -107,7 +120,8 @@ describe("codex CLI wrapper", () => {
   });
 
   describe("through the app server", () => {
-    const threads = (state: Record<string, { turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>; queued?: string[] }>) =>
+    type FakeThread = { turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>; queued?: Array<string | { id: string; text: string }>; paused?: boolean };
+    const threads = (state: Record<string, FakeThread>) =>
       writeFileSync(process.env.FAKE_THREADS!, JSON.stringify(state));
     const appServerCalls = (method: string) =>
       calls().filter((call) => call.args[0] === "app-server" && call.args[1] === method) as Array<{ args: string[]; cwd: string; params: Record<string, unknown> }>;
@@ -130,10 +144,10 @@ describe("codex CLI wrapper", () => {
         busy: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: null }] },
         stopped: { turns: [{ status: "completed", completedAt: 1 }, { status: "interrupted", completedAt: 2 }] },
       });
-      assert.deepEqual(await codex.inspectThread("idle", "fire_abc"), { mentions: true, busy: false });
-      assert.deepEqual(await codex.inspectThread("idle", "fire_zzz"), { mentions: false, busy: false });
-      assert.deepEqual(await codex.inspectThread("busy", "fire_abc"), { mentions: false, busy: true });
-      assert.deepEqual(await codex.inspectThread("stopped", "fire_abc"), { mentions: false, busy: false });
+      assert.deepEqual(await codex.inspectThread("idle", "fire_abc"), { mentions: true, busy: false, paused: false });
+      assert.deepEqual(await codex.inspectThread("idle", "fire_zzz"), { mentions: false, busy: false, paused: false });
+      assert.deepEqual(await codex.inspectThread("busy", "fire_abc"), { mentions: false, busy: true, paused: false });
+      assert.deepEqual(await codex.inspectThread("stopped", "fire_abc"), { mentions: false, busy: false, paused: true }, "a stopped turn pauses the queue");
       assert.equal(appServerCalls("thread/resume").length, 0, "inspecting never resumes");
     });
 
@@ -161,6 +175,17 @@ describe("codex CLI wrapper", () => {
       const result = await codex.wakeThread({ threadId: "own", marker: "fire_q3", sandbox: "read-only", cwd: "/work/app", timeoutMs: 10_000 });
       assert.equal(result.ok, true);
       assert.deepEqual(appServerCalls("thread/resume").at(-1)!.params, { threadId: "own", sandbox: "read-only", excludeTurns: true, cwd: "/work/app" });
+    });
+
+    it("starts a queued message by its id in a thread that a stopped turn paused", async () => {
+      threads({ paused: { turns: [], paused: true, queued: [{ id: "q-7", text: "[self-starter] CI failed (ci · fire #4 · fire_q7)" }] } });
+      const held = await codex.wakeThread({ threadId: "paused", marker: "fire_q7", sandbox: "workspace-write", timeoutMs: 10_000, startTimeoutMs: 300 });
+      assert.match(held.error ?? "", /waiting for the queued message to start/, "Codex holds the queue after a stopped turn");
+
+      const result = await codex.wakeThread({ threadId: "paused", marker: "fire_q7", sandbox: "workspace-write", startQueued: "q-7", timeoutMs: 10_000 });
+      assert.deepEqual(result, { ok: true, threadId: "paused", lastMessage: "handled: [self-starter] CI failed (ci · fire #4 · fire_q7)" });
+      assert.deepEqual(appServerCalls("thread/queue/start").at(-1)!.params, { threadId: "paused", queuedSubmissionId: "q-7" });
+      assert.deepEqual(appServerCalls("initialize").at(-1)!.params.capabilities, { experimentalApi: true }, "thread/queue/start is experimental");
     });
 
     it("stops a woken turn that runs too long", async () => {
