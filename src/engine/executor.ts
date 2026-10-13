@@ -244,7 +244,6 @@ export class Executor {
     this.log(`no Codex app has thread ${threadId} open; running fire ${fire.fireId} there`);
     const result = await codex.wakeThread({
       threadId,
-      cwd: this.cwdFor(definition),
       sandbox: definition.action.sandbox,
       timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
     });

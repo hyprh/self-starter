@@ -8,7 +8,7 @@ export type Concurrency = "skip" | "queue" | "coalesce";
 export type ActionType = "notify" | "agent";
 export type TargetKind = "origin" | "dedicated";
 export type NotifyWhen = "always" | "receipt" | "never";
-/** How Codex runs when it handles a fire in a dedicated thread (Codex's own sandbox modes). */
+/** How Codex runs a fire with nobody watching: in a dedicated thread, or in a woken origin thread (Codex's own sandbox modes). */
 export type Sandbox = "read-only" | "workspace-write" | "danger-full-access";
 /** What a probe may do: what the user can ("full"), or only reach the hosts it lists ("sandbox"). */
 export type ProbeAccess = "full" | "sandbox";

@@ -133,7 +133,7 @@ export interface ThreadView {
 
 export interface WakeOptions {
   threadId: string;
-  cwd?: string;
+  /** For this turn only; the thread keeps its own folder and approval policy. */
   sandbox: Sandbox;
   timeoutMs: number;
   /** How long to wait for the queued message to start running (one minute by default). */
@@ -235,10 +235,13 @@ export class CodexCli implements CodexRunner {
   /**
    * Loads a thread that no Codex process has open. A message queued for it is
    * then picked up here and runs as a turn in that same thread, as it would in
-   * the Codex app; this returns when that turn ends.
+   * the Codex app; this returns when that turn ends. The turn runs in the
+   * thread's own folder, under its own approval policy (an override of either
+   * would stick to the thread), and in the given sandbox. Requests for approval
+   * are declined, since nobody is there to answer them.
    */
   async wakeThread(options: WakeOptions): Promise<ExecResult> {
-    const session = await this.appServer(options.cwd);
+    const session = await this.appServer();
     try {
       const started = session.next(
         (m) => m.method === "turn/started" && m.params?.threadId === options.threadId,
@@ -247,13 +250,7 @@ export class CodexCli implements CodexRunner {
       );
       const completed = session.next(turnCompletedIn(options.threadId), options.timeoutMs, "the turn to finish");
       completed.catch(() => {}); // settled below, or abandoned when nothing started
-      await session.request("thread/resume", {
-        threadId: options.threadId,
-        approvalPolicy: "never",
-        sandbox: options.sandbox,
-        excludeTurns: true,
-        ...(options.cwd ? { cwd: options.cwd } : {}),
-      });
+      await session.request("thread/resume", { threadId: options.threadId, sandbox: options.sandbox, excludeTurns: true });
       await started;
       return { ...turnResult((await completed).params?.turn), threadId: options.threadId };
     } catch (error) {

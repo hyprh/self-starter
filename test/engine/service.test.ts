@@ -72,7 +72,7 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.equal(view.trial?.fire, false);
     assert.match(view.description, /^The trigger "Price above 150" \(price-alert\)/);
     assert.match(view.description, /Probe access: full: runs as you \(files, commands, any network\)/);
-    assert.match(view.description, /back in the thread where the trigger was created/);
+    assert.match(view.description, /back in the thread where the trigger was created \(if no Codex app has it open, it runs there in the background: can change files and run commands in its folder\)/);
     assert.equal(t.store.hasTrigger("price-alert"), false, "nothing is live before activation");
 
     const trigger = t.service.activateDraft({ draftId: view.draftId }, fromThread());

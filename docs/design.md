@@ -272,7 +272,7 @@ Besides these phases, a trigger is ACTIVE, PAUSED (by the user or Codex), EXPIRE
 | | Origin thread `origin` | Dedicated thread `dedicated` |
 |---|---|---|
 | What it is | The thread where the trigger was created | A thread opened for the trigger when it is activated, titled "Trigger: <name>" |
-| Who runs the turn | Codex, whenever the thread is loaded (the user has it open) | The engine, in the background, with `codex exec resume` |
+| Who runs the turn | The Codex app that has the thread open; when none has, the engine wakes the thread after a minute | The engine, in the background, with `codex exec resume` |
 | Good for | One-off triggers tied to the current task, such as "tell me when CI finishes" | Long-running watches. All fires land in one thread, so the agent can compare with the previous one |
 | Default for | Triggers with `max_fires: 1` | All other triggers |
 
@@ -280,9 +280,9 @@ Besides these phases, a trigger is ACTIVE, PAUSED (by the user or Codex), EXPIRE
 
 - The message is stored in a queue database under `~/.codex`; the command does not need a running Codex.
 - A Codex process that has the thread loaded picks the message up within about 10 seconds and runs it as a turn (`turn_trigger: "queue"`); if a turn is running, it waits until that turn ends, so the user is never interrupted.
-- If no process has the thread loaded, nothing picks the message up. After a minute the engine checks the thread from outside (app server `thread/turns/list`, which does not load it): if the fire's message is there, an open Codex app is handling it; if the thread's latest turn is still running, it looks again later; otherwise it wakes the thread: it starts its own app server and calls `thread/resume` (approval policy `never`, the trigger's `action.sandbox`), the queued message is picked up there and runs as a turn in the same thread, and the server stops when the turn ends. Verified with Codex CLI 0.162.1: the queued message runs exactly once, in the original thread. With `wakeClosedThreads: false` in config.json the message waits instead, and a reminder notification goes out after 5 minutes.
+- If no process has the thread loaded, nothing picks the message up. After a minute the engine checks the thread from outside (app server `thread/turns/list`, which does not load it): if the fire's message is there, an open Codex app is handling it; if the thread's latest turn is still running, it looks again later; otherwise it wakes the thread: it starts its own app server and calls `thread/resume` with the trigger's `action.sandbox`, the queued message is picked up there and runs as a turn in the same thread, and the server stops when the turn ends. The resume passes no working folder or approval policy, because both would stick to the thread (a folder would even move it to another project in the app); the turn runs in the thread's own folder, and requests for approval are declined, since nobody is there to answer them. Verified with Codex CLI 0.162.1: the queued message runs exactly once, in the original thread and its folder; a request for approval is declined and the turn goes on; the thread's folder and approval policy are unchanged afterwards. With `wakeClosedThreads: false` in config.json the message waits instead, and a reminder notification goes out after 5 minutes.
 - The thread must already have a turn (a rollout). Any thread the user talked in has one.
-- The delivered turn uses the thread's own model, approval and sandbox settings, so delivery cannot raise privileges.
+- When a Codex app picks the message up, the turn uses that thread's own settings. A woken thread keeps its model, folder and approval policy, and runs with the trigger's `action.sandbox`.
 
 **Dedicated: created through the app server, run with `codex exec resume`.**
 

@@ -42,7 +42,7 @@ export function describeAction(def: TriggerDefinition): string {
   if (def.action.type === "notify") return "a notification (Codex is not involved)";
   const where =
     def.target.kind === "origin"
-      ? "back in the thread where the trigger was created"
+      ? `back in the thread where the trigger was created (if no Codex app has it open, it runs there in the background: ${SANDBOX_TEXT[def.action.sandbox]})`
       : `in a dedicated thread (${SANDBOX_TEXT[def.action.sandbox]}${def.target.cwd ? `; folder ${def.target.cwd}` : ""})`;
   return `Codex works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
 }

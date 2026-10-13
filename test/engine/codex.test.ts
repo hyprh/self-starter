@@ -32,19 +32,25 @@ if (args[0] === "queue") {
   };
   const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
   const turnOf = (text, reply) => ({ id: "turn-" + Math.random().toString(36).slice(2), status: "completed", items: [{ type: "userMessage", text }, { type: "agentMessage", text: reply }] });
-  const announce = (threadId, turn) => {
-    send({ method: "turn/started", params: { threadId, turn: { id: turn.id, status: "inProgress", items: [] } } });
-    send({ method: "turn/completed", params: { threadId, turn } });
-  };
+  const started = (threadId, turn) => send({ method: "turn/started", params: { threadId, turn: { id: turn.id, status: "inProgress", items: [] } } });
+  const completed = (threadId, turn) => send({ method: "turn/completed", params: { threadId, turn } });
+  const answers = new Map(); // id of a request sent to the client -> what happens once it answers
   createInterface({ input: process.stdin }).on("line", (line) => {
-    const { id, method, params = {} } = JSON.parse(line);
+    const message = JSON.parse(line);
+    if (message.method === undefined) {
+      appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ args: ["app-server", "answer"], params: message, cwd: process.cwd() }) + "\\n");
+      return answers.get(message.id)?.();
+    }
+    const { id, method, params = {} } = message;
     if (id === undefined) return;
     appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ args: ["app-server", method], params, cwd: process.cwd() }) + "\\n");
     if (method === "initialize" || method === "thread/name/set") return send({ id, result: {} });
     if (method === "thread/start") return send({ id, result: { thread: { id: "thread-app-1" } } });
     if (method === "turn/start") {
       send({ id, result: { turn: { id: "turn-1", status: "inProgress" } } });
-      return announce(params.threadId, turnOf(params.input[0].text, '{"summary":"ready","notify":false}'));
+      const turn = turnOf(params.input[0].text, '{"summary":"ready","notify":false}');
+      started(params.threadId, turn);
+      return completed(params.threadId, turn);
     }
     if (method === "thread/turns/list") return send({ id, result: { data: [...(load()[params.threadId]?.turns ?? [])].reverse() } });
     if (method === "thread/resume") {
@@ -56,7 +62,10 @@ if (args[0] === "queue") {
       const turn = turnOf(next, "handled: " + next);
       thread.turns.push(turn);
       save({ ...threads, [params.threadId]: thread }); // before the turn is announced, like a rollout on disk
-      return announce(params.threadId, turn);
+      started(params.threadId, turn);
+      // Mid-turn, it asks to run a command outside the sandbox; the turn ends once the client answers.
+      answers.set("approval-1", () => completed(params.threadId, turn));
+      return send({ id: "approval-1", method: "item/commandExecution/requestApproval", params: { threadId: params.threadId, command: "curl https://example.com" } });
     }
     send({ id, error: { code: -32601, message: "unknown method " + method } });
   });
@@ -131,12 +140,13 @@ describe("codex CLI wrapper", () => {
 
     it("wakes a thread so the message queued for it runs there", async () => {
       threads({ closed: { turns: [], queued: ["[self-starter] CI failed (ci · fire #2 · fire_q1)"] } });
-      const result = await codex.wakeThread({ threadId: "closed", cwd: home.paths.home, sandbox: "workspace-write", timeoutMs: 10_000 });
+      const result = await codex.wakeThread({ threadId: "closed", sandbox: "workspace-write", timeoutMs: 10_000 });
       assert.deepEqual(result, { ok: true, threadId: "closed", lastMessage: "handled: [self-starter] CI failed (ci · fire #2 · fire_q1)" });
       const resume = appServerCalls("thread/resume").at(-1)!;
-      assert.equal(resume.params.approvalPolicy, "never", "nobody is there to approve anything");
-      assert.equal(resume.params.sandbox, "workspace-write");
-      assert.equal(resume.cwd, home.paths.home);
+      assert.deepEqual(resume.params, { threadId: "closed", sandbox: "workspace-write", excludeTurns: true }, "the thread keeps its own folder and approval policy");
+      const answer = appServerCalls("answer").at(-1)!.params;
+      assert.equal(answer.id, "approval-1");
+      assert.ok(answer.error && !answer.result, "nobody is there to approve anything");
 
       const nothing = await codex.wakeThread({ threadId: "closed", sandbox: "workspace-write", timeoutMs: 10_000, startTimeoutMs: 300 });
       assert.equal(nothing.ok, false);
