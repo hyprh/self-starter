@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { CodexCli } from "../../src/engine/codex.js";
@@ -134,7 +134,8 @@ describe("codex CLI wrapper", () => {
       const result = await codex.startThread({ cwd: home.paths.home, name: "Trigger: CI", prompt: "seed", timeoutMs: 10_000 });
       assert.deepEqual(result, { ok: true, threadId: "thread-app-1", lastMessage: "Ready." });
       assert.deepEqual(appServerCalls("thread/name/set").at(-1)!.params, { threadId: "thread-app-1", name: "Trigger: CI" });
-      assert.equal(appServerCalls("thread/start").at(-1)!.cwd, home.paths.home);
+      // The app server runs in the thread's folder (process.cwd() resolves links, such as /var on macOS).
+      assert.equal(appServerCalls("thread/start").at(-1)!.cwd, realpathSync(home.paths.home));
     });
 
     it("looks at a thread without loading it", async () => {
