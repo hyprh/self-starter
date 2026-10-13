@@ -6,6 +6,7 @@ import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
 import { after, describe, it } from "node:test";
 import { MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_NAME } from "../../src/cli/install.js";
+import { PLUGIN_SERVER_RULE } from "../../src/engine/sessions.js";
 import { PACKAGE_ROOT, PLUGIN_SOURCE, VERSION } from "../../src/runtime.js";
 
 const json = (path: string) => JSON.parse(readFileSync(join(PACKAGE_ROOT, path), "utf8"));
@@ -29,6 +30,28 @@ describe("the plugin marketplace in this repository", () => {
   });
 });
 
+describe("the Claude Code plugin marketplace in this repository", () => {
+  it("lists the plugin at the package's version, started through the same launcher as the Codex plugin", () => {
+    const marketplace = json(".claude-plugin/marketplace.json");
+    assert.equal(marketplace.name, MARKETPLACE_NAME);
+    assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, "./cc-plugin"]]);
+    assert.equal(json("cc-plugin/.claude-plugin/plugin.json").version, VERSION);
+    const server = json("cc-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
+    assert.deepEqual([server.command, ...server.args], ["node", "${CLAUDE_PLUGIN_ROOT}/bin/start.mjs", "mcp"]);
+    assert.equal(readFileSync(join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs"), "utf8"), readFileSync(join(PLUGIN_SOURCE, "bin", "start.mjs"), "utf8"), "one launcher, in both plugins");
+    // Headless fires may use the plugin's tools: the permission rule names this server.
+    assert.equal(PLUGIN_SERVER_RULE, `mcp__plugin_${PLUGIN_NAME}_${MCP_SERVER_NAME}`);
+  });
+
+  it("runs the session hook when a session starts and ends, and for every prompt", () => {
+    const hooks = json("cc-plugin/hooks/hooks.json").hooks as Record<string, Array<{ hooks: Array<{ command: string; args: string[] }> }>>;
+    assert.deepEqual(Object.keys(hooks).sort(), ["SessionEnd", "SessionStart", "UserPromptSubmit"]);
+    for (const [event, entries] of Object.entries(hooks)) {
+      assert.deepEqual([entries[0]!.hooks[0]!.command, ...entries[0]!.hooks[0]!.args], ["node", "${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], event);
+    }
+  });
+});
+
 describe("the plugin's launcher", () => {
   const scratch = mkdtempSync(join(tmpdir(), "ss-launcher-"));
   const home = join(scratch, "home");
@@ -38,15 +61,16 @@ describe("the plugin's launcher", () => {
   mkdirSync(bin);
   writeFileSync(
     join(bin, "npm"),
-    `#!/bin/sh\necho "$*" >> "${npmLog}"\n[ -n "$FAKE_NPM_FAIL" ] && exit 7\nmkdir -p "$3/node_modules" && ln -s "$7" "$3/node_modules/self-starter"\n`,
+    `#!/bin/sh\necho "$*" >> "${npmLog}"\n[ -n "$FAKE_NPM_FAIL" ] && exit 7\n[ -n "$FAKE_NPM_DELAY" ] && sleep "$FAKE_NPM_DELAY"\nmkdir -p "$3/node_modules" && ln -s "$7" "$3/node_modules/self-starter"\n`,
   );
   chmodSync(join(bin, "npm"), 0o755);
   after(() => rmSync(scratch, { recursive: true, force: true }));
 
-  /** Starts the launcher as Codex does and returns what `initialize` answered, or its exit code and error output. */
-  function start(extraEnv: Record<string, string> = {}): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
-    const child = spawn(process.execPath, ["./bin/start.mjs", "mcp"], {
-      cwd: PLUGIN_SOURCE,
+  /** Starts the launcher as Codex does (or as Claude Code does) and returns what `initialize` answered, or its exit code and error output. */
+  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" = "codex"): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
+    const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs")];
+    const child = spawn(process.execPath, [...launcher, "mcp"], {
+      cwd: host === "codex" ? PLUGIN_SOURCE : scratch,
       env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: scratch, SELF_STARTER_HOME: home, SELF_STARTER_RUNTIME: PACKAGE_ROOT, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -81,5 +105,27 @@ describe("the plugin's launcher", () => {
     assert.deepEqual(again.serverInfo, { name: "self-starter", version: VERSION });
     assert.equal(npmCalls().length, calls, "the second start does not install again");
     assert.deepEqual(readdirSync(join(home, "runtime")), [VERSION]);
+  });
+
+  it("starts the same way from the Claude Code plugin, which has its own manifest", async () => {
+    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-cc") }, "claude-code");
+    assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
+  });
+
+  it("finishes the install when the host gives up on a slow first start, so that the next start is ready", async () => {
+    const slowHome = join(scratch, "home-slow");
+    const env = { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: scratch, SELF_STARTER_HOME: slowHome, SELF_STARTER_RUNTIME: PACKAGE_ROOT, FAKE_NPM_DELAY: "1" };
+    const before = npmCalls().length;
+    const launcher = spawn(process.execPath, ["./bin/start.mjs", "mcp"], { cwd: PLUGIN_SOURCE, env, stdio: ["pipe", "pipe", "pipe"] });
+    while (npmCalls().length === before) await new Promise((resolve) => setTimeout(resolve, 20));
+    launcher.kill("SIGKILL"); // in the middle of the install, as a host does when its startup timeout runs out
+    const cli = join(slowHome, "runtime", VERSION, "node_modules", "self-starter");
+    for (let waited = 0; !existsSync(cli); waited += 100) {
+      assert.ok(waited < 10_000, "the install did not finish");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const calls = npmCalls().length;
+    assert.deepEqual((await start({ SELF_STARTER_HOME: slowHome, SELF_STARTER_RUNTIME: "/nowhere" })).serverInfo, { name: "self-starter", version: VERSION });
+    assert.equal(npmCalls().length, calls);
   });
 });

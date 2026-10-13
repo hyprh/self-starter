@@ -23,6 +23,8 @@ export interface Config {
   channels?: { default?: Channel[]; email?: EmailSettings };
   /** Absolute path of the codex CLI. Recorded by `self-starter install`; found on PATH otherwise. */
   codexBin?: string;
+  /** Absolute path of the claude CLI, for fires of triggers made in Claude Code; found on PATH otherwise. */
+  claudeBin?: string;
   /**
    * Whether the daemon runs as a launchd or systemd service. Unset until the user
    * decides: the Codex plugin then sets one up on first use; false after

@@ -37,8 +37,11 @@ export interface FireRecord {
   /** Fires merged into this one by the coalesce policy. */
   merged: string[];
   mergedInto?: string;
-  /** Where the fire went; submissionId is the queued message's id from `codex queue`. */
-  target?: { kind: TargetKind | "none"; threadId?: string; submissionId?: string };
+  /**
+   * Where the fire went; submissionId is the queued message's id from `codex queue`. For a Claude Code
+   * session, via says whether it went into a process that shows the session, or runs headless.
+   */
+  target?: { kind: TargetKind | "none"; threadId?: string; submissionId?: string; via?: "inbox" | "headless" };
   deliveredAt?: string;
   /** When the engine opened the fire's thread itself, because no Codex app had run the fire. */
   wokenAt?: string;

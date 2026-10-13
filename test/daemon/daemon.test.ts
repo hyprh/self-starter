@@ -23,7 +23,8 @@ class McpClient {
   readonly done: Promise<void>;
 
   constructor(options: Parameters<typeof runMcpServer>[0]) {
-    this.done = runMcpServer({ ...options, input: this.toServer, output: this.fromServer });
+    // As Codex starts it, whatever session the tests themselves run in.
+    this.done = runMcpServer({ session: undefined, ...options, input: this.toServer, output: this.fromServer });
     createInterface({ input: this.fromServer }).on("line", (line) => {
       const message = JSON.parse(line) as Json;
       if (message.method) {
@@ -82,7 +83,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   before(async () => {
     server = await startServer();
     home = tempHome();
-    daemon = await startDaemon({ paths: home.paths, codex: () => codex, notifier });
+    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => undefined, notifier });
   });
   after(async () => {
     await daemon.stop();
@@ -94,7 +95,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     const status = await callDaemon<Json>(home.paths.socket, "status");
     assert.equal(status.pid, process.pid);
     assert.equal(status.deno, deno);
-    await assert.rejects(startDaemon({ paths: home.paths, codex: () => codex, notifier }), AlreadyRunning);
+    await assert.rejects(startDaemon({ paths: home.paths, codex: () => codex, claude: () => undefined, notifier }), AlreadyRunning);
     await assert.rejects(callDaemon(home.paths.socket, "trigger.get", { triggerId: "nope" }), (error: RemoteError) => error.code === "not_found");
     await assert.rejects(callDaemon(home.paths.socket, "no.such.method"), /unknown method/);
   });

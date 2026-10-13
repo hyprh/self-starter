@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.0 (unreleased)
+
+Self-Starter now works in Claude Code too, with the same triggers, background service and command line.
+
+```sh
+claude plugin install self-starter --marketplace hyprh/self-starter
+```
+
+- **Fires come back to your session.** While a terminal has the session open, the fire arrives there as a message from another session, posted by the plugin's MCP server inside that session, so Claude Code delivers it in every permission mode. When no terminal has it open, Self-Starter resumes the session in the background (`claude -p --resume`), in its folder, with a permission mode from the trigger's `action.sandbox`. Triggers of their own get a session named "Trigger: <name>".
+- **The plugin follows your sessions.** Its hooks record which session each Claude Code process shows (through `/clear` and `/resume`), and whether a fire started the current turn: such a turn cannot create or change triggers, except to make that trigger quieter.
+- **A slow first start no longer starts over.** The plugin installs its runtime in a process of its own, which finishes even when the host gives up waiting (Claude Code waits 30 seconds), so the next start is ready.
+
+Checked by unit tests, and end to end with the real Claude Code CLI and a stand-in model (`test/e2e/cc-agent.ts`): installing from the marketplace, a fire into an open session, and fires in closed sessions and in a trigger's own session.
+
 ## 0.0.1 (2026-10-13)
 
 The first release. Tell Codex what to keep an eye on; a small probe watches it on your machine without spending tokens, and when something changes, Codex comes back to your conversation with what it found and what it did.

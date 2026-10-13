@@ -1,0 +1,13 @@
+{
+  "name": "self-starter",
+  "owner": { "name": "hyprh", "url": "https://github.com/hyprh" },
+  "metadata": { "description": "Self-Starter: say what to watch, and the agent takes over when it happens." },
+  "plugins": [
+    {
+      "name": "self-starter",
+      "source": "./cc-plugin",
+      "description": "Say what to watch; a small probe checks it in the background, and Claude comes back to your session when it fires.",
+      "category": "productivity"
+    }
+  ]
+}

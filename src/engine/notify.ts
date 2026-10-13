@@ -1,13 +1,14 @@
 // System notifications: terminal-notifier or osascript on macOS, notify-send on Linux.
 
 import { spawn } from "node:child_process";
+import { reopen } from "../core/conversations.js";
 import type { Channel } from "../core/definition.js";
 import { which } from "./config.js";
 
 export interface Notification {
   title: string;
   body: string;
-  /** Thread to open when the notification is clicked (where supported). */
+  /** Thread (or Claude Code session) to open when the notification is clicked (where supported). */
   threadId?: string;
   /** Where to send it; the configured default when left out. */
   channels?: Channel[];
@@ -34,14 +35,15 @@ export class SystemNotifier implements Notifier {
   constructor(private readonly log: (line: string) => void = () => {}) {}
 
   async notify({ title, body, threadId }: Notification): Promise<void> {
-    const hint = threadId ? `\nOpen with: codex resume ${threadId}` : "";
+    const link = threadId ? reopen(threadId) : undefined;
+    const hint = link ? `\nOpen with: ${link.command}` : "";
     let delivered = false;
 
     if (process.platform === "darwin") {
       const terminalNotifier = which("terminal-notifier");
       if (terminalNotifier) {
         const args = ["-title", title, "-message", body, "-group", "self-starter"];
-        if (threadId) args.push("-open", `codex://threads/${threadId}`);
+        if (link?.url) args.push("-open", link.url);
         delivered = await runQuietly(terminalNotifier, args);
       }
       if (!delivered) {

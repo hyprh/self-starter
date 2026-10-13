@@ -6,9 +6,15 @@
 // A queued message runs as soon as a Codex app has its thread open. When none
 // has, the executor wakes the thread itself, so the conversation still reacts
 // while the app is closed.
+//
+// A trigger made in Claude Code hands its fires to a Claude Code session the same
+// way: into the process that shows the session, when one does, and otherwise as
+// a headless turn of that session (see sessions.ts).
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { agentName, conversationNoun as conversation, hostFor, hostOf, sessionIdOf, sessionRef } from "../core/conversations.js";
 import { renderDedicatedSeed, renderEnvelope, type EnvelopeInput } from "../core/envelope.js";
 import type { QuietHours, TriggerDefinition } from "../core/definition.js";
 import type { ProbeEvent } from "../core/probe-output.js";
@@ -19,6 +25,7 @@ import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { Paths } from "./paths.js";
+import { deliverToOpenSession, readSession, type SessionRunner } from "./sessions.js";
 import type { Store } from "./store.js";
 
 const RETRY_DELAYS_MS = [30_000, 120_000, 600_000];
@@ -39,6 +46,8 @@ const BUSY_RECHECK_MS = 60_000;
 type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "open" | "unreachable";
 /** Where a fire was queued; submissionId is the message's id from `codex queue`. */
 type QueuedTarget = { kind: "origin" | "dedicated"; threadId: string; submissionId?: string };
+/** What claude -p answers for a session that no longer exists. */
+const SESSION_GONE = /No conversation found/i;
 /** Errors from codex that mean the thread no longer exists. */
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
 /** What codex answers when another process, such as a Codex app, has the thread open. */
@@ -52,6 +61,10 @@ export interface ExecutorDeps {
   notifier: Notifier;
   /** Returns undefined when no codex binary is available. */
   codex: () => CodexRunner | undefined;
+  /** Runs headless turns of Claude Code sessions; undefined when no claude binary is available. */
+  claude?: () => SessionRunner | undefined;
+  /** Hands a message to a Claude Code process that shows the session (tests replace it). */
+  deliverToSession?: (sessionId: string, text: string) => Promise<"relayed" | "posted" | undefined>;
   log: (line: string) => void;
   now?: () => Date;
   /** Milliseconds that pass only while the computer is awake (performance.now() by default). */
@@ -84,6 +97,10 @@ export class Executor {
   private readonly outcome = new Map<string, QueuedOutcome>();
   private readonly nextCheck = new Map<string, number>();
   private readonly threadCreation = new Map<string, Promise<string>>();
+  /** Claude Code sessions running a headless turn of ours: one turn at a time. */
+  private readonly headlessSessions = new Set<string>();
+  /** Claude Code sessions that claude could not find. */
+  private readonly goneSessions = new Set<string>();
   private activeAgentRuns = 0;
   private kicking = false;
   private kickAgain = false;
@@ -148,7 +165,7 @@ export class Executor {
     // A late reply replaces the "no reply" receipt written at the timeout.
     if (fire.receipt && fire.receipt.source !== "timeout") throw new Error(`fire ${fireId} already has a receipt`);
     if (!fire.receipt && fire.status !== "delivered") {
-      throw new Error(`fire ${fireId} has not been handed to Codex (it is ${fire.status})`);
+      throw new Error(`fire ${fireId} has not been handed over yet (it is ${fire.status})`);
     }
     if (caller.threadId && fire.target?.threadId && caller.threadId !== fire.target.threadId) {
       throw new Error("this fire was delivered to a different thread");
@@ -188,8 +205,9 @@ export class Executor {
       if (!fire.deliveredAt) continue;
       const age = now - Date.parse(fire.deliveredAt);
       if (age > timeoutMs) {
+        const host = hostOf(fire.target?.threadId);
         const receipt: Receipt = {
-          summary: `${fire.summary} (no reply from Codex yet; open the thread to continue)`,
+          summary: `${fire.summary} (no reply from ${agentName(host)} yet; open the ${conversation(host)} to continue)`,
           notify: true,
           at: new Date(now).toISOString(),
           source: "timeout",
@@ -213,6 +231,7 @@ export class Executor {
 
   /** A fire queued into a thread is still open: wake the thread if no Codex app has it open, or remind the user. */
   private async follow(fire: FireRecord, age: number): Promise<void> {
+    if (sessionIdOf(fire.target?.threadId) !== undefined) return this.followSession(fire, age);
     const outcome = this.outcome.get(fire.fireId);
     // The trigger's own thread is always woken; the user can keep Self-Starter out of their own threads.
     const wake = fire.target?.kind === "dedicated" || this.deps.config.wakeClosedThreads;
@@ -312,6 +331,176 @@ export class Executor {
     this.outcome.set(fire.fireId, "paused");
     this.reminded.add(fire.fireId);
     await this.remind(fire, "waiting in your thread: Codex was stopped there, so it runs when you continue the conversation");
+  }
+
+  /** A fire for a Claude Code session is still open: run it there if no process showed the session, or remind the user. */
+  private async followSession(fire: FireRecord, age: number): Promise<void> {
+    const outcome = this.outcome.get(fire.fireId);
+    // Not again after a restart in the middle of a run: the fire is in the session already. (A run before
+    // the latest hand-over was in a session that turned out to be gone.)
+    const ran = fire.wokenAt !== undefined && fire.deliveredAt !== undefined && fire.wokenAt >= fire.deliveredAt;
+    if (fire.target?.via === "headless" && !ran && outcome === undefined) return this.startSessionRun(fire);
+    if (outcome === "waking") return;
+    // In front of the user, or a run that ended without a reply: tell the user after a while.
+    if (age > this.deps.config.originReminderMinutes * 60_000 && !fire.notifiedAt && !this.reminded.has(fire.fireId)) {
+      this.reminded.add(fire.fireId);
+      await this.remind(fire);
+    }
+  }
+
+  private startSessionRun(fire: FireRecord): void {
+    const claude = this.deps.claude?.();
+    const sessionId = sessionIdOf(fire.target?.threadId);
+    if (!claude || !sessionId || !this.deps.store.hasTrigger(fire.triggerId)) {
+      this.outcome.set(fire.fireId, "unreachable");
+      return;
+    }
+    // Next tick: a run slot, and the session, must be free.
+    if (this.activeAgentRuns >= this.deps.config.budget.maxConcurrentAgentRuns || this.headlessSessions.has(sessionId)) return;
+    this.outcome.set(fire.fireId, "waking");
+    this.activeAgentRuns += 1;
+    this.headlessSessions.add(sessionId);
+    void this.runInSession(fire, sessionId, claude)
+      .catch((error: Error) => {
+        this.outcome.set(fire.fireId, "unreachable");
+        this.log(`could not run fire ${fire.fireId} in session ${sessionId}: ${error.message}`);
+      })
+      .finally(() => {
+        this.activeAgentRuns -= 1;
+        this.headlessSessions.delete(sessionId);
+        if (!this.closed) this.tick().catch((error: Error) => this.log(`executor tick failed: ${error.message}`));
+      });
+  }
+
+  /** Runs a fire as a headless turn of its session, so the conversation reacts while no Claude Code process shows it. */
+  private async runInSession(fire: FireRecord, sessionId: string, claude: SessionRunner): Promise<void> {
+    const { definition } = this.deps.store.loadTrigger(fire.triggerId);
+    const message = renderEnvelope(this.envelope(definition, fire));
+    // The user may have opened the session since; then it goes in there.
+    if (await this.deliverIntoOpenSession(sessionId, message)) {
+      this.outcome.delete(fire.fireId);
+      this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target: { ...fire.target!, via: "inbox" }, at: fire.deliveredAt ?? this.now().toISOString() });
+      return;
+    }
+    const own = fire.target?.kind === "dedicated";
+    const session = readSession(this.deps.paths, sessionId);
+    this.log(`no Claude Code process shows session ${sessionId}; running fire ${fire.fireId} there headless`);
+    this.deps.fires.record({ type: "woken", fireId: fire.fireId, at: this.now().toISOString() });
+    const result = await claude.run({
+      sessionId,
+      // The trigger's own session follows target.cwd; a session of the user's keeps its folder.
+      cwd: own ? this.cwdFor(definition) : session?.cwd && existsSync(session.cwd) ? session.cwd : homedir(),
+      message,
+      sandbox: definition.action.sandbox,
+      ...(session?.configDir ? { configDir: session.configDir } : {}),
+      timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
+    });
+    if (!result.ok && SESSION_GONE.test(result.error ?? "")) {
+      // Hand it over again, to the trigger's own session.
+      this.goneSessions.add(sessionId);
+      this.outcome.delete(fire.fireId);
+      return this.failAttempt(definition, fire, `session ${sessionId} no longer exists`);
+    }
+    if (!result.ok) {
+      this.outcome.set(fire.fireId, "unreachable");
+      this.log(`fire ${fire.fireId} did not run in session ${sessionId}: ${result.error}`);
+      return;
+    }
+    this.outcome.set(fire.fireId, "woken");
+    // Usually the turn reported through trigger_report; otherwise its last message is the receipt.
+    const existing = this.deps.fires.get(fire.fireId)?.receipt;
+    if (existing && existing.source !== "timeout") return;
+    const at = this.now().toISOString();
+    const receipt: Receipt = { ...receiptFrom(result.lastMessage, fire.summary), at, source: "final-answer" };
+    this.deps.fires.record({ type: "receipt", fireId: fire.fireId, receipt, at });
+    await this.afterReceipt(fire.fireId, receipt);
+  }
+
+  /** Hands a message to a Claude Code process that shows the session; false when none does. */
+  private async deliverIntoOpenSession(sessionId: string, message: string): Promise<boolean> {
+    const deliver = this.deps.deliverToSession ?? ((id: string, text: string) => deliverToOpenSession(this.deps.paths, id, text, (line) => this.log(line)));
+    const how = await deliver(sessionId, message).catch((error: Error) => {
+      this.log(`could not deliver into session ${sessionId}: ${error.message}`);
+      return undefined;
+    });
+    if (how) this.log(`message ${how} into session ${sessionId}`);
+    return how !== undefined;
+  }
+
+  /** Whether Claude Code still has a session; it cleans old ones up. */
+  private sessionExists(sessionId: string): boolean {
+    if (this.goneSessions.has(sessionId)) return false;
+    const transcript = readSession(this.deps.paths, sessionId)?.transcript;
+    return transcript === undefined || existsSync(transcript);
+  }
+
+  /** A fire for a trigger made in Claude Code: into the session it was made in, or into the trigger's own. */
+  private async dispatchToSession(definition: TriggerDefinition, fire: FireRecord, message: string): Promise<void> {
+    let kind: QueuedTarget["kind"] = definition.target.kind === "origin" ? "origin" : "dedicated";
+    let ref = kind === "origin" ? definition.meta.origin_thread_id : definition.target.thread_id;
+    if (kind === "origin" && !this.sessionExists(sessionIdOf(ref)!)) {
+      this.log(`the origin session of ${definition.id} is gone; using a session of its own`);
+      kind = "dedicated";
+      ref = definition.target.thread_id;
+    }
+    if (!ref || (kind === "dedicated" && !this.sessionExists(sessionIdOf(ref)!))) {
+      const claude = this.deps.claude?.();
+      if (!claude) return this.failAttempt(definition, fire, "the claude CLI was not found; run `self-starter doctor`");
+      try {
+        ref = await this.ensureDedicatedSession(definition.id, claude);
+      } catch (error) {
+        return this.failAttempt(definition, fire, (error as Error).message);
+      }
+    }
+    const sessionId = sessionIdOf(ref)!;
+    // While a headless turn of ours runs in the session, the next one waits for it.
+    const open = !this.headlessSessions.has(sessionId) && (await this.deliverIntoOpenSession(sessionId, message));
+    const target: NonNullable<FireRecord["target"]> = { kind, threadId: ref, via: open ? "inbox" : "headless" };
+    this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target, at: this.now().toISOString() });
+    if (!open) {
+      // Run it in the session right away (or once a run slot is free).
+      if (!this.closed) this.tick().catch((error: Error) => this.log(`executor tick failed: ${error.message}`));
+    }
+    if (definition.notify.when === "always") {
+      await this.sendNotification(definition, fire.fireId, { title: definition.name, body: `${this.describe(fire)} (sent to Claude)`, threadId: ref });
+    }
+  }
+
+  /** Returns the trigger's own Claude Code session, starting it on first use. */
+  private ensureDedicatedSession(triggerId: string, claude: SessionRunner): Promise<string> {
+    const { definition } = this.deps.store.loadTrigger(triggerId);
+    const existing = definition.target.thread_id;
+    if (existing && this.sessionExists(sessionIdOf(existing)!)) return Promise.resolve(existing);
+    let pending = this.threadCreation.get(triggerId);
+    if (!pending) {
+      pending = this.startDedicatedSession(definition, claude).finally(() => this.threadCreation.delete(triggerId));
+      this.threadCreation.set(triggerId, pending);
+    }
+    return pending;
+  }
+
+  private async startDedicatedSession(definition: TriggerDefinition, claude: SessionRunner): Promise<string> {
+    const sessionId = randomUUID();
+    const origin = sessionIdOf(definition.meta.origin_thread_id);
+    const configDir = origin ? readSession(this.deps.paths, origin)?.configDir : undefined;
+    const result = await claude.run({
+      sessionId,
+      start: { name: `Trigger: ${definition.name}` },
+      cwd: this.cwdFor(definition),
+      message: renderDedicatedSeed(definition, "session"),
+      sandbox: definition.action.sandbox,
+      ...(configDir ? { configDir } : {}),
+      timeoutMs: Math.min(this.deps.config.agentRunTimeoutMinutes, 5) * 60_000,
+    });
+    if (!result.ok) throw new Error(`could not start the trigger's session: ${result.error}`);
+    const ref = sessionRef(sessionId);
+    if (this.deps.store.hasTrigger(definition.id)) {
+      const latest = this.deps.store.loadTrigger(definition.id).definition;
+      latest.target.thread_id = ref;
+      this.deps.store.saveDefinition(latest);
+    }
+    this.log(`dedicated session of ${definition.id}: ${sessionId}`);
+    return ref;
   }
 
   /** Dispatches pending fires that are ready. Never runs twice at once. */
@@ -457,15 +646,17 @@ export class Executor {
       return;
     }
 
+    const host = hostFor(definition);
     const limit = this.deps.config.budget.maxAgentRunsPerDay;
     if (this.agentRunsToday() >= limit) {
       this.deps.fires.record({ type: "skipped", fireId: fire.fireId, why: "the daily agent budget is used up", at: this.now().toISOString() });
       await this.sendNotification(definition, fire.fireId, {
         title: definition.name,
-        body: `${this.describe(fire)} (not handed to Codex: the daily limit of ${limit} runs is used up)`,
+        body: `${this.describe(fire)} (not handed to ${agentName(host)}: the daily limit of ${limit} runs is used up)`,
       });
       return;
     }
+    if (host === "claude-code") return this.dispatchToSession(definition, fire, renderEnvelope(this.envelope(definition, fire)));
 
     const codex = this.deps.codex();
     if (!codex) {
@@ -531,8 +722,16 @@ export class Executor {
     return pending;
   }
 
-  /** Creates the dedicated thread right after activation, so it exists before the first fire. */
+  /** Creates the dedicated thread (or session) right after activation, so it exists before the first fire. */
   prepareDedicatedThread(triggerId: string): void {
+    if (hostFor(this.deps.store.loadTrigger(triggerId).definition) === "claude-code") {
+      const claude = this.deps.claude?.();
+      if (!claude) return;
+      this.ensureDedicatedSession(triggerId, claude).catch((error: Error) => {
+        this.log(`could not start the dedicated session of ${triggerId} yet: ${error.message}`);
+      });
+      return;
+    }
     const codex = this.deps.codex();
     if (!codex) return;
     this.ensureDedicatedThread(triggerId, codex).catch((error: Error) => {
@@ -576,7 +775,7 @@ export class Executor {
       this.deps.fires.record({ type: "failed", fireId: fire.fireId, error, at });
       this.log(`fire ${fire.fireId} failed: ${error}`);
       await this.sendNotification(definition, fire.fireId, {
-        title: `${definition.name}: could not hand the fire to Codex`,
+        title: `${definition.name}: could not hand the fire to ${agentName(hostFor(definition))}`,
         body: `${fire.summary}. ${error}`,
       });
       return;
@@ -596,13 +795,19 @@ export class Executor {
     return `${fire.summary} (new: ${names.join("; ")}${more})`;
   }
 
-  private async remind(fire: FireRecord, note = `waiting for Codex in ${fire.target?.kind === "dedicated" ? "the trigger's thread" : "your thread"}`): Promise<void> {
+  private async remind(fire: FireRecord, note = Executor.waitingNote(fire)): Promise<void> {
     if (!this.deps.store.hasTrigger(fire.triggerId)) return;
     const { definition } = this.deps.store.loadTrigger(fire.triggerId);
     if (definition.notify.when === "never") return;
     const notification: Notification = { title: definition.name, body: `${this.describe(fire)} (${note})` };
     if (fire.target?.threadId) notification.threadId = fire.target.threadId;
     await this.sendNotification(definition, fire.fireId, notification);
+  }
+
+  /** Where a fire waits for its reply, for the reminder. */
+  private static waitingNote(fire: FireRecord): string {
+    const host = hostOf(fire.target?.threadId);
+    return `waiting for ${agentName(host)} in ${fire.target?.kind === "dedicated" ? "the trigger's" : "your"} ${conversation(host)}`;
   }
 
   private async afterReceipt(fireId: string, receipt: Receipt): Promise<void> {

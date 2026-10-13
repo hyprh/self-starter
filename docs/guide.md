@@ -1,6 +1,6 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): how to use triggers day to day, where Codex answers, secrets, email, the ready-made recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): how to use triggers day to day, where Codex answers, Self-Starter in Claude Code, secrets, email, the ready-made recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
@@ -42,6 +42,25 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 - **`dedicated`** sends each fire to the trigger's own conversation, titled "Trigger: <name>" in Codex, the same way. It suits long-running watches, so that their fires do not crowd your work. It is the default for triggers that can fire more than once.
 - Runs in the background can change files and run commands in their folder (Codex's `workspace-write` sandbox); a trigger can choose `read-only`, or `danger-full-access` when it needs more.
 - `self-starter history` ends each answered fire with where Codex answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
+
+## Claude Code
+
+Self-Starter also works as a Claude Code plugin, with the same triggers, service and command line. In a terminal:
+
+```sh
+claude plugin install self-starter --marketplace hyprh/self-starter
+```
+
+or inside a session, `/plugin install self-starter --marketplace hyprh/self-starter`, then start a new session. The plugin's first start installs the runtime as above. Claude Code waits 30 seconds for an MCP server to start; if the first install takes longer, `/mcp` shows the server as failed: wait a minute (the install goes on) and reconnect it there, or start a new session. The first time Claude calls one of the plugin's tools, Claude Code asks; allow the `self-starter` tools for good, so that fires can report back while you are away.
+
+Where fires go, for triggers made in Claude Code:
+
+- **`origin`** brings the task back to the session where you made the trigger. While a terminal has it open, the fire arrives there at once, as a message from another session (the Self-Starter service; Claude Code shows it as "Another Claude session sent a message"), and Claude handles it as its next turn, or during the turn in progress. The plugin's MCP server posts it, as part of the session, so it is delivered in every permission mode. When no terminal has the session open, Self-Starter resumes it in the background with `claude -p --resume <id>`, in the session's folder, and the answer is in the session when you open it again (`claude --resume`).
+- **`dedicated`** starts a session of the trigger's own when you turn it on, named "Trigger: <name>", and sends each fire there the same way.
+- A fire that runs in the background gets a permission mode from the trigger's `action.sandbox`: `workspace-write` (the default) runs in `acceptEdits` mode, so Claude can edit files in the folder; `read-only` runs in `dontAsk` mode, so it does only what needs no approval, such as reading; `danger-full-access` runs in `bypassPermissions` mode. Your own permission rules apply as well, and what would need approval is declined, since nobody is there to give it. A fire in an open session runs in that session's mode.
+- The plugin's hooks record, under `~/.self-starter/sessions` and `~/.self-starter/inboxes`, which session each running Claude Code process shows (it changes with `/clear` and `/resume`), and whether the current turn was started by a fire. A turn that a fire started cannot create or change triggers, except to make that trigger quieter.
+- If you set `crossSessionInbound` to `hold` or `refuse`, Claude Code holds or drops a fire sent into an open session, as it does any message from another session; Self-Starter cannot tell, and reminds you after 5 minutes. Background runs use the `claude` on your PATH (or `claudeBin` in `~/.self-starter/config.json`) with the login Claude Code keeps; an API key that is only exported in your shell does not reach the background service.
+- `self-starter history` shows where each fire was answered: `(your session, open in Claude Code)` or `(your session, resumed in the background)`.
 
 ## Secrets
 

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { CodexRunner, ThreadView, TurnResult, WakeOptions } from "../../src/engine/codex.js";
 import type { Notification, Notifier } from "../../src/engine/notify.js";
 import { resolvePaths, type Paths } from "../../src/engine/paths.js";
+import type { SessionRunner, SessionRunOptions } from "../../src/engine/sessions.js";
 
 export function tempHome(): { paths: Paths; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), "ct-"));
@@ -95,6 +96,20 @@ export class FakeCodex implements CodexRunner {
     if (this.appServerBroken) return { ok: false, error: "codex app-server: unknown method thread/start" };
     this.threads += 1;
     return { ok: true, threadId: `thread-dedicated-${this.threads}`, lastMessage: "Ready." };
+  }
+}
+
+/** Headless Claude Code turns, recorded; `during` runs while a turn is on, as the turn's tool calls would. */
+export class FakeClaude implements SessionRunner {
+  runs: SessionRunOptions[] = [];
+  answer = "Looked into it: the price moved on earnings.";
+  error: string | undefined;
+  during: ((options: SessionRunOptions) => Promise<void> | void) | undefined;
+
+  async run(options: SessionRunOptions): Promise<TurnResult> {
+    this.runs.push(options);
+    await this.during?.(options);
+    return this.error ? { ok: false, error: this.error } : { ok: true, lastMessage: this.answer };
   }
 }
 

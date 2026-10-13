@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { hostOf } from "../core/conversations.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
 import { loadConfig, saveConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
@@ -74,18 +75,28 @@ function printSummary(t: TriggerSummary): void {
   const last = t.lastCheck
     ? `last check ${when(t.lastCheck.at)} ${t.lastCheck.ok ? `ok: ${clip(t.lastCheck.summary ?? "")}` : `failed: ${clip(t.lastCheck.error ?? "")}`}`
     : "not checked yet";
-  const target = t.action === "notify" ? "notify only" : `agent → ${t.target} thread${t.threadId ? ` ${t.threadId}` : ""}`;
+  const target = t.action === "notify" ? "notify only" : `agent → ${t.target} ${t.host === "codex" ? "thread" : "session"}${t.threadId ? ` ${t.threadId}` : ""}`;
   out(`${t.id}  ${t.name}`);
   out(`  ${t.state} · ${last}`);
   out(`  next check ${when(t.nextCheck)} · ${t.fires} fire(s) · ${target}`);
 }
 
-/** Where Codex answered a fire: in a Codex app that had the thread open, or in the thread opened in the background. */
+function conversationNoun(ref: string | null | undefined): string {
+  return hostOf(ref) === "codex" ? "thread" : "session";
+}
+
+/**
+ * Where a fire was answered: in a Codex app that had the thread open, or in the thread opened in the background;
+ * in a Claude Code session that was open, or in the session resumed in the background.
+ */
 function answeredWhere(fire: FireView): string {
   const source = fire.receipt?.source;
-  if (!fire.target?.threadId || (source !== "tool" && source !== "final-answer")) return "";
-  const thread = fire.target.kind === "dedicated" ? "its own thread" : "your thread";
-  return `  (${thread}, ${fire.wokenAt ? "opened in the background" : "open in Codex"})`;
+  const ref = fire.target?.threadId;
+  if (!ref || (source !== "tool" && source !== "final-answer")) return "";
+  const where = `${fire.target?.kind === "dedicated" ? "its own" : "your"} ${conversationNoun(ref)}`;
+  const codex = hostOf(ref) === "codex";
+  const how = fire.wokenAt ? (codex ? "opened in the background" : "resumed in the background") : codex ? "open in Codex" : "open in Claude Code";
+  return `  (${where}, ${how})`;
 }
 
 async function activate(draftId: string): Promise<void> {
@@ -229,7 +240,8 @@ async function main(argv: string[]): Promise<void> {
       return;
     case "delete": {
       const result = await daemonCall<{ deleted: string; dedicatedThreadId: string | null }>("trigger.delete", { triggerId: need(id, "trigger id") });
-      out(`Deleted ${result.deleted}.${result.dedicatedThreadId ? ` Its thread ${result.dedicatedThreadId} was kept in Codex.` : ""}`);
+      const kept = result.dedicatedThreadId ? ` Its ${conversationNoun(result.dedicatedThreadId)} ${result.dedicatedThreadId} was kept.` : "";
+      out(`Deleted ${result.deleted}.${kept}`);
       return;
     }
     case "history": {

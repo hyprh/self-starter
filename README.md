@@ -23,6 +23,12 @@ codex plugin marketplace add hyprh/self-starter
 codex plugin add self-starter@self-starter
 ```
 
+In Claude Code ([how it works there](docs/guide.md#claude-code)):
+
+```
+/plugin install self-starter --marketplace hyprh/self-starter
+```
+
 <p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
 
 ```
@@ -55,7 +61,7 @@ Anything a few lines of code can check: a file, a command, a local service, a we
 
 ## Install
 
-You need macOS or Linux, [Node.js](https://nodejs.org) 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Then the two commands above, and restart the Codex app.
+You need macOS or Linux, [Node.js](https://nodejs.org) 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Then the two commands above, and restart the Codex app. In Claude Code, the one command above, then start a new session ([details](docs/guide.md#claude-code)).
 
 The first time Codex starts the plugin, it downloads the rest of Self-Starter (about 50 MB, with [Deno](https://deno.com) for the probes) and sets up a small background service (launchd or systemd), so triggers keep running when Codex is closed. Secrets and email are set up in a terminal with `~/.self-starter/bin/self-starter`; see the [guide](docs/guide.md).
 
@@ -71,7 +77,7 @@ Or from a clone of this repository: `npm install && npm link && self-starter ins
 
 - **Probes, not prompts.** Codex writes a few lines of TypeScript once; the background service runs them on a schedule. No model is called while waiting.
 - **The engine owns the rules.** It fires only when the condition becomes true, with optional minimum duration, cooldown and limits, deduplicates events, retries, and tells you when a probe keeps failing. When a trigger turns out noisy, Codex can make it quieter on its own, never louder, and tells you.
-- **The conversation answers by itself.** The task goes back to the conversation where you asked, or to a thread of the trigger's own. If Codex is closed, Self-Starter opens the conversation in the background.
+- **The conversation answers by itself.** The task goes back to the conversation where you asked, or to a thread of the trigger's own. If Codex is closed, Self-Starter opens the conversation in the background. In Claude Code, the fire comes into your open session, or Self-Starter resumes the session in the background.
 - **You stay in control.** Codex asks before turning on triggers that act for you. API keys are typed in a terminal, never in the chat. What a probe saw reaches Codex as data, not instructions.
 
 ## More

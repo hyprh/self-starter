@@ -9,7 +9,7 @@ import { FireLog } from "../../src/engine/fires.js";
 import { Secrets } from "../../src/engine/secrets.js";
 import { ServiceError, TriggerService, type Caller } from "../../src/engine/service.js";
 import { Store } from "../../src/engine/store.js";
-import { EVENT_PROBE, eventually, FakeCodex, RecordingNotifier, STATE_PROBE, startServer, tempHome, view, type TestServer } from "./fixtures.js";
+import { EVENT_PROBE, eventually, FakeClaude, FakeCodex, RecordingNotifier, STATE_PROBE, startServer, tempHome, view, type TestServer } from "./fixtures.js";
 
 const deno = bundledDeno();
 const ORIGIN = "thread-origin";
@@ -29,7 +29,16 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
   const clock = { at: Date.now() };
   const now = () => new Date(clock.at);
   const log = (line: string) => logs.push(line);
-  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now, uptime: () => clock.at });
+  // Claude Code: sessions that a process shows take fires into their inbox; the others run headless.
+  const claude = new FakeClaude();
+  const openSessions = new Set<string>();
+  const inboxes: Array<{ sessionId: string; text: string }> = [];
+  const deliverToSession = async (sessionId: string, text: string) => {
+    if (!openSessions.has(sessionId)) return undefined;
+    inboxes.push({ sessionId, text });
+    return "relayed" as const;
+  };
+  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, claude: () => claude, deliverToSession, log, now, uptime: () => clock.at });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
   const recipesDir = join(paths.home, "recipes");
   const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codexBin: () => "/fake/codex", log, now });
@@ -50,7 +59,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
     return { view, trigger: service.activateDraft({ draftId: view.draftId }, caller) };
   };
 
-  return { home, paths, store, fires, secrets, notifier, codex, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
+  return { home, paths, store, fires, secrets, notifier, codex, claude, openSessions, inboxes, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
 }
 
 describe("triggers end to end", { skip: deno ? false : "the deno npm package is not installed" }, () => {
@@ -659,6 +668,165 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     } finally {
       t.cleanup();
     }
+  });
+});
+
+describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+  let server: TestServer;
+  let t: ReturnType<typeof setup>;
+  const fromSession = (sessionId = "s1"): Caller => ({ via: "mcp", threadId: `cc:${sessionId}` });
+  /** What the plugin's hooks record about a session. */
+  const record = (sessionId: string, fields: Record<string, unknown> = {}) => {
+    mkdirSync(t.paths.sessions, { recursive: true });
+    writeFileSync(join(t.paths.sessions, `${sessionId}.json`), JSON.stringify({ sessionId, cwd: t.paths.home, startedAt: new Date().toISOString(), ...fields }));
+  };
+  /** Fires the trigger and waits until the fire is handed over. */
+  const fire = async (id = "price-alert") => {
+    server.price += 100;
+    const fireId = (await t.engine.runNow(id))!.fireId!;
+    return eventually(() => (t.fires.get(fireId)?.status === "delivered" || t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
+  };
+
+  beforeEach(async () => {
+    server = await startServer();
+    t = setup(server);
+  });
+  afterEach(async () => {
+    t.cleanup();
+    await server.close();
+  });
+
+  it("brings a fire into the session it was made in while a terminal shows it", async () => {
+    const { view } = await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    assert.match(view.description, /Claude works on this back in the session where the trigger was created \(if no terminal has it open, Self-Starter resumes it in the background: can edit files in its folder\)/);
+    t.openSessions.add("s1");
+    const delivered = await fire();
+    assert.deepEqual(delivered.target, { kind: "origin", threadId: "cc:s1", via: "inbox" });
+    assert.match(t.inboxes[0]!.text, new RegExp(`call the trigger_report tool with fire_id="${delivered.fireId}"`));
+
+    t.service.report({ fireId: delivered.fireId, summary: "It moved on earnings", notify: true }, fromSession());
+    assert.equal(t.fires.get(delivered.fireId)?.receipt?.source, "tool");
+    assert.equal((await eventually(() => t.notifier.sent[0])).threadId, "cc:s1");
+    assert.equal(t.claude.runs.length, 0, "nothing ran headless");
+    assert.throws(() => t.service.report({ fireId: delivered.fireId, summary: "again", notify: false }, fromSession("s2")), /already has a receipt/);
+  });
+
+  it("resumes the session headless when no terminal shows it, in its folder and with the trigger's permissions", async () => {
+    record("s1", { cwd: t.paths.logs, configDir: "/somewhere/claude" });
+    mkdirSync(t.paths.logs, { recursive: true });
+    await t.activate({ target: { kind: "origin" }, action: { type: "agent", prompt: "Find out why.", sandbox: "read-only" } }, STATE_PROBE, fromSession());
+    const delivered = await fire();
+    const run = await eventually(() => t.claude.runs[0]);
+    assert.deepEqual({ ...run, message: "" }, { sessionId: "s1", cwd: t.paths.logs, message: "", sandbox: "read-only", configDir: "/somewhere/claude", timeoutMs: 20 * 60_000 });
+    assert.match(run.message, /^\[self-starter\] Price above 150 \(price-alert · fire #1 · fire_/);
+    const done = await eventually(() => (t.fires.get(delivered.fireId)?.receipt ? t.fires.get(delivered.fireId) : undefined));
+    assert.deepEqual(done.target, { kind: "origin", threadId: "cc:s1", via: "headless" });
+    assert.ok(done.wokenAt);
+    assert.deepEqual([done.receipt?.source, done.receipt?.summary], ["final-answer", "Looked into it: the price moved on earnings."]);
+  });
+
+  it("takes the report the headless turn made, and runs one turn per session at a time", async () => {
+    // Two run slots, so that only the session holds the second fire back.
+    t.cleanup();
+    t = setup(server, { budget: { ...DEFAULT_CONFIG.budget, maxConcurrentAgentRuns: 2 } });
+    record("s1");
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    await t.activate({ id: "other", name: "Other", target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    t.claude.during = async (options) => {
+      const fireId = /fire_id="(fire_\w+)"/.exec(options.message)![1]!;
+      await gate;
+      t.service.report({ fireId, summary: `reported ${fireId}`, notify: false }, fromSession());
+    };
+    const first = await fire();
+    const second = await fire("other");
+    await eventually(() => t.claude.runs.length === 1);
+    await t.executor.tick();
+    assert.equal(t.claude.runs.length, 1, "the second fire waits for the session's turn to end");
+    release();
+    await eventually(() => t.claude.runs.length === 2);
+    for (const { fireId } of [first, second]) {
+      const receipt = await eventually(() => t.fires.get(fireId)?.receipt);
+      assert.deepEqual([receipt.source, receipt.summary], ["tool", `reported ${fireId}`]);
+    }
+  });
+
+  it("brings the fire into the session after all when the user opened it meanwhile", async () => {
+    record("s1");
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    await t.activate({ id: "other", name: "Other", target: { kind: "origin" } }, STATE_PROBE, fromSession("s2"));
+    record("s2");
+    // A run in another session takes the only run slot.
+    let release = () => {};
+    t.claude.during = (options) => (options.sessionId === "s2" ? new Promise<void>((resolve) => (release = resolve)) : undefined);
+    await fire("other");
+    await eventually(() => t.claude.runs.length === 1);
+    const waiting = await fire();
+    assert.equal(waiting.target?.via, "headless");
+    t.openSessions.add("s1");
+    release();
+    await eventually(() => t.inboxes.length === 1);
+    assert.equal(t.claude.runs.length, 1, "s1 never ran headless");
+    assert.equal(t.fires.get(waiting.fireId)?.target?.via, "inbox");
+  });
+
+  it("starts a session of its own for a dedicated trigger and runs its fires there", async () => {
+    await t.activate({ target: { kind: "dedicated", cwd: t.paths.home } }, STATE_PROBE, fromSession());
+    const start = await eventually(() => t.claude.runs[0]);
+    assert.deepEqual(start.start, { name: "Trigger: Price above 150" });
+    assert.match(start.message, /^\[self-starter\] This session belongs to the trigger "Price above 150" \(price-alert\)\./);
+    const ref = await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+    assert.equal(ref, `cc:${start.sessionId}`);
+
+    const delivered = await fire();
+    const run = await eventually(() => t.claude.runs[1]);
+    assert.deepEqual([run.sessionId, run.start, run.cwd], [start.sessionId, undefined, t.paths.home]);
+    assert.deepEqual(t.fires.get(delivered.fireId)?.target, { kind: "dedicated", threadId: ref, via: "headless" });
+  });
+
+  it("uses a session of its own once the origin session is gone", async () => {
+    record("s1", { transcript: join(t.paths.home, "cleaned-up.jsonl") });
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    const delivered = await fire();
+    const [start, run] = await eventually(() => (t.claude.runs.length === 2 ? t.claude.runs : undefined));
+    assert.ok(start!.start, "a new session for the trigger");
+    assert.equal(run!.sessionId, start!.sessionId);
+    assert.deepEqual(t.fires.get(delivered.fireId)?.target, { kind: "dedicated", threadId: `cc:${start!.sessionId}`, via: "headless" });
+  });
+
+  it("hands the fire to a session of its own when claude no longer finds the origin session", async () => {
+    record("s1"); // no transcript recorded, so only claude can tell that it is gone
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.claude.during = (options) => {
+      t.claude.error = options.sessionId === "s1" ? "claude -p: No conversation found with session ID: s1" : undefined;
+    };
+    server.price = 200;
+    const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+    await eventually(() => t.fires.get(fireId)?.status === "pending" && t.fires.get(fireId)?.failures === 1);
+    t.clock.at += 31_000; // the retry
+    await t.executor.tick();
+    const done = await eventually(() => (t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined));
+    const [gone, start, run] = t.claude.runs;
+    assert.deepEqual([gone?.sessionId, start?.start?.name, run?.sessionId], ["s1", "Trigger: Price above 150", start?.sessionId]);
+    assert.deepEqual(done.target, { kind: "dedicated", threadId: `cc:${start!.sessionId}`, via: "headless" });
+    assert.equal(done.receipt?.source, "final-answer");
+  });
+
+  it("does not let a turn that a fire started create or change triggers, except to make that one quieter", async () => {
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.openSessions.add("s1");
+    const delivered = await fire();
+    // The hook saw the fire start the session's turn; then the turn reported.
+    record("s1", { turn: { at: new Date().toISOString(), trigger: true, line: `[self-starter] Price above 150 (price-alert · fire #1 · ${delivered.fireId})` } });
+    t.service.report({ fireId: delivered.fireId, summary: "Reported", notify: false }, fromSession());
+    await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "more" }), code: STATE_PROBE }, fromSession()), /this turn was started by a Self-Starter message/);
+    const tuned = await t.service.tuneTrigger({ triggerId: "price-alert", reason: "Fired on every check.", cooldown: "1h" }, fromSession());
+    assert.deepEqual(tuned.changes, ["waits 1h after a fire (was no wait)"]);
+    assert.ok(await eventually(() => t.notifier.sent.find((sent) => sent.title === "Price above 150: Claude made it quieter")));
+    // The user's next message starts a turn of their own.
+    record("s1", { turn: { at: new Date().toISOString(), trigger: false } });
+    assert.ok((await t.service.createDraft({ definition: t.definition({ id: "more" }), code: STATE_PROBE }, fromSession())).draftId);
   });
 });
 

@@ -1,5 +1,6 @@
-// Plain-language descriptions of a trigger, for Codex to explain it, listings and the CLI.
+// Plain-language descriptions of a trigger, for the agent to explain it, listings and the CLI.
 
+import { agentName, hostFor } from "./conversations.js";
 import type { TriggerDefinition } from "./definition.js";
 import type { RuntimeState } from "./state-machine.js";
 
@@ -32,19 +33,34 @@ export function describeFiring(def: TriggerDefinition): string {
   return parts.join("; ");
 }
 
+/** What a fire may do when it runs in the background: Codex's sandbox, or the Claude Code permission mode it maps to. */
 const SANDBOX_TEXT = {
-  "read-only": "read-only",
-  "workspace-write": "can change files and run commands in its folder",
-  "danger-full-access": "full access, no sandbox",
+  codex: {
+    "read-only": "read-only",
+    "workspace-write": "can change files and run commands in its folder",
+    "danger-full-access": "full access, no sandbox",
+  },
+  "claude-code": {
+    "read-only": "only what needs no approval, such as reading",
+    "workspace-write": "can edit files in its folder",
+    "danger-full-access": "no permission checks",
+  },
 } as const;
 
 export function describeAction(def: TriggerDefinition): string {
-  if (def.action.type === "notify") return "a notification (Codex is not involved)";
+  const host = hostFor(def);
+  if (def.action.type === "notify") return `a notification (${agentName(host)} is not involved)`;
+  const access = SANDBOX_TEXT[host][def.action.sandbox];
+  const folder = def.target.cwd ? `; folder ${def.target.cwd}` : "";
   const where =
-    def.target.kind === "origin"
-      ? `back in the thread where the trigger was created (if no Codex app has it open, it runs there in the background: ${SANDBOX_TEXT[def.action.sandbox]})`
-      : `in a dedicated thread (${SANDBOX_TEXT[def.action.sandbox]}${def.target.cwd ? `; folder ${def.target.cwd}` : ""})`;
-  return `Codex works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
+    host === "codex"
+      ? def.target.kind === "origin"
+        ? `back in the thread where the trigger was created (if no Codex app has it open, it runs there in the background: ${access})`
+        : `in a dedicated thread (${access}${folder})`
+      : def.target.kind === "origin"
+        ? `back in the session where the trigger was created (if no terminal has it open, Self-Starter resumes it in the background: ${access})`
+        : `in a session of its own (${access}${folder})`;
+  return `${agentName(host)} works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
 }
 
 export function describeAccess(def: TriggerDefinition): string {
@@ -53,7 +69,7 @@ export function describeAccess(def: TriggerDefinition): string {
 }
 
 export function describeNotify(def: TriggerDefinition): string {
-  const when = { always: "on every fire", receipt: "when Codex says it matters", never: "never" }[def.notify.when];
+  const when = { always: "on every fire", receipt: `when ${agentName(hostFor(def))} says it matters`, never: "never" }[def.notify.when];
   const quiet = def.policy.quiet_hours;
   return quiet ? `${when} (held during ${quiet.from}–${quiet.to} ${quiet.tz})` : when;
 }
