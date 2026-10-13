@@ -6,7 +6,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CodexRunner, ExecResult, ThreadView, WakeOptions } from "../../src/engine/codex.js";
+import type { CodexRunner, ThreadView, TurnResult, WakeOptions } from "../../src/engine/codex.js";
 import type { Notification, Notifier } from "../../src/engine/notify.js";
 import { resolvePaths, type Paths } from "../../src/engine/paths.js";
 
@@ -48,13 +48,13 @@ export async function startServer(): Promise<TestServer> {
 
 export class FakeCodex implements CodexRunner {
   queued: Array<{ threadId: string; message: string }> = [];
-  started: Array<{ cwd: string; name: string; prompt: string }> = [];
-  execs: Array<{ cwd: string; prompt: string }> = [];
-  appServerBroken = false;
-  resumes: Array<{ threadId: string; prompt: string; sandbox: string }> = [];
+  queueAttempts = 0;
+  /** Makes every `codex queue` fail with this error. */
   queueError: Error | undefined;
-  resumeAnswer = '{"summary":"looked into it","notify":true}';
-  resumeOk = true;
+  /** Threads that no longer exist, as Codex reports them. */
+  goneThreads = new Set<string>();
+  started: Array<{ cwd: string; name: string; prompt: string }> = [];
+  appServerBroken = false;
   /** How each thread looks from outside; by default nobody has it open and it is idle. */
   threadViews = new Map<string, ThreadView>();
   wakes: WakeOptions[] = [];
@@ -65,35 +65,24 @@ export class FakeCodex implements CodexRunner {
     return this.threadViews.get(threadId) ?? { mentions: false, busy: false };
   }
 
-  async wakeThread(options: WakeOptions): Promise<ExecResult> {
+  async wakeThread(options: WakeOptions): Promise<TurnResult> {
     this.wakes.push(options);
     return { ok: true, threadId: options.threadId, lastMessage: this.wakeAnswer };
   }
 
   async queue(threadId: string, message: string): Promise<{ submissionId?: string }> {
+    this.queueAttempts += 1;
     if (this.queueError) throw this.queueError;
+    if (this.goneThreads.has(threadId)) throw new Error(`codex queue failed: Error: thread not found: ${threadId}`);
     this.queued.push({ threadId, message });
     return { submissionId: `sub-${this.queued.length}` };
   }
 
-  async startThread(options: { cwd: string; name: string; prompt: string }): Promise<ExecResult> {
+  async startThread(options: { cwd: string; name: string; prompt: string }): Promise<TurnResult> {
     this.started.push({ cwd: options.cwd, name: options.name, prompt: options.prompt });
     if (this.appServerBroken) return { ok: false, error: "codex app-server: unknown method thread/start" };
     this.threads += 1;
-    return { ok: true, threadId: `thread-dedicated-${this.threads}`, lastMessage: '{"summary":"ready","notify":false}' };
-  }
-
-  async exec(options: { cwd: string; prompt: string }): Promise<ExecResult> {
-    this.execs.push({ cwd: options.cwd, prompt: options.prompt });
-    this.threads += 1;
-    return { ok: true, threadId: `thread-dedicated-${this.threads}`, lastMessage: '{"summary":"ready","notify":false}' };
-  }
-
-  async resume(options: { threadId: string; prompt: string; sandbox: string }): Promise<ExecResult> {
-    this.resumes.push({ threadId: options.threadId, prompt: options.prompt, sandbox: options.sandbox });
-    return this.resumeOk
-      ? { ok: true, threadId: options.threadId, lastMessage: this.resumeAnswer }
-      : { ok: false, threadId: options.threadId, error: "the model is unavailable" };
+    return { ok: true, threadId: `thread-dedicated-${this.threads}`, lastMessage: "Ready." };
   }
 }
 

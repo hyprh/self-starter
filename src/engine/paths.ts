@@ -17,7 +17,6 @@ export interface Paths {
   lock: string;
   logs: string;
   denoDir: string;
-  receiptSchema: string;
   /** The local plugin marketplace that `self-starter install` registers with Codex. */
   marketplace: string;
 }
@@ -44,7 +43,6 @@ export function resolvePaths(home = process.env.SELF_STARTER_HOME || join(homedi
     lock: join(home, "daemon.pid"),
     logs: join(home, "logs"),
     denoDir: join(home, "deno-cache"),
-    receiptSchema: join(home, "receipt.schema.json"),
     marketplace: join(home, "marketplace"),
   };
 }

@@ -29,7 +29,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}) {
   const clock = { at: Date.now() };
   const now = () => new Date(clock.at);
   const log = (line: string) => logs.push(line);
-  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now });
+  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, log, now, uptime: () => clock.at });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
   const recipesDir = join(paths.home, "recipes");
   const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codex: () => "/fake/codex", log, now });
@@ -135,37 +135,54 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.equal(t.codex.started[0]!.cwd, t.paths.home);
 
     server.price = 200;
-    const fired = await t.engine.runNow("price-alert");
-    const fire = await eventually(() => (t.fires.get(fired!.fireId!)?.status === "done" ? t.fires.get(fired!.fireId!) : undefined));
-    assert.equal(t.codex.resumes.length, 1);
-    assert.equal(t.codex.resumes[0]!.threadId, "thread-dedicated-1");
-    assert.equal(t.codex.resumes[0]!.sandbox, "workspace-write");
-    assert.match(t.codex.resumes[0]!.prompt, /give your final answer as JSON/);
+    const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+    const queued = await eventually(() => t.codex.queued[0]);
+    assert.equal(queued.threadId, "thread-dedicated-1");
+    assert.match(queued.message, /call the trigger_report tool with fire_id="fire_/);
+    await eventually(() => t.fires.get(fireId)?.status === "delivered");
+
+    // No Codex app has the trigger's thread open, so the executor runs the fire there itself.
+    await t.executor.tick();
+    assert.equal(t.codex.wakes.length, 0, "an open Codex app gets a moment to pick it up");
+    t.clock.at += 21_000;
+    await t.executor.tick();
+    const wake = await eventually(() => t.codex.wakes[0]);
+    assert.deepEqual(
+      { threadId: wake.threadId, marker: wake.marker, sandbox: wake.sandbox, cwd: wake.cwd },
+      { threadId: "thread-dedicated-1", marker: fireId, sandbox: "workspace-write", cwd: t.paths.home },
+    );
+    const fire = await eventually(() => (t.fires.get(fireId)?.status === "done" ? t.fires.get(fireId) : undefined));
     assert.equal(fire.receipt?.source, "final-answer");
-    assert.equal(fire.receipt?.summary, "looked into it");
+    assert.equal(fire.receipt?.summary, "The price moved on earnings; details in the thread.");
     assert.equal((await eventually(() => t.notifier.sent[0])).threadId, "thread-dedicated-1");
     assert.equal(t.codex.started.length, 1, "the thread is reused");
-    assert.equal(t.codex.execs.length, 0);
   });
 
-  it("falls back to codex exec when the app server cannot create the thread", async () => {
+  it("retries a fire when the trigger's thread cannot be created yet", async () => {
     t.codex.appServerBroken = true;
     await t.activate();
-    await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
-    assert.equal(t.codex.execs.length, 1);
-    assert.match(t.logs.join("\n"), /using codex exec/);
+    server.price = 200;
+    const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+    await eventually(() => t.fires.get(fireId)!.failures >= 1);
+    assert.match(t.fires.get(fireId)!.error ?? "", /could not create the dedicated thread/);
+
+    t.codex.appServerBroken = false;
+    t.clock.at += 31_000;
+    t.executor.kick();
+    assert.equal((await eventually(() => t.codex.queued[0])).threadId, "thread-dedicated-1");
   });
 
   it("falls back to a thread of its own when the origin thread is gone, and keeps using it", async () => {
     await t.activate({ policy: { max_fires: 2 }, target: { kind: "origin" } });
-    t.codex.queueError = new Error("codex queue failed: thread not found");
+    t.codex.goneThreads.add(ORIGIN);
     for (const n of [1, 2]) {
       server.price = 200;
-      const fired = await t.engine.runNow("price-alert");
-      await eventually(() => t.fires.get(fired!.fireId!)?.status === "done");
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      assert.equal(t.codex.queued[n - 1]?.threadId, "thread-dedicated-1");
+      t.executor.report(fireId, { summary: "handled", notify: false });
       server.price = 100;
       await t.engine.runNow("price-alert");
-      assert.equal(t.codex.resumes[n - 1]?.threadId, "thread-dedicated-1");
     }
     assert.equal(t.codex.started.length, 1, "one fallback thread, reused");
   });
@@ -213,7 +230,7 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     assert.deepEqual(t.fires.get(fired.fireId)?.events?.map((e) => e.key), ["c"]);
     assert.equal((await eventually(() => t.notifier.sent[0])).body, "3 items (new: C)");
     assert.equal((await t.engine.runNow("price-alert"))?.fireId, undefined, "c is not new any more");
-    assert.equal(t.codex.queued.length + t.codex.resumes.length, 0, "notify actions do not involve Codex");
+    assert.equal(t.codex.queued.length + t.codex.wakes.length, 0, "notify actions do not involve Codex");
   });
 
   it("applies updates at once and starts the state over", async () => {
@@ -267,12 +284,12 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
     await server.close();
   });
 
-  it("retries a failed run, then gives up and tells the user", async () => {
+  it("retries a failed delivery, then gives up and tells the user", async () => {
     const t = setup(server);
     try {
       await t.activate();
       await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
-      t.codex.resumeOk = false;
+      t.codex.queueError = new Error("codex queue failed: database is locked");
       server.price = 200;
       const fired = await t.engine.runNow("price-alert");
       const fireId = fired!.fireId!;
@@ -282,7 +299,7 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
         t.executor.kick();
       }
       await eventually(() => t.fires.get(fireId)?.status === "failed");
-      assert.equal(t.codex.resumes.length, 4);
+      assert.equal(t.codex.queueAttempts, 4);
       assert.match((await eventually(() => t.notifier.sent[0])).title, /could not hand the fire to Codex/);
     } finally {
       t.cleanup();
@@ -407,6 +424,21 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       t.service.report({ fireId, summary: "late but done", notify: true }, fromThread({ turnId: "turn-8" }));
       assert.equal(t.fires.get(fireId)?.receipt?.summary, "late but done");
       assert.equal((await eventually(() => t.notifier.sent[1])).body, "late but done");
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it("still wakes the trigger's own thread when waking is off", async () => {
+    const t = setup(server, { wakeClosedThreads: false });
+    try {
+      await t.activate();
+      server.price = 200;
+      const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+      await eventually(() => t.fires.get(fireId)?.status === "delivered");
+      t.clock.at += 21_000;
+      await t.executor.tick();
+      assert.equal((await eventually(() => t.codex.wakes[0])).threadId, "thread-dedicated-1");
     } finally {
       t.cleanup();
     }

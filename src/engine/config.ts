@@ -23,7 +23,8 @@ export interface Config {
   maxConcurrentProbes: number;
   /**
    * When no Codex app has the origin thread open, so a fire queued for it is not
-   * picked up within a minute, load the thread here and run the fire in it.
+   * picked up, load the thread here and run the fire in it. (The trigger's own
+   * thread is always woken.)
    */
   wakeClosedThreads: boolean;
   /** A fire sent to the origin thread with no receipt after this long triggers a reminder notification. */

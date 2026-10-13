@@ -22,8 +22,6 @@ export interface EnvelopeInput {
   /** Number of fires merged into this message by the coalesce policy (1 when none were merged). */
   merged?: number;
   previous?: { firedAt: string; summary: string } | null;
-  /** How the agent returns its receipt: through the trigger_report tool, or as its final answer. */
-  receipt: "tool" | "final-answer";
 }
 
 /** JSON with < and > escaped, so the text can never contain a closing tag. */
@@ -65,15 +63,9 @@ export function renderEnvelope(input: EnvelopeInput): string {
     "The user may not be watching: do the task without waiting for answers, and say in your reply what needs their decision.",
     "",
   ];
-  if (input.receipt === "tool") {
-    lines.push(
-      `When you are done, call the trigger_report tool with fire_id="${input.fireId}", a one-line summary of what you found or did, and notify=true only if the user should be told now.`,
-    );
-  } else {
-    lines.push(
-      'When you are done, give your final answer as JSON: {"summary": "<one line for the user>", "notify": <true if the user should be told now>}.',
-    );
-  }
+  lines.push(
+    `When you are done, call the trigger_report tool with fire_id="${input.fireId}", a one-line summary of what you found or did, and notify=true only if the user should be told now.`,
+  );
   return lines.join("\n");
 }
 
@@ -86,17 +78,6 @@ export function renderDedicatedSeed(def: TriggerDefinition): string {
     `What happens when it fires: ${def.action.prompt ?? "the user is notified"}`,
     "",
     "Each time the trigger fires, a message starting with [self-starter] arrives here with the details.",
-    'Reply now with only: {"summary": "ready", "notify": false}',
+    "Reply now with one short line to confirm.",
   ].join("\n");
 }
-
-/** JSON Schema for the receipt that dedicated-thread runs return as their final answer. */
-export const RECEIPT_SCHEMA = {
-  type: "object",
-  properties: {
-    summary: { type: "string", description: "One line for the user." },
-    notify: { type: "boolean", description: "Whether the user should be told now." },
-  },
-  required: ["summary", "notify"],
-  additionalProperties: false,
-} as const;

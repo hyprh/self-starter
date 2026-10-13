@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
-import { CodexCli, parseExecJsonl } from "../../src/engine/codex.js";
+import { CodexCli } from "../../src/engine/codex.js";
 import { tempHome } from "./fixtures.js";
 
 // Stands in for the codex CLI: records its arguments and answers like the real one.
@@ -13,13 +13,6 @@ appendFileSync(process.env.FAKE_CODEX_LOG, JSON.stringify({ args, cwd: process.c
 if (args[0] === "queue") {
   if (args[2] === "missing") { console.error("Error: thread not found: missing"); process.exit(1); }
   console.log("Queued message q-123 for thread " + args[2] + ".");
-} else if (args[0] === "exec") {
-  const threadId = args[1] === "resume" ? args[args.length - 2] : "thread-new-1";
-  console.error("WARNING: proceeding, even though we could not update PATH");
-  console.log(JSON.stringify({ type: "thread.started", thread_id: threadId }));
-  console.log(JSON.stringify({ type: "turn.started" }));
-  console.log(JSON.stringify({ type: "item.completed", item: { id: "i1", type: "agent_message", text: '{"summary":"ok","notify":false}' } }));
-  console.log(JSON.stringify({ type: "turn.completed", usage: {} }));
 } else if (args[0] === "app-server") {
   // JSON-RPC over stdio. Threads live in FAKE_THREADS: { [id]: { turns: [...], queued: [text] } }.
   const { createInterface } = await import("node:readline");
@@ -50,7 +43,7 @@ if (args[0] === "queue") {
     if (method === "thread/start") return send({ id, result: { thread: { id: "thread-app-1" } } });
     if (method === "turn/start") {
       send({ id, result: { turn: { id: "turn-1", status: "inProgress" } } });
-      const turn = turnOf(params.input[0].text, '{"summary":"ready","notify":false}');
+      const turn = turnOf(params.input[0].text, "Ready.");
       started(params.threadId, turn);
       return completed(params.threadId, turn);
     }
@@ -113,21 +106,6 @@ describe("codex CLI wrapper", () => {
     await assert.rejects(codex.queue("missing", "hello"), /codex queue failed: Error: thread not found: missing/);
   });
 
-  it("creates a thread with codex exec", async () => {
-    const result = await codex.exec({ cwd: home.paths.home, prompt: "seed", sandbox: "read-only", outputSchemaPath: "/s.json", timeoutMs: 10_000 });
-    assert.deepEqual(result, { ok: true, threadId: "thread-new-1", lastMessage: '{"summary":"ok","notify":false}' });
-    assert.deepEqual(calls().at(-1)!.args, ["exec", "--json", "--skip-git-repo-check", "-s", "read-only", "-C", home.paths.home, "--output-schema", "/s.json", "seed"]);
-  });
-
-  it("runs a turn in an existing thread with codex exec resume", async () => {
-    const result = await codex.resume({ threadId: "thread-7", cwd: home.paths.home, prompt: "fire!", sandbox: "workspace-write", timeoutMs: 10_000 });
-    assert.equal(result.ok, true);
-    assert.equal(result.threadId, "thread-7");
-    const call = calls().at(-1)!;
-    assert.deepEqual(call.args, ["exec", "resume", "--json", "--skip-git-repo-check", "-c", 'sandbox_mode="workspace-write"', "thread-7", "fire!"]);
-    assert.equal(call.cwd, home.paths.home);
-  });
-
   describe("through the app server", () => {
     const threads = (state: Record<string, { turns: Array<{ status: string; completedAt?: number | null; items?: unknown[] }>; queued?: string[] }>) =>
       writeFileSync(process.env.FAKE_THREADS!, JSON.stringify(state));
@@ -139,10 +117,10 @@ describe("codex CLI wrapper", () => {
     });
 
     it("creates and names a thread, and returns its first turn", async () => {
-      const result = await codex.startThread({ cwd: home.paths.home, name: "Trigger: CI", prompt: "seed", outputSchema: { type: "object" }, timeoutMs: 10_000 });
-      assert.deepEqual(result, { ok: true, threadId: "thread-app-1", lastMessage: '{"summary":"ready","notify":false}' });
+      const result = await codex.startThread({ cwd: home.paths.home, name: "Trigger: CI", prompt: "seed", timeoutMs: 10_000 });
+      assert.deepEqual(result, { ok: true, threadId: "thread-app-1", lastMessage: "Ready." });
       assert.deepEqual(appServerCalls("thread/name/set").at(-1)!.params, { threadId: "thread-app-1", name: "Trigger: CI" });
-      assert.deepEqual(appServerCalls("turn/start").at(-1)!.params.outputSchema, { type: "object" });
+      assert.equal(appServerCalls("thread/start").at(-1)!.cwd, home.paths.home);
     });
 
     it("looks at a thread without loading it", async () => {
@@ -178,6 +156,13 @@ describe("codex CLI wrapper", () => {
       assert.match(nothing.error ?? "", /waiting for the queued message to start/);
     });
 
+    it("moves a thread of the trigger's own to its folder when waking it", async () => {
+      threads({ own: { turns: [], queued: ["[self-starter] CI failed (ci · fire #3 · fire_q3)"] } });
+      const result = await codex.wakeThread({ threadId: "own", marker: "fire_q3", sandbox: "read-only", cwd: "/work/app", timeoutMs: 10_000 });
+      assert.equal(result.ok, true);
+      assert.deepEqual(appServerCalls("thread/resume").at(-1)!.params, { threadId: "own", sandbox: "read-only", excludeTurns: true, cwd: "/work/app" });
+    });
+
     it("stops a woken turn that runs too long", async () => {
       threads({ stuck: { turns: [], queued: ["[self-starter] HANG (build · fire #1 · fire_h1)"] } });
       const result = await codex.wakeThread({ threadId: "stuck", marker: "fire_h1", sandbox: "workspace-write", timeoutMs: 300 });
@@ -186,13 +171,5 @@ describe("codex CLI wrapper", () => {
       const turnId = JSON.parse(readFileSync(process.env.FAKE_THREADS!, "utf8")).stuck.turns[0].id;
       assert.deepEqual(appServerCalls("turn/interrupt").at(-1)!.params, { threadId: "stuck", turnId }, "recorded as over, so it does not look busy later");
     });
-  });
-
-  it("reads failures from the JSON event stream", () => {
-    const failed = parseExecJsonl(
-      [JSON.stringify({ type: "thread.started", thread_id: "t" }), JSON.stringify({ type: "turn.failed", error: { message: "usage limit reached" } })].join("\n"),
-    );
-    assert.deepEqual(failed, { ok: false, threadId: "t", error: "usage limit reached" });
-    assert.equal(parseExecJsonl("garbage\n").error, "the turn did not complete");
   });
 });

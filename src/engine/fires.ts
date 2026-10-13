@@ -6,14 +6,14 @@ import type { ProbeEvent } from "../core/probe-output.js";
 import type { TargetKind } from "../core/definition.js";
 import { appendJsonLine, newId, readJsonLines } from "./fs-util.js";
 
-export type FireStatus = "pending" | "merged" | "skipped" | "running" | "delivered" | "done" | "failed";
+export type FireStatus = "pending" | "merged" | "skipped" | "delivered" | "done" | "failed";
 
 export interface Receipt {
   summary: string;
   notify: boolean;
   at: string;
   /**
-   * tool: trigger_report; final-answer: a dedicated-thread run; notify: a notify-only action;
+   * tool: trigger_report; final-answer: the last message of a woken turn; notify: a notify-only action;
    * timeout: no reply in time; closed: the trigger was deleted before a reply came.
    */
   source: "tool" | "final-answer" | "notify" | "timeout" | "closed";
@@ -32,8 +32,6 @@ export interface FireRecord {
   data?: unknown;
   events?: ProbeEvent[];
   status: FireStatus;
-  /** Runs started for this fire (dedicated threads). */
-  attempts: number;
   /** Failed delivery attempts; the fire fails for good after a few. */
   failures: number;
   /** Fires merged into this one by the coalesce policy. */
@@ -48,10 +46,9 @@ export interface FireRecord {
 }
 
 export type FireEvent =
-  | ({ type: "created" } & Omit<FireRecord, "status" | "attempts" | "failures" | "merged">)
+  | ({ type: "created" } & Omit<FireRecord, "status" | "failures" | "merged">)
   | { type: "merged"; fireId: string; into: string; at: string }
   | { type: "skipped"; fireId: string; why: string; at: string }
-  | { type: "started"; fireId: string; target: FireRecord["target"]; at: string }
   | { type: "delivered"; fireId: string; target: FireRecord["target"]; at: string }
   | { type: "attempt_failed"; fireId: string; error: string; at: string }
   | { type: "failed"; fireId: string; error: string; at: string }
@@ -61,7 +58,7 @@ export type FireEvent =
 function apply(index: Map<string, FireRecord>, event: FireEvent): void {
   if (event.type === "created") {
     const { type: _type, ...rest } = event;
-    index.set(event.fireId, { ...rest, status: "pending", attempts: 0, failures: 0, merged: [] });
+    index.set(event.fireId, { ...rest, status: "pending", failures: 0, merged: [] });
     return;
   }
   const fire = index.get(event.fireId);
@@ -77,13 +74,7 @@ function apply(index: Map<string, FireRecord>, event: FireEvent): void {
       fire.status = "skipped";
       fire.skippedBecause = event.why;
       break;
-    case "started":
-      fire.status = "running";
-      fire.attempts += 1;
-      fire.target = event.target;
-      break;
     case "delivered":
-      // A receipt can arrive before the run that delivered the fire returns.
       if (fire.status !== "done") fire.status = "delivered";
       fire.target = event.target;
       fire.deliveredAt = event.at;
@@ -120,7 +111,7 @@ export class FireLog {
     apply(this.index, event);
   }
 
-  create(fields: Omit<FireRecord, "fireId" | "status" | "attempts" | "failures" | "merged" | "createdAt">, createdAt = new Date()): FireRecord {
+  create(fields: Omit<FireRecord, "fireId" | "status" | "failures" | "merged" | "createdAt">, createdAt = new Date()): FireRecord {
     const fireId = newId("fire");
     this.record({ type: "created", fireId, createdAt: createdAt.toISOString(), ...fields });
     return this.get(fireId)!;
@@ -152,7 +143,7 @@ export class FireLog {
   /** True while a fire is being handled in the given thread. */
   threadBusy(threadId: string): boolean {
     return this.all().some(
-      (fire) => (fire.status === "running" || fire.status === "delivered") && fire.target?.threadId === threadId,
+      (fire) => fire.status === "delivered" && fire.target?.threadId === threadId,
     );
   }
 }
