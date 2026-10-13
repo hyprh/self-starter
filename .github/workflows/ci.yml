@@ -70,8 +70,8 @@ jobs:
   # With the real Claude Code CLI: installs the plugin from this checkout as the
   # README says, and runs fires into an interactive session (in tmux), a closed
   # session and a trigger's own session, with a stand-in model (test/e2e/cc-agent.ts).
-  e2e-claude-code:
-    name: End to end in Claude Code (${{ matrix.os }})
+  e2e-cc:
+    name: End to end in CC (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
