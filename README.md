@@ -22,30 +22,7 @@ Status: working MVP, verified end to end with the Codex CLI and app server. CI i
 
 ## How it works
 
-```mermaid
-flowchart TB
-    you(["You: when X happens, do Y"])
-    subgraph codex ["Codex app or CLI"]
-        conversation["Your conversation"]
-        plugin["Self-Starter plugin<br/>skill + MCP tools"]
-    end
-    subgraph service ["Self-Starter service"]
-        engine["Engine<br/>schedule + firing rules"]
-        executor["Executor"]
-    end
-    probe["Probe<br/>a few lines of TypeScript"]
-    world[("Files, commands,<br/>local services, web APIs")]
-    notify["Desktop and email"]
-
-    you --> conversation
-    conversation -- "1 · creates a trigger" --> plugin
-    plugin -- "2 · local socket" --> engine
-    engine -- "3 · runs it on a schedule, no model calls" --> probe
-    probe --- world
-    engine -- "4 · it happened" --> executor
-    executor -- "5 · codex queue, waking the thread if Codex is closed;<br/>Codex acts and reports back with trigger_report" --> conversation
-    executor -- "6 · the result" --> notify
-```
+<p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
 
 - **Probes are code, the engine owns the rules.** A probe answers "what do I see now, and does it count?". The engine runs it on a schedule the probe can adapt (check more often near a threshold), fires only when a condition becomes true (with optional minimum duration, re-arm hysteresis, cooldown, max fires and expiry), deduplicates events, retries, and alerts you when a probe keeps failing.
 - **Probes run on your machine, as you.** A probe can read files and logs, run the commands you have (`git`, `gh`, `docker`, a skill's scripts), talk to local services and call web APIs. When a probe only needs a few web APIs, it can run in a sandbox instead (`probe.access: sandbox`): network to the hosts it declares, no files, no commands.

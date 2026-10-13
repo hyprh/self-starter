@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 316" role="img" aria-labelledby="title desc">
+  <title id="title">How Self-Starter works</title>
+  <desc id="desc">You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs the trigger's probe on a schedule, without calling a model. When the probe sees it happen, the service hands the task back to the conversation, opening it in the background if Codex is closed, and sends you the result on the desktop or by email.</desc>
+  <style>
+    svg { --panel: #f6f8fa; --card: #ffffff; --edge: #d1d9e0; --text: #1f2328; --muted: #59636e; --flow: #8c959f; --fire: #d46b08; --pill: #fff4e5; }
+    @media (prefers-color-scheme: dark) {
+      svg { --panel: #151b23; --card: #0d1117; --edge: #3d444d; --text: #f0f6fc; --muted: #9198a1; --flow: #768390; --fire: #f0883e; --pill: #2b1d0e; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif; fill: var(--text); }
+    .kicker { font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; fill: var(--muted); }
+    .title { font-size: 19px; font-weight: 600; }
+    .sub { font-size: 13px; fill: var(--muted); }
+    .label { font-size: 12.5px; fill: var(--muted); text-anchor: middle; }
+    .num { font-size: 10.5px; font-weight: 700; fill: var(--card); text-anchor: middle; }
+    .card { fill: var(--card); stroke: var(--edge); }
+    .line { stroke: var(--flow); stroke-width: 1.5; fill: none; }
+    .tip, .badge { fill: var(--flow); }
+    .fire .line { stroke: var(--fire); }
+    .fire .tip, .fire .badge { fill: var(--fire); }
+    .fire .label { fill: var(--fire); }
+    .panel { fill: var(--panel); }
+    .pill { fill: var(--pill); stroke: var(--fire); }
+    .pill-text { font-size: 13px; font-weight: 600; fill: var(--fire); text-anchor: middle; }
+  </style>
+
+  <rect class="panel" width="960" height="316" rx="16"/>
+  <g transform="translate(0 -18)">
+
+  <!-- The three parts -->
+  <rect class="card" x="32" y="76" width="210" height="132" rx="12"/>
+  <text class="kicker" x="52" y="104">CODEX APP OR CLI</text>
+  <text class="title" x="52" y="131">Your conversation</text>
+  <text class="sub" x="52" y="157">Self-Starter plugin:</text>
+  <text class="sub" x="52" y="175">a skill and MCP tools</text>
+
+  <rect class="card" x="375" y="76" width="210" height="132" rx="12"/>
+  <text class="kicker" x="395" y="104">ON YOUR MACHINE</text>
+  <text class="title" x="395" y="131">Self-Starter</text>
+  <text class="sub" x="395" y="157">background service:</text>
+  <text class="sub" x="395" y="175">schedule, rules, delivery</text>
+
+  <rect class="card" x="718" y="76" width="210" height="132" rx="12"/>
+  <text class="kicker" x="738" y="104">WATCHES</text>
+  <text class="title" x="738" y="131">Probe</text>
+  <text class="sub" x="738" y="157">a few lines of TypeScript:</text>
+  <text class="sub" x="738" y="175">files, commands, web APIs</text>
+
+  <!-- Watching: grey, left to right -->
+  <g>
+    <path class="line" d="M242 112 H367"/><path class="tip" d="M375 112 l-8 -4 v8 z"/>
+    <circle class="badge" cx="308.5" cy="112" r="9"/><text class="num" x="308.5" y="115.8">1</text>
+    <text class="label" x="308.5" y="92">create a trigger</text>
+  </g>
+  <g>
+    <path class="line" d="M585 112 H710"/><path class="tip" d="M718 112 l-8 -4 v8 z"/>
+    <circle class="badge" cx="651.5" cy="112" r="9"/><text class="num" x="651.5" y="115.8">2</text>
+    <text class="label" x="651.5" y="77">runs on a schedule,</text>
+    <text class="label" x="651.5" y="92">no model calls</text>
+  </g>
+
+  <!-- Reacting: orange, right to left -->
+  <g class="fire">
+    <path class="line" d="M718 172 H593"/><path class="tip" d="M585 172 l8 -4 v8 z"/>
+    <circle class="badge" cx="651.5" cy="172" r="9"/><text class="num" x="651.5" y="175.8">3</text>
+    <text class="label" x="651.5" y="198">it happened</text>
+  </g>
+  <g class="fire">
+    <path class="line" d="M375 172 H250"/><path class="tip" d="M242 172 l8 -4 v8 z"/>
+    <circle class="badge" cx="308.5" cy="172" r="9"/><text class="num" x="308.5" y="175.8">4</text>
+    <text class="label" x="308.5" y="198">the task comes back,</text>
+    <text class="label" x="308.5" y="213">Codex acts on it</text>
+  </g>
+  <g class="fire">
+    <path class="line" d="M480 208 V256"/><path class="tip" d="M480 264 l-4 -8 h8 z"/>
+    <circle class="badge" cx="480" cy="234" r="9"/><text class="num" x="480" y="237.8">5</text>
+    <rect class="pill" x="372" y="264" width="216" height="34" rx="17"/>
+    <text class="pill-text" x="480" y="285.5">the result: desktop, email</text>
+  </g>
+
+  <!-- Notes -->
+  <text class="sub" x="32" y="270">If Codex is closed, Self-Starter opens</text>
+  <text class="sub" x="32" y="288">the conversation in the background, so</text>
+  <text class="sub" x="32" y="306">the answer is there when you come back.</text>
+  <text class="sub" x="928" y="270" text-anchor="end">Watching costs no tokens:</text>
+  <text class="sub" x="928" y="288" text-anchor="end">Codex only runs when</text>
+  <text class="sub" x="928" y="306" text-anchor="end">something happened.</text>
+  </g>
+</svg>
