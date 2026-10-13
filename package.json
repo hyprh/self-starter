@@ -1,6 +1,6 @@
 {
   "name": "self-starter",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MIT",
   "private": true,
   "description": "Give Codex eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, Codex starts working on its own, right in your conversation, even if it's closed. Zero tokens while it waits.",
@@ -24,6 +24,7 @@
   "files": [
     "dist/src",
     "plugin",
+    "cc-plugin",
     "recipes"
   ],
   "engines": {

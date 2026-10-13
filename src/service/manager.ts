@@ -9,6 +9,7 @@ import { delimiter, dirname, join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
 import type { Paths } from "../engine/paths.js";
+import { findClaude } from "../engine/sessions.js";
 import { CLI_SCRIPT, VERSION } from "../runtime.js";
 
 export const LAUNCHD_LABEL = "dev.self-starter.daemon";
@@ -102,7 +103,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     .map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`)
     .join("\n");
   return `[Unit]
-Description=Self-Starter: runs trigger probes and hands fires to Codex
+Description=Self-Starter: runs trigger probes and hands fires to Codex or Claude Code
 
 [Service]
 ExecStart=${systemdQuote(spec.node)} ${systemdQuote(spec.script)} daemon
@@ -216,14 +217,15 @@ export function serviceManager(): ServiceManager {
   return new NoManager();
 }
 
-/** PATH for the daemon: where node and codex live, then the current PATH. */
-export function servicePath(codexBin: string | undefined): string {
-  const dirs = [dirname(process.execPath), ...(codexBin ? [dirname(codexBin)] : []), ...(process.env.PATH ?? "").split(delimiter)];
+/** PATH for the daemon: where node and the agents' CLIs live, then the current PATH. */
+export function servicePath(agentBins: Array<string | undefined>): string {
+  const bins = agentBins.filter((bin): bin is string => bin !== undefined);
+  const dirs = [dirname(process.execPath), ...bins.map((bin) => dirname(bin)), ...(process.env.PATH ?? "").split(delimiter)];
   return [...new Set(dirs.filter(Boolean))].join(delimiter);
 }
 
-export function serviceSpec(paths: Paths, codexBin: string | undefined): ServiceSpec {
-  const env: Record<string, string> = { PATH: servicePath(codexBin) };
+export function serviceSpec(paths: Paths, agentBins: Array<string | undefined>): ServiceSpec {
+  const env: Record<string, string> = { PATH: servicePath(agentBins) };
   if (process.env.SELF_STARTER_HOME) env.SELF_STARTER_HOME = paths.home;
   if (process.env.CODEX_HOME) env.CODEX_HOME = process.env.CODEX_HOME;
   return { node: process.execPath, script: CLI_SCRIPT, env, logFile: join(paths.logs, "service.log") };
@@ -288,17 +290,19 @@ export function writeCommand(paths: Paths): string {
 
 /**
  * Makes the background service run this installation from now on and starts it,
- * stopping whatever daemon still runs. Also records the codex CLI for the daemon,
- * and writes the self-starter command.
+ * stopping whatever daemon still runs. Also records the agents' CLIs for the
+ * daemon, as found from here (an agent's MCP server sees the user's PATH), and
+ * writes the self-starter command.
  */
 export async function installService(paths: Paths, manager = serviceManager()): Promise<void> {
   const config = loadConfig(paths);
   config.codexBin ??= findCodex();
+  config.claudeBin ??= findClaude();
   config.service = true;
   saveConfig(paths, config);
   await stopRunningDaemon(paths);
   writeCommand(paths);
-  manager.install(serviceSpec(paths, config.codexBin));
+  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin]));
 }
 
 /**

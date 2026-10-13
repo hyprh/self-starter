@@ -66,3 +66,28 @@ jobs:
       - run: npm link && self-starter version
       - run: node dist/test/e2e/install.js
       - run: node dist/test/e2e/agent.js
+
+  # With the real Claude Code CLI: installs the plugin from this checkout as the
+  # README says, and runs fires into an interactive session (in tmux), a closed
+  # session and a trigger's own session, with a stand-in model (test/e2e/cc-agent.ts).
+  e2e-cc:
+    name: End to end in CC (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code && claude --version
+      - name: Get tmux
+        run: |
+          command -v tmux && exit 0
+          if [ "$RUNNER_OS" = macOS ]; then brew install tmux; else sudo apt-get update -qq && sudo apt-get install -y -qq tmux; fi
+      - run: node dist/test/e2e/cc-agent.js

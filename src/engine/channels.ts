@@ -6,6 +6,7 @@
 
 import { hostname } from "node:os";
 import nodemailer from "nodemailer";
+import { reopen } from "../core/conversations.js";
 import { CHANNELS, type Channel } from "../core/definition.js";
 import { loadConfig, saveConfig, type Config, type EmailSettings } from "./config.js";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
@@ -73,7 +74,9 @@ export function composeEmail(notification: Notification): { subject: string; tex
   const subject = `[Self-Starter] ${notification.title}: ${firstLine}`.slice(0, 160);
   const lines = [notification.body, ""];
   if (notification.threadId) {
-    lines.push(`Open the thread in Codex: codex://threads/${notification.threadId}`, `Or in a terminal: codex resume ${notification.threadId}`, "");
+    const link = reopen(notification.threadId);
+    if (link.url) lines.push(`Open the thread in Codex: ${link.url}`, `Or in a terminal: ${link.command}`, "");
+    else lines.push(`Open the session in a terminal: ${link.command}`, "");
   }
   lines.push(`Sent by Self-Starter on ${hostname()}.`);
   return { subject, text: lines.join("\n") };

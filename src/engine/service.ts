@@ -1,10 +1,11 @@
 // The operations behind the control API: drafts and activation, changes, queries
 // and receipts. Requests come from the plugin's MCP server on behalf of a Codex
-// thread, or from the self-starter CLI in a terminal.
+// thread or a Claude Code session, or from the self-starter CLI in a terminal.
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { agentName, hostFor, hostOf, sessionIdOf, type Host } from "../core/conversations.js";
 import { describeState, describeTrigger } from "../core/describe.js";
 import { definitionToYaml, probeTimings, validateDefinition, type TriggerDefinition } from "../core/definition.js";
 import { parseDuration } from "../core/duration.js";
@@ -17,6 +18,7 @@ import type { Executor } from "./executor.js";
 import type { FireLog, FireRecord } from "./fires.js";
 import type { Paths } from "./paths.js";
 import { applyRecipe, listRecipes, loadRecipe, type Recipe } from "./recipes.js";
+import { triggerTurn } from "./sessions.js";
 import type { DryRun, LoadedDraft, LoadedTrigger, Store } from "./store.js";
 
 export type ErrorCode = "not_found" | "invalid" | "refused" | "conflict";
@@ -30,7 +32,10 @@ export class ServiceError extends Error {
   }
 }
 
-/** Who is asking. For requests from Codex, the ids come from the MCP call's _meta, which the model cannot set. */
+/**
+ * Who is asking. For requests from Codex, the ids come from the MCP call's _meta, which the model cannot set;
+ * for requests from Claude Code, threadId is "cc:" and the session the MCP server's process shows.
+ */
 export interface Caller {
   via: "mcp" | "cli";
   threadId?: string;
@@ -63,6 +68,7 @@ export interface ServiceDeps {
   recipesDir: string;
   deno: () => string | undefined;
   codexBin: () => string | undefined;
+  claudeBin?: () => string | undefined;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -88,6 +94,8 @@ export interface TriggerSummary {
   health: string;
   action: string;
   target: string;
+  /** The agent its fires go to. */
+  host: Host;
   threadId: string | null;
   fires: number;
   lastCheck: { at: string; ok: boolean; summary?: string; error?: string } | null;
@@ -174,6 +182,9 @@ export class TriggerService {
     if (caller.turnTrigger === "queue" && caller.threadId && this.recentFireIn(caller.threadId)) {
       return "this turn was started by a queued message, and this thread recently received a trigger fire.";
     }
+    // In Claude Code, the plugin's hooks record what started the session's turn.
+    const sessionId = sessionIdOf(caller.threadId);
+    if (sessionId && triggerTurn(this.deps.paths, sessionId)) return "this turn was started by a Self-Starter message.";
     return undefined;
   }
 
@@ -182,6 +193,10 @@ export class TriggerService {
     const ids = new Set<string>();
     const reported = caller.turnId ? this.reportedTurns.get(caller.turnId) : undefined;
     if (reported) ids.add(reported);
+    const sessionId = sessionIdOf(caller.threadId);
+    const fireId = sessionId ? triggerTurn(this.deps.paths, sessionId)?.fireId : undefined;
+    const started = fireId ? this.deps.fires.get(fireId) : undefined;
+    if (started) ids.add(started.triggerId);
     for (const fire of this.deps.fires.all()) {
       if (fire.status === "delivered" && caller.threadId && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
     }
@@ -326,11 +341,12 @@ export class TriggerService {
     } else if (trial?.ok && def.mode === "event" && (trial.events ?? 0) > 0) {
       out.push(`The trial run saw ${trial.events} event(s). They count as already seen; only events that appear later fire the trigger.`);
     }
+    const conversation = hostOf(draft.meta.originThreadId) === "codex" ? "thread" : "session";
     if (def.action.type === "agent" && def.target.kind === "origin" && !draft.meta.originThreadId) {
-      out.push("This request did not identify a Codex thread, so fires will go to a dedicated thread instead.");
+      out.push("This request did not identify a conversation, so fires will go to a dedicated thread instead.");
     }
     if (def.action.type === "agent" && def.target.kind === "dedicated" && !def.target.cwd) {
-      out.push("target.cwd is not set, so the dedicated thread will work in the user's home folder.");
+      out.push(`target.cwd is not set, so the dedicated ${conversation} will work in the user's home folder.`);
     }
     return out;
   }
@@ -530,7 +546,8 @@ export class TriggerService {
     }
     this.deps.log(`tuned ${tuned.id} (${caller.via}${fromFire ? ", while handling a fire" : ""}): ${changes.join("; ")}; reason: ${reason}`);
     if (fromFire) {
-      await this.deps.executor.notifyAbout(tuned, { title: `${tuned.name}: Codex made it quieter`, body: `${changes.join("; ")}. Why: ${reason}` });
+      const agent = agentName(hostOf(caller.threadId));
+      await this.deps.executor.notifyAbout(tuned, { title: `${tuned.name}: ${agent} made it quieter`, body: `${changes.join("; ")}. Why: ${reason}` });
     }
     return { changes, reason, trigger: this.get({ triggerId: tuned.id }) };
   }
@@ -582,6 +599,7 @@ export class TriggerService {
       health: runtime.health,
       action: def?.action.type ?? "unknown",
       target: def?.target.kind ?? "unknown",
+      host: def ? hostFor(def) : "codex",
       threadId,
       fires: runtime.fireCount,
       lastCheck: last ? { at: last.ranAt, ok: last.ok, ...(last.summary ? { summary: last.summary } : {}), ...(last.error ? { error: last.error } : {}) } : null,
@@ -666,6 +684,7 @@ export class TriggerService {
       home: this.deps.paths.home,
       deno: this.deps.deno() ?? null,
       codex: this.deps.codexBin() ?? null,
+      claude: this.deps.claudeBin?.() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {

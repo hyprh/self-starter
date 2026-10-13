@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { hostOf } from "../core/conversations.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
 import { loadConfig, saveConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
@@ -16,10 +17,12 @@ import { doctor, install, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
 
-const HELP = `self-starter ${VERSION}: let Codex act when something happens
+const HELP = `self-starter ${VERSION}: let Codex or Claude Code act when something happens
 
 Setup
-  self-starter install [--codex <path>] [--no-service]  install the Codex plugin and the background service
+  self-starter install [--codex <path>] [--claude <path>] [--no-service]
+                                                         install the plugin in Codex and Claude Code (those found),
+                                                         and the background service
   self-starter uninstall [--purge]                       remove them (--purge also deletes triggers and history)
   self-starter doctor                                    check the installation
 
@@ -29,9 +32,9 @@ Triggers
   self-starter test <id>                                 run the probe once, without firing
   self-starter pause <id> | resume <id> | delete <id>
   self-starter history [<id>] [-n <count>]               recent fires and what came of them
-  self-starter drafts                                    drafts Codex tried but did not turn on
+  self-starter drafts                                    drafts the agent tried but did not turn on
   self-starter activate <draft-id>                       turn a draft on
-  self-starter recipes                                   ready-made recipes Codex can set up for you
+  self-starter recipes                                   ready-made recipes the agent can set up for you
 
 Secrets (API keys for probes)
   self-starter secret set <NAME> [--hosts <host,...>]    store a secret; --hosts limits which hosts a sandboxed probe may send it to
@@ -50,7 +53,7 @@ Background service
   self-starter service install|uninstall|start|stop|restart|status
   self-starter logs [-n <lines>]
   self-starter daemon                                    run the daemon in the foreground
-  self-starter mcp                                       run the MCP server on stdio (Codex starts it)
+  self-starter mcp                                       run the MCP server on stdio (the agent starts it)
 `;
 
 const paths = resolvePaths();
@@ -74,18 +77,28 @@ function printSummary(t: TriggerSummary): void {
   const last = t.lastCheck
     ? `last check ${when(t.lastCheck.at)} ${t.lastCheck.ok ? `ok: ${clip(t.lastCheck.summary ?? "")}` : `failed: ${clip(t.lastCheck.error ?? "")}`}`
     : "not checked yet";
-  const target = t.action === "notify" ? "notify only" : `agent → ${t.target} thread${t.threadId ? ` ${t.threadId}` : ""}`;
+  const target = t.action === "notify" ? "notify only" : `agent → ${t.target} ${t.host === "codex" ? "thread" : "session"}${t.threadId ? ` ${t.threadId}` : ""}`;
   out(`${t.id}  ${t.name}`);
   out(`  ${t.state} · ${last}`);
   out(`  next check ${when(t.nextCheck)} · ${t.fires} fire(s) · ${target}`);
 }
 
-/** Where Codex answered a fire: in a Codex app that had the thread open, or in the thread opened in the background. */
+function conversationNoun(ref: string | null | undefined): string {
+  return hostOf(ref) === "codex" ? "thread" : "session";
+}
+
+/**
+ * Where a fire was answered: in a Codex app that had the thread open, or in the thread opened in the background;
+ * in a Claude Code session that was open, or in the session resumed in the background.
+ */
 function answeredWhere(fire: FireView): string {
   const source = fire.receipt?.source;
-  if (!fire.target?.threadId || (source !== "tool" && source !== "final-answer")) return "";
-  const thread = fire.target.kind === "dedicated" ? "its own thread" : "your thread";
-  return `  (${thread}, ${fire.wokenAt ? "opened in the background" : "open in Codex"})`;
+  const ref = fire.target?.threadId;
+  if (!ref || (source !== "tool" && source !== "final-answer")) return "";
+  const where = `${fire.target?.kind === "dedicated" ? "its own" : "your"} ${conversationNoun(ref)}`;
+  const codex = hostOf(ref) === "codex";
+  const how = fire.wokenAt ? (codex ? "opened in the background" : "resumed in the background") : codex ? "open in Codex" : "open in Claude Code";
+  return `  (${where}, ${how})`;
 }
 
 async function activate(draftId: string): Promise<void> {
@@ -110,7 +123,7 @@ async function serviceCommand(action: string | undefined): Promise<void> {
     case "uninstall":
       manager.uninstall();
       saveConfig(paths, { ...loadConfig(paths), service: false });
-      out("Removed the background service. Codex starts the daemon when it needs it; `self-starter service install` brings the service back.");
+      out("Removed the background service. The plugin starts the daemon when it needs it; `self-starter service install` brings the service back.");
       return;
     case "start":
       await ensureDaemon(paths);
@@ -181,16 +194,17 @@ async function main(argv: string[]): Promise<void> {
       out(VERSION);
       return;
     case "mcp":
-      await runMcpServer({ paths });
+      // --tools-changed: the plugin's launcher answered the host while it installed this runtime.
+      await runMcpServer({ paths, toolsChanged: args.flags.has("tools-changed") });
       return;
     case "daemon":
       await runDaemonForeground();
       return;
     case "install":
-      await install(paths, { codex: flag(args, "codex"), service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
-      out("\nDone. Restart the Codex app (or start a new `codex` session) so it loads the plugin, then ask Codex, for example:");
+      await install(paths, { codex: flag(args, "codex"), claude: flag(args, "claude"), service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
+      out("\nDone. Restart the Codex app, or start a new `codex` or `claude` session, so it loads the plugin. Then ask, for example:");
       out('  "Watch https://example.com/status and tell me when it stops returning 200."');
-      out("Codex uses the skill $self-starter:triggers to set it up.");
+      out("The agent uses the plugin's skill (self-starter:triggers) to set it up.");
       return;
     case "uninstall":
       await uninstall(paths, { purge: args.flags.has("purge"), log: (l) => out(`✓ ${l}`) });
@@ -203,7 +217,7 @@ async function main(argv: string[]): Promise<void> {
     }
     case "list": {
       const list = await daemonCall<TriggerSummary[]>("trigger.list");
-      if (list.length === 0) return out("No triggers yet. Ask Codex to watch something for you.");
+      if (list.length === 0) return out("No triggers yet. Ask Codex or Claude to watch something for you.");
       list.forEach((t, i) => {
         if (i > 0) out();
         printSummary(t);
@@ -229,7 +243,8 @@ async function main(argv: string[]): Promise<void> {
       return;
     case "delete": {
       const result = await daemonCall<{ deleted: string; dedicatedThreadId: string | null }>("trigger.delete", { triggerId: need(id, "trigger id") });
-      out(`Deleted ${result.deleted}.${result.dedicatedThreadId ? ` Its thread ${result.dedicatedThreadId} was kept in Codex.` : ""}`);
+      const kept = result.dedicatedThreadId ? ` Its ${conversationNoun(result.dedicatedThreadId)} ${result.dedicatedThreadId} was kept.` : "";
+      out(`Deleted ${result.deleted}.${kept}`);
       return;
     }
     case "history": {
@@ -253,7 +268,7 @@ async function main(argv: string[]): Promise<void> {
         out(`  ${r.summary}`);
         if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (self-starter secret set ...)`);
       }
-      out("\nAsk Codex to set one up, for example: \"watch my IBKR account for unusual activity\" or \"tell me when analysts change their view on Tencent\".");
+      out("\nAsk Codex or Claude to set one up, for example: \"watch my IBKR account for unusual activity\" or \"tell me when analysts change their view on Tencent\".");
       return;
     }
     case "drafts": {

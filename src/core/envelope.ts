@@ -74,10 +74,10 @@ export function renderEnvelope(input: EnvelopeInput): string {
   return lines.join("\n");
 }
 
-/** The first message of a dedicated thread. */
-export function renderDedicatedSeed(def: TriggerDefinition): string {
+/** The first message of a dedicated thread (a session, in Claude Code). */
+export function renderDedicatedSeed(def: TriggerDefinition, conversation: "thread" | "session" = "thread"): string {
   return [
-    `${MESSAGE_PREFIX} This thread belongs to the trigger "${def.name}" (${def.id}).`,
+    `${MESSAGE_PREFIX} This ${conversation} belongs to the trigger "${def.name}" (${def.id}).`,
     "",
     `The user's words: ${def.intent}`,
     `What happens when it fires: ${def.action.prompt ?? "the user is notified"}`,

@@ -1,5 +1,5 @@
 // self-starter daemon: the background process that runs probes (Engine), hands fires to
-// Codex (Executor), and answers the control API (TriggerService).
+// Codex or Claude Code (Executor), and answers the control API (TriggerService).
 
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import { SystemNotifier, type Notifier } from "../engine/notify.js";
 import { resolvePaths, type Paths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
 import { TriggerService } from "../engine/service.js";
+import { ClaudeCli, findClaude, type SessionRunner } from "../engine/sessions.js";
 import { Store } from "../engine/store.js";
 import { PACKAGE_ROOT, VERSION } from "../runtime.js";
 import { startControlServer } from "./control.js";
@@ -26,6 +27,8 @@ export interface DaemonOptions {
   notifier?: Notifier;
   /** Overrides how the codex CLI is reached (tests). */
   codex?: () => CodexRunner | undefined;
+  /** Overrides how headless Claude Code turns run (tests). */
+  claude?: () => SessionRunner | undefined;
   logToStderr?: boolean;
   now?: () => Date;
   /** Called when a client asks the daemon to stop. */
@@ -117,12 +120,20 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
         const bin = codexBin();
         return bin ? new CodexCli(bin) : undefined;
       });
+    // Read when needed: the config may name it after the daemon started.
+    const claudeBin = () => loadConfig(paths).claudeBin ?? findClaude();
+    const claude =
+      options.claude ??
+      (() => {
+        const bin = claudeBin();
+        return bin ? new ClaudeCli(bin) : undefined;
+      });
     const deno = () => resolveDeno(config);
     const clock = options.now ? { now: options.now } : {};
-    const executor = new Executor({ store, fires, paths, config, notifier, codex, log, ...clock });
+    const executor = new Executor({ store, fires, paths, config, notifier, codex, claude, log, ...clock });
     const engine = new Engine({ store, executor, secrets, paths, config, deno, log, ...clock });
     const recipesDir = options.recipesDir ?? join(PACKAGE_ROOT, "recipes");
-    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, log, ...clock });
+    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, claudeBin, log, ...clock });
     const handlers = service.handlers();
     handlers["daemon.stop"] = () => {
       setTimeout(() => options.onStopRequest?.(), 50);
@@ -131,7 +142,9 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     const server = await startControlServer(paths.socket, handlers, log);
     engine.start();
     executor.kick();
-    log(`self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"})`);
+    log(
+      `self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"}, claude ${claudeBin() ?? "missing"})`,
+    );
     return {
       paths,
       store,

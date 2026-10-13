@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "self_starter": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/start.mjs", "mcp"]
+    }
+  }
+}

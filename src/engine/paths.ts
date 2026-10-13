@@ -19,20 +19,26 @@ export interface Paths {
   denoDir: string;
   /** The local plugin marketplace that `self-starter install` registers with Codex. */
   marketplace: string;
+  /** What the Claude Code plugin's hooks record about each session (conversation), by session id. */
+  sessions: string;
+  /** One file per running Claude Code process: the session it shows and its inbox socket. */
+  inboxes: string;
 }
 
-/** Unix socket paths are limited to about 100 bytes; long homes get a socket in the temp folder. */
+/** Unix socket paths are limited to about 100 bytes; long ones are replaced by a socket in the temp folder. */
 const SOCKET_PATH_MAX = 100;
+
+/** `path`, or when it is too long for a Unix socket, a short one in the temp folder that is the same for the same `seed`. */
+export function socketPath(path: string, seed: string): string {
+  if (Buffer.byteLength(path) <= SOCKET_PATH_MAX) return path;
+  return join(tmpdir(), `self-starter-${createHash("sha256").update(seed).digest("hex").slice(0, 16)}.sock`);
+}
 
 export function resolvePaths(given = process.env.SELF_STARTER_HOME || join(homedir(), ".self-starter")): Paths {
   // Absolute and normalized: the CLI, the service and the MCP servers Codex starts
   // in other folders must all find the same files and the same socket.
   const home = resolve(given);
-  let socket = join(home, "daemon.sock");
-  if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) {
-    const digest = createHash("sha256").update(home).digest("hex").slice(0, 16);
-    socket = join(tmpdir(), `self-starter-${digest}.sock`);
-  }
+  const socket = socketPath(join(home, "daemon.sock"), home);
   return {
     home,
     triggers: join(home, "triggers"),
@@ -47,5 +53,7 @@ export function resolvePaths(given = process.env.SELF_STARTER_HOME || join(homed
     logs: join(home, "logs"),
     denoDir: join(home, "deno-cache"),
     marketplace: join(home, "marketplace"),
+    sessions: join(home, "sessions"),
+    inboxes: join(home, "inboxes"),
   };
 }
