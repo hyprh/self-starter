@@ -124,6 +124,10 @@ h3 { font-weight: 700; font-size: 1.05rem; line-height: 1.3; }
 .then { font-size: 0.9rem; color: var(--muted); }
 .then b { color: var(--fg); font-weight: 600; }
 
+.ideas { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 2rem; }
+@media (min-width: 46rem) { .ideas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ideas li { display: flex; justify-content: space-between; align-items: baseline; gap: 0.8rem; padding-block: 0.6rem; border-bottom: 1px solid var(--line); font-size: 0.95rem; min-width: 0; }
+
 section > .wrap.email { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: center; }
 @media (min-width: 52rem) { section > .wrap.email { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; } }
 .email > div { display: flex; flex-direction: column; gap: 0.6rem; }
@@ -249,6 +253,21 @@ self-starter install</code></pre>
           <p class="then"><b>Then Codex</b> reads the new report with <a href="https://www.futunn.com/skillhub">Futu's skills</a> (stock digest, community sentiment) and sums up what changed. A ready-made recipe: <code>futu-news</code>.</p>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="ideas">
+    <div class="wrap">
+      <h2 id="ideas">More to try</h2>
+      <p class="sub">One sentence each. A probe needs only what it reads: <code>gh</code> for GitHub, <code>nvidia-smi</code> for a GPU.</p>
+      <ul class="ideas">
+        <li>“Whenever CI fails on main, find the cause and propose a fix.”<span class="tag">gh run list</span></li>
+        <li>“When my PR gets review comments, address them and push.”<span class="tag">gh pr view</span></li>
+        <li>“When a new error shows up in logs/app.log, find the cause.”<span class="tag">log file</span></li>
+        <li>“If the disk gets 90% full, find what grew and what can go.”<span class="tag">df</span></li>
+        <li>“When the GPU is idle for 10 min, start the next experiment.”<span class="tag">nvidia-smi</span></li>
+        <li>“When a speculative decoding paper hits arXiv, sum it up.”<span class="tag">arXiv API</span></li>
+      </ul>
     </div>
   </section>
 

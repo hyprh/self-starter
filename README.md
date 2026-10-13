@@ -29,18 +29,23 @@ Codex:  exp42 finished: val loss 0.412 vs 0.437 for exp41, same accuracy. Keep e
 
 ## What to watch
 
-Ask Codex in one sentence. It writes the probe, tries it once and turns it on.
+Anything a few lines of code can check: a file, a command, a local service, a web page or API. Ask Codex in one sentence; it writes the probe, tries it once and turns it on.
 
-| You say | Self-Starter watches | Then Codex |
+| | Ask Codex | Self-Starter watches |
 |---|---|---|
-| "When the training run finishes, compare it with the last one." | the end of the training log | compares the runs and says which to keep |
-| "If the dev server is down for two minutes, find out why." | the health endpoint | reads the logs, fixes what it can, restarts it |
-| "Whenever CI fails on main, find the cause." | `gh run list` | finds the failing step and proposes a fix |
-| "When a new version of zod is out, try it on a branch." | the npm registry | upgrades, runs the tests, says if it is safe |
-| "When a new invoice lands in invoices/, add it to expenses.csv." | the folder | reads the PDF and adds the row |
-| "Tell me when NVDA closes above $235, with the numbers." | the daily close | reports the move, volume and context |
-| "Tell me when analysts change their view on Tencent." | Futu research reports ([`futu-news`](recipes/futu-news)) | sums it up with [Futu's skills](https://www.futunn.com/skillhub) |
-| "Watch my IBKR account for anything unusual." | IBKR Flex reports ([`ibkr-account`](recipes/ibkr-account)) | explains trades, assignments and transfers |
+| **Long jobs** | "When the training run finishes, compare it with the last one." | the end of the training log |
+| | "When the GPU is idle for 10 min, start the next experiment." | `nvidia-smi` |
+| **Code** | "Whenever CI fails on main, find the cause and propose a fix." | `gh run list` |
+| | "When my PR gets review comments, address them and push." | `gh pr view` |
+| | "When a new version of zod is out, try it on a branch." | the npm registry |
+| **Services** | "If the dev server is down for two minutes, find out why." | the health endpoint |
+| | "When a new error shows up in logs/app.log, find the cause." | the log file |
+| **Reading** | "When a speculative decoding paper hits arXiv, sum it up." | the arXiv API |
+| | "When Codex comes up on Hacker News, tell me what people say." | Hacker News search |
+| **Files** | "When a new invoice lands in invoices/, add it to expenses.csv." | the folder |
+| **Markets** | "Tell me when NVDA closes above $235, with the numbers." | the daily close |
+| | "Tell me when analysts change their view on Tencent." | Futu research ([`futu-news`](recipes/futu-news)) |
+| | "Watch my IBKR account for anything unusual." | IBKR Flex reports ([`ibkr-account`](recipes/ibkr-account)) |
 
 ## Install
 
