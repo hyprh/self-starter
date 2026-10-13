@@ -51,9 +51,8 @@ describe("the Claude Code plugin marketplace in this repository", () => {
     const run = (entry: Entry) => [entry.hooks[0]!.command, ...entry.hooks[0]!.args];
     const { PreToolUse, ...session } = hooks;
     const approve = PreToolUse?.[0];
-    assert.deepEqual(Object.keys(session).sort(), ["Notification", "SessionEnd", "SessionStart", "Stop", "StopFailure", "UserPromptSubmit"]);
+    assert.deepEqual(Object.keys(session).sort(), ["SessionEnd", "SessionStart", "Stop", "StopFailure", "UserPromptSubmit"]);
     for (const [event, entries] of Object.entries(session)) assert.deepEqual(run(entries[0]!), ["node", "${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], event);
-    assert.equal(session.Notification![0]!.matcher, "idle_prompt");
 
     assert.deepEqual(run(approve!), ["node", "${CLAUDE_PLUGIN_ROOT}/bin/approve.mjs"]);
     const approved = (tool: string) => new RegExp(approve!.matcher!).test(`${PLUGIN_SERVER_RULE}__${tool}`);

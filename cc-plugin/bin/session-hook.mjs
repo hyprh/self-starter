@@ -1,9 +1,10 @@
-// Claude Code runs this at SessionStart, UserPromptSubmit, Stop, StopFailure,
-// Notification (idle_prompt) and SessionEnd. It records which session each
-// running Claude Code process shows, where each session works, and whether a
-// turn is running there, so that Self-Starter can bring a fire to the session
-// where the trigger was made: into it once its turn is over while a process
-// shows it, headless with `claude -p --resume` once none does. It also records
+// Claude Code runs this at SessionStart, UserPromptSubmit, Stop, StopFailure
+// and SessionEnd. It records which session each running Claude Code process
+// shows, where each session works, and whether a turn is running there, so that
+// Self-Starter can bring a fire to the session where the trigger was made: into
+// it once its turn is over while a process shows it, headless with `claude -p
+// --resume` once none does. (A turn the user interrupts runs no hook; the engine
+// then goes by when the session last wrote its transcript.) It also records
 // whether a fire started the current turn, which then cannot change triggers.
 // It only writes small files under ~/.self-starter, prints nothing (the output
 // of some hooks reaches the model) and never fails the hook.
@@ -73,10 +74,8 @@ try {
         break;
       }
       case "Stop":
-      case "StopFailure":
-      case "Notification": {
-        // The turn is over. The notification is idle_prompt, which also follows a turn the user
-        // interrupted, where Stop does not run.
+      case "StopFailure": {
+        // The turn is over.
         const session = read(sessionFile);
         if (session?.turn?.running) write(sessionFile, { ...session, turn: { ...session.turn, at: now, running: false } });
         break;

@@ -5,7 +5,8 @@
 // and where each session works and whether a turn runs there (sessions/<id>.json).
 //
 // A fire for a session that a process shows goes into that process's inbox once
-// no turn runs there (the executor decides when), and Claude Code starts a turn
+// no turn runs there (the executor decides when, from the hooks' records and from
+// when the session last wrote its transcript), and Claude Code starts a turn
 // with it. It is posted by the plugin's MCP server in that process, through a
 // small relay socket: as the session's own child, it is delivered in every
 // permission mode, where a message from outside waits for the user's approval in
@@ -15,7 +16,7 @@
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { connect, createServer, type Server } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -80,6 +81,28 @@ function readRecord<T>(path: string): T | undefined {
 
 export function readSession(paths: Paths, sessionId: string): SessionRecord | undefined {
   return SESSION_ID.test(sessionId) ? readRecord<SessionRecord>(join(paths.sessions, `${sessionId}.json`)) : undefined;
+}
+
+/**
+ * When Claude Code last wrote to the session, in milliseconds (0 when unknown): its transcript, or the
+ * transcript of one of its subagents, which Claude Code keeps beside it (<session id>/subagents/). A turn
+ * writes there as it goes, so this tells a long turn from one that ended without a hook saying so.
+ */
+export function lastWritten(session: SessionRecord): number {
+  if (!session.transcript) return 0;
+  let latest = 0;
+  const look = (path: string) => {
+    try {
+      const stat = statSync(path);
+      if (stat.isDirectory()) for (const name of readdirSync(path)) look(join(path, name));
+      else if (path.endsWith(".jsonl")) latest = Math.max(latest, stat.mtimeMs);
+    } catch {
+      // not written yet, or cleaned up
+    }
+  };
+  look(session.transcript);
+  look(join(session.transcript.replace(/\.jsonl$/, ""), "subagents"));
+  return latest;
 }
 
 /** When a Self-Starter message started the session's current turn: the fire it carries, if any (a new trigger session's first message carries none). */

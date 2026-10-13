@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { bundledDeno, DEFAULT_CONFIG, type Config } from "../../src/engine/config.js";
 import { Engine } from "../../src/engine/engine.js";
@@ -820,12 +820,50 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
     assert.equal(t.fires.get(fireId)?.target?.via, "inbox");
   });
 
-  it("does not wait forever for a turn that never said it ended", async () => {
+  it("waits for a long turn while it writes to the session, but not for one the user interrupted", async () => {
     await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
     t.openSessions.add("s1");
-    turn("s1", true, 11); // interrupted 11 minutes ago, so its end was never recorded
+    // A turn started 40 minutes ago, whose subagent is still at work.
+    const transcript = join(t.paths.home, "projects", "s1.jsonl");
+    const subagent = join(t.paths.home, "projects", "s1", "subagents", "agent-a1.jsonl");
+    mkdirSync(dirname(subagent), { recursive: true });
+    const written = (path: string, minutesAgo: number) => {
+      writeFileSync(path, "{}\n");
+      utimesSync(path, new Date(t.clock.at - minutesAgo * 60_000), new Date(t.clock.at - minutesAgo * 60_000));
+    };
+    written(transcript, 40);
+    written(subagent, 1);
+    record("s1", { transcript, turn: { at: new Date(t.clock.at - 40 * 60_000).toISOString(), running: true, trigger: false } });
     await handOver();
+    await t.executor.tick();
+    assert.deepEqual(t.inboxes, [], "the turn is still at work");
+
+    // The user pressed Esc, which runs no hook, and the session has been quiet since.
+    written(subagent, 16);
+    await t.executor.tick();
     await eventually(() => t.inboxes.length === 1);
+  });
+
+  it("does not give up on a fire that waits to go into its session, and counts its time from when it goes in", async () => {
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    t.openSessions.add("s1");
+    turn("s1", true);
+    const fireId = await handOver();
+    t.clock.at += 31 * 60_000;
+    turn("s1", true); // the user is still at it
+    await t.executor.tick();
+    assert.equal(t.fires.get(fireId)?.receipt, undefined, "no \"no reply\" receipt for a fire Claude has not seen");
+    await eventually(() => t.notifier.sent.find((sent) => sent.body.endsWith("(waiting for Claude in your session)")));
+
+    turn("s1", false);
+    await t.executor.tick();
+    await eventually(() => t.inboxes.length === 1);
+    t.clock.at += 29 * 60_000;
+    await t.executor.tick();
+    assert.equal(t.fires.get(fireId)?.receipt, undefined);
+    t.clock.at += 2 * 60_000;
+    await t.executor.tick();
+    await eventually(() => t.fires.get(fireId)?.receipt?.source === "timeout");
   });
 
   it("sends a second fire for the same session after the first one's turn", async () => {

@@ -16,7 +16,7 @@
 // and tmux: npm run build && node dist/test/e2e/cc-agent.js
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -36,7 +36,8 @@ if (!claudeBin) throw new Error("claude was not found; install Claude Code (npm 
 if (!which("tmux")) throw new Error("tmux was not found; the interactive session runs in it");
 
 const scratch = mkdtempSync(join(tmpdir(), "ss-cc-"));
-const project = join(scratch, "project");
+// By its real path, which Claude Code trusts folders by (the temporary folder of macOS is behind a symlink).
+const project = join(realpathSync(scratch), "project");
 const userHome = join(scratch, "user");
 const configDir = join(scratch, "claude");
 const flags = { open: join(project, "flag-open"), closed: join(project, "flag-closed"), own: join(project, "flag-own") };

@@ -25,7 +25,7 @@ import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { Paths } from "./paths.js";
-import { deliverToOpenSession, readSession, type SessionRunner } from "./sessions.js";
+import { deliverToOpenSession, lastWritten, readSession, type SessionRunner } from "./sessions.js";
 import type { Store } from "./store.js";
 
 const RETRY_DELAYS_MS = [30_000, 120_000, 600_000];
@@ -48,8 +48,11 @@ type QueuedOutcome = "picked-up" | "waking" | "woken" | "paused" | "open" | "unr
 type QueuedTarget = { kind: "origin" | "dedicated"; threadId: string; submissionId?: string };
 /** What claude -p answers for a session that no longer exists. */
 const SESSION_GONE = /No conversation found/i;
-/** A turn that seems to run longer than this ended without saying so (it was interrupted, or Claude Code quit). */
-const TURN_STALE_MS = 10 * 60_000;
+/**
+ * A turn the hooks still see running is over once its session has written nothing for this long: a turn the
+ * user interrupted runs no hook, and neither does a Claude Code that crashed. A turn at work writes as it goes.
+ */
+const TURN_QUIET_MS = 15 * 60_000;
 /** How long a fire just posted into a session counts as a turn there, before the session reports one. */
 const POST_GRACE_MS = 60_000;
 /** Errors from codex that mean the thread no longer exists. */
@@ -215,7 +218,9 @@ export class Executor {
     for (const fire of open) {
       if (!fire.deliveredAt) continue;
       const age = now - Date.parse(fire.deliveredAt);
-      if (age > timeoutMs) {
+      // A fire still waiting to go into its Claude Code session has not reached Claude; its time starts when it goes in.
+      const waiting = fire.target?.via === undefined && sessionIdOf(fire.target?.threadId) !== undefined;
+      if (age > timeoutMs && !waiting) {
         const host = hostOf(fire.target?.threadId);
         const receipt: Receipt = {
           summary: `${fire.summary} (no reply from ${agentName(host)} yet; open the ${conversation(host)} to continue)`,
@@ -414,17 +419,18 @@ export class Executor {
     return this.deps.deliverToSession?.(sessionId, text) ?? deliverToOpenSession(this.deps.paths, sessionId, text, (line) => this.log(line));
   }
 
-  /** Records how a fire handed to a session went into it, keeping the time it was handed over. */
+  /** Records how a fire handed to a session went into it; the time it waits for a receipt starts now. */
   private wentIn(fire: FireRecord, via: "inbox" | "headless"): void {
-    this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target: { ...fire.target!, via }, at: fire.deliveredAt! });
+    this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target: { ...fire.target!, via }, at: this.now().toISOString() });
   }
 
   /** Whether a turn runs in the session, which a fire waits for. A fire posted there a moment ago counts until its turn starts. */
   private sessionBusy(sessionId: string): boolean {
-    const turn = readSession(this.deps.paths, sessionId)?.turn;
+    const session = readSession(this.deps.paths, sessionId);
+    const turn = session?.turn;
     const now = this.now().getTime();
     const turnAt = turn ? Date.parse(turn.at) : 0;
-    if (turn?.running && now - turnAt < TURN_STALE_MS) return true;
+    if (turn?.running && (now - turnAt < TURN_QUIET_MS || now - lastWritten(session!) < TURN_QUIET_MS)) return true;
     const posted = this.postedAt.get(sessionId);
     if (posted === undefined) return false;
     if (now - posted < POST_GRACE_MS) return turnAt < posted;

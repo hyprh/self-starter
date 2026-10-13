@@ -12,9 +12,6 @@
     "StopFailure": [
       { "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], "timeout": 10 }] }
     ],
-    "Notification": [
-      { "matcher": "idle_prompt", "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"], "timeout": 10 }] }
-    ],
     "SessionEnd": [
       { "hooks": [{ "type": "command", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/bin/session-hook.mjs"] }] }
     ],

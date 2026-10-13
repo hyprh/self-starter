@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { resolvePaths, type Paths } from "../../src/engine/paths.js";
 import {
@@ -12,6 +12,7 @@ import {
   deliverToOpenSession,
   findClaude,
   inboxKey,
+  lastWritten,
   processesShowing,
   readSession,
   relaySocket,
@@ -93,15 +94,31 @@ describe("the plugin's session hook", () => {
   it("records whether a turn is running, whichever way it ends", () => {
     start("s1");
     assert.equal(running("s1"), undefined);
-    for (const ending of [{ name: "Stop" }, { name: "StopFailure" }, { name: "Notification", extra: { notification_type: "idle_prompt" } }]) {
+    for (const ending of ["Stop", "StopFailure"]) {
       prompt("s1", "do something");
-      assert.equal(running("s1"), true, ending.name);
-      event("s1", ending.name, ending.extra);
-      assert.equal(running("s1"), false, ending.name);
+      assert.equal(running("s1"), true, ending);
+      event("s1", ending);
+      assert.equal(running("s1"), false, ending);
     }
     prompt("s1", "one more");
     end("s1", "prompt_input_exit", { CLAUDE_PID: "4242" });
     assert.equal(running("s1"), false, "a session that ended runs no turn");
+  });
+
+  it("tells when Claude Code last wrote to the session: its transcript, or a subagent's beside it", () => {
+    const transcript = join(scratch, "projects", "s1.jsonl");
+    const subagent = join(scratch, "projects", "s1", "subagents", "workflows", "w1", "agent-b2.jsonl");
+    mkdirSync(dirname(subagent), { recursive: true });
+    writeFileSync(transcript, "{}\n");
+    writeFileSync(subagent, "{}\n");
+    utimesSync(transcript, 1000, 1000);
+    utimesSync(subagent, 5000, 5000);
+    const session = { sessionId: "s1", cwd: scratch, startedAt: "", transcript };
+    assert.equal(lastWritten(session), 5_000_000);
+    rmSync(join(scratch, "projects", "s1"), { recursive: true });
+    assert.equal(lastWritten(session), 1_000_000);
+    assert.equal(lastWritten({ ...session, transcript: join(scratch, "cleaned-up.jsonl") }), 0);
+    assert.equal(lastWritten({ sessionId: "s1", cwd: scratch, startedAt: "" }), 0);
   });
 
   it("records whether a Self-Starter message started the current turn, through compaction", () => {
@@ -210,7 +227,7 @@ describe("headless turns", () => {
       }
     }
     assert.deepEqual(recorded(), [
-      scratch,
+      realpathSync(scratch), // as the shell sees it (the temporary folder of macOS is behind a symlink)
       "/cfg",
       "none 1", // nothing of the session the daemon may have been started from, but the user's settings
       "-p",
