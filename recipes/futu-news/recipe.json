@@ -1,0 +1,61 @@
+{
+  "id": "futu-news",
+  "version": 1,
+  "title": "Futu news watch",
+  "summary": "Watches Futu's news search for chosen stocks and reports each new research report (analyst ratings and price targets), company announcement or news article, with its title, time and link. Needs no account and no OpenD. Pairs with Futu's own skills for Codex (https://www.futunn.com/skillhub): with them installed, Codex can digest the news and read the community sentiment when the trigger fires.",
+  "entry": "probe.ts",
+  "mode": "event",
+  "access": "sandbox",
+  "permissions": {
+    "net": ["ai-news-search.futunn.com"],
+    "env": []
+  },
+  "interval": { "min": "5m", "max": "6h", "default": "15m" },
+  "timeout": "1m",
+  "params": {
+    "stocks": {
+      "type": "string[]",
+      "required": true,
+      "description": "Stocks to watch, as you would search for them on Futu: a name, ticker or code, such as 腾讯控股, NVDA or 00700."
+    },
+    "types": {
+      "type": "string[]",
+      "default": ["research"],
+      "description": "What to report: research (analyst ratings and price targets), notice (company announcements and filings), news (every article; busy for large companies)."
+    },
+    "match": {
+      "type": "string",
+      "default": "",
+      "description": "Only report items whose title matches this regular expression, ignoring case, such as 目标价|评级|target|rating; empty reports every item."
+    },
+    "lang": {
+      "type": "string",
+      "default": "zh-CN",
+      "description": "Language of the results: zh-CN, zh-HK or en."
+    },
+    "max_age_hours": {
+      "type": "number",
+      "default": 48,
+      "advanced": true,
+      "description": "Leave out items published longer ago than this, so that an old item the search shows again is not reported as new."
+    },
+    "per_search": {
+      "type": "number",
+      "default": 20,
+      "advanced": true,
+      "description": "Items fetched per stock and type on each check (at most 50)."
+    },
+    "base_url": {
+      "type": "string",
+      "default": "https://ai-news-search.futunn.com",
+      "advanced": true,
+      "description": "Futu news search address."
+    }
+  },
+  "secrets": [],
+  "setup": [
+    "Nothing to set up for the watch itself: Futu's news search needs no account.",
+    "Optional: install Futu's skills for Codex (https://www.futunn.com/skillhub), so that Codex can digest the news and read the community sentiment when the trigger fires."
+  ],
+  "suggestedPrompt": "New research, announcements or news about stocks I follow appeared on Futu. For each stock, say in two or three lines what changed (a rating or price target, a filing, an event) and whether it matters for the share price. If the Futu skills are installed, use the stock digest and the comment sentiment for context. Do not place orders. Keep it short."
+}

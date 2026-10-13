@@ -22,6 +22,31 @@ Status: working MVP, verified end to end with the Codex CLI and app server. CI i
 
 ## How it works
 
+```mermaid
+flowchart TB
+    you(["You: when X happens, do Y"])
+    subgraph codex ["Codex app or CLI"]
+        conversation["Your conversation"]
+        plugin["Self-Starter plugin<br/>skill + MCP tools"]
+    end
+    subgraph service ["Self-Starter service"]
+        engine["Engine<br/>schedule + firing rules"]
+        executor["Executor"]
+    end
+    probe["Probe<br/>a few lines of TypeScript"]
+    world[("Files, commands,<br/>local services, web APIs")]
+    notify["Desktop and email"]
+
+    you --> conversation
+    conversation -- "1 · creates a trigger" --> plugin
+    plugin -- "2 · local socket" --> engine
+    engine -- "3 · runs it on a schedule, no model calls" --> probe
+    probe --- world
+    engine -- "4 · it happened" --> executor
+    executor -- "5 · codex queue, waking the thread if Codex is closed;<br/>Codex acts and reports back with trigger_report" --> conversation
+    executor -- "6 · the result" --> notify
+```
+
 - **Probes are code, the engine owns the rules.** A probe answers "what do I see now, and does it count?". The engine runs it on a schedule the probe can adapt (check more often near a threshold), fires only when a condition becomes true (with optional minimum duration, re-arm hysteresis, cooldown, max fires and expiry), deduplicates events, retries, and alerts you when a probe keeps failing.
 - **Probes run on your machine, as you.** A probe can read files and logs, run the commands you have (`git`, `gh`, `docker`, a skill's scripts), talk to local services and call web APIs. When a probe only needs a few web APIs, it can run in a sandbox instead (`probe.access: sandbox`): network to the hosts it declares, no files, no commands.
 - **Codex decides when to ask.** Codex tries every probe once before turning it on. For a trigger that acts on your behalf or runs for a long time, it tells you what it will check and do, and asks before starting it; a plain "let me know when the build finishes" just starts.
@@ -78,6 +103,7 @@ Probes that list the secret in `probe.permissions.env` get it as an environment 
 Some things to watch come with a probe already written and tested, so Codex only fills in your settings. `self-starter recipes` lists them.
 
 - **IBKR account watch** (`ibkr-account`): new executions and option assignments within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a trade, and large moves in net asset value. It uses Interactive Brokers' Flex Web Service with a read-only token; ask Codex "watch my IBKR account" and it walks you through the five-minute setup.
+- **Futu news watch** (`futu-news`): new research reports (analyst ratings and price targets), company announcements or news about the stocks you follow, from Futu's news search, with no account needed. It pairs with [Futu's own skills for Codex](https://www.futunn.com/skillhub): with them installed, Codex handles each fire with Futu's stock digest and community sentiment. Ask Codex, for example, "tell me when analysts change their view on Tencent or NVIDIA, and what the community thinks".
 
 ### Email
 
@@ -123,7 +149,7 @@ CI runs the tests on Linux and macOS, and on both installs for real (test/e2e/in
 
 - [docs/design.md](docs/design.md): design and the verified Codex integration points
 - [plugin/](plugin): the Codex plugin (manifest and skills)
-- [recipes/](recipes): ready-made probes, such as the IBKR account watch
+- [recipes/](recipes): ready-made probes: the IBKR account watch and the Futu news watch
 - [site/](site): the landing page, published to GitHub Pages by `.github/workflows/pages.yml` (Settings > Pages > Source: GitHub Actions)
 - [src/](src): `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`
 - [docs/codex-app-checklist.md](docs/codex-app-checklist.md): what to check in the Codex app on your machine (about ten minutes)

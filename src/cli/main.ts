@@ -260,7 +260,7 @@ async function main(argv: string[]): Promise<void> {
         out(`  ${r.summary}`);
         if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (self-starter secret set ...)`);
       }
-      out("\nAsk Codex to set one up, for example: \"watch my IBKR account for unusual activity\".");
+      out("\nAsk Codex to set one up, for example: \"watch my IBKR account for unusual activity\" or \"tell me when analysts change their view on Tencent\".");
       return;
     }
     case "drafts": {

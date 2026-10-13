@@ -112,7 +112,7 @@ h3 { font-weight: 700; font-size: 1.05rem; line-height: 1.3; }
 .steps li::before { content: counter(step); font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); }
 
 .runs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-@media (min-width: 46rem) { .runs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 46rem) { .runs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .run.wide { grid-column: 1 / -1; } }
 .run { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem 1.05rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
 .run header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.3rem 0.8rem; }
 .tag { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); background: var(--soft); border-radius: 4px; padding: 0.05rem 0.45rem; white-space: nowrap; }
@@ -200,8 +200,8 @@ self-starter install</code></pre>
 
   <section aria-labelledby="runs">
     <div class="wrap">
-      <h2 id="runs">Four real runs</h2>
-      <p class="sub">Recorded on October 12, 2026 with Self-Starter 0.1.0. Each line is what the probe reported, unedited; times are UTC.</p>
+      <h2 id="runs">Five real runs</h2>
+      <p class="sub">Recorded on October 12 and 13, 2026 with Self-Starter 0.1.0. Each line is what the probe reported, unedited; times are UTC.</p>
       <div class="runs">
         <article class="run">
           <header><h3>A training run finishes</h3><span class="tag">local file</span></header>
@@ -238,6 +238,15 @@ self-starter install</code></pre>
             <p><time></time>4.6.7 counts as seen; the next version fires</p>
           </div>
           <p class="then"><b>Then Codex</b> upgrades, tests and reports (with full access, to install packages).</p>
+        </article>
+        <article class="run wide">
+          <header><h3>Analysts change their view on a stock</h3><span class="tag">Futu news search</span></header>
+          <p class="say">“Tell me when analysts change their rating or price target on Tencent or NVIDIA, and what the community thinks.”</p>
+          <div class="log">
+            <p><time datetime="2026-10-13T04:49:55Z">04:49:55</time>1 item(s) from the last 48 h on Futu (英伟达 0, 腾讯控股 1)</p>
+            <p><time></time>大摩：维持腾讯控股(00700)“增持”评级 目标价550港元 counts as seen; the next report fires</p>
+          </div>
+          <p class="then"><b>Then Codex</b> reads the new report with <a href="https://www.futunn.com/skillhub">Futu's skills</a> (stock digest, community sentiment) and sums up what changed. A ready-made recipe: <code>futu-news</code>.</p>
         </article>
       </div>
     </div>

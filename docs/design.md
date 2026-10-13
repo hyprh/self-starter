@@ -406,6 +406,8 @@ A recipe is a probe that ships with the plugin (`recipes/<id>/recipe.json` and i
 
 The first recipe, `ibkr-account`, reads Interactive Brokers' Flex Web Service (SendRequest, then GetStatement, protocol version 3) in the sandbox, with a read-only token bound to IBKR's hosts. It reports new executions, including option assignments and exercises, from a Trade Confirmation query (IBKR publishes them 5 to 10 minutes after the fill), and from a daily Activity query deposits and withdrawals, positions that changed without a trade in the same report, and day-over-day moves in net asset value. IBKR limits tokens to one request a second and ten a minute and asks clients not to poll actively, so the recipe checks every 15 minutes around US market hours and every 2 hours otherwise, fetches the Activity report at most twice a day, and keeps the reference of a report that is still being generated for the next run instead of asking again. A scenario skill, `ibkr`, walks the user through creating the queries and storing the token, and tells the agent how to handle its fires.
 
+The second, `futu-news`, watches Futu's public news search (`ai-news-search.futunn.com/news_search`) in the sandbox, with no account: for each stock and type (research reports, announcements, news) it reports every item as an event keyed by Futu's item id, so each is reported once, and leaves out items older than 48 hours, so that an old item the search shows again is not reported as new. It is the eyes for [Futu's skills for agents](https://www.futunn.com/skillhub): the fire's task tells Codex to use Futu's stock digest and comment sentiment, when installed, to explain what changed.
+
 ### 7.6 What the skill teaches the agent
 
 **Creating a trigger**: clarify ambiguities first; find where to look (files and logs, commands and CLIs, local services, web APIs); never handle API keys in the chat (the user runs `self-starter secret set`); write the probe and definition; call `trigger_draft` and fix problems until the trial run passes; decide whether to ask the user before starting it (ask when it acts for the user, checks often or for long, or the request was open to interpretation; otherwise start it and say what was set up); call `trigger_activate`.
@@ -445,7 +447,7 @@ The trade-off: a full-access probe runs outside Codex's own sandbox, so a Codex 
 - Daemon: Deno probe runtime, state and event modes, all policies, file storage, launchd and systemd user services
 - Both target threads, the `notify` and `agent` actions, receipts, reminders and timeouts
 - Notifications on macOS and Linux, and by email; the `self-starter` command-line tool
-- Ready-made recipes, starting with the IBKR account watch, and a landing page for GitHub Pages
+- Ready-made recipes (the IBKR account watch and the Futu news watch), and a landing page for GitHub Pages
 - Tests: unit tests for the firing rules, integration tests with real Deno probes, the daemon, the control socket and the MCP protocol; end-to-end runs against the Codex CLI. CI runs the tests on Linux and macOS, installs for real on both (Codex CLI, launchd or systemd, a trigger firing, crash recovery, reinstall, uninstall) and sends real email through a throwaway mailbox
 
 **Out**
