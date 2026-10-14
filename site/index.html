@@ -5,7 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Self-Starter</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 16c4-7 9-10 14-10s10 3 14 10c-4 7-9 10-14 10S6 23 2 16z' fill='%23e8870e'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%233a2405'/%3E%3C/svg%3E">
-<meta name="description" content="Give Codex eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, Codex starts working on its own, right in your conversation, even if it&#39;s closed. Zero tokens while it waits.">
+<meta name="description" content="Give Codex or Claude Code eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, it starts working on its own, right in your conversation, even if it&#39;s closed. Zero tokens while it waits.">
+<script>
+  // The page reads for Codex until the visitor picks Claude Code (remembered, or linked as #claude-code); set before the first paint.
+  try {
+    const agent = location.hash === "#claude-code" ? "claude" : location.hash === "#codex" ? "codex" : localStorage.getItem("agent");
+    if (agent === "claude") document.documentElement.dataset.agent = "claude";
+  } catch {}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@600;700;800&display=swap">
@@ -92,6 +99,13 @@ p { margin: 0; }
 .cmd button:hover { background: var(--line); }
 .fine { font-size: 0.86rem; color: var(--muted); }
 
+/* One page for Codex and for Claude Code: what differs is written for each, and the switch shows one. */
+html:not([data-agent="claude"]) .for-claude, html[data-agent="claude"] .for-codex { display: none; }
+.agents { align-self: flex-start; display: inline-flex; gap: 0.2rem; padding: 0.2rem; background: var(--soft); border: 1px solid var(--line); border-radius: 999px; }
+.agents button { border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: 500 0.86rem var(--font-body); padding: 0.3rem 0.9rem; cursor: pointer; }
+.agents button:hover { color: var(--fg); }
+.agents button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 2px rgba(20, 24, 29, 0.14); }
+
 /* The conversation with the chart */
 .chat { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; min-width: 0; box-shadow: 0 18px 40px -30px rgba(20, 24, 29, 0.45); }
 .msg { max-width: 92%; display: flex; flex-direction: column; gap: 0.25rem; }
@@ -99,7 +113,7 @@ p { margin: 0; }
 .msg p { padding: 0.6rem 0.8rem; border-radius: 12px; font-size: 0.95rem; line-height: 1.5; }
 .msg.you { align-self: flex-end; align-items: flex-end; }
 .msg.you p { background: var(--soft); }
-.msg.codex p { background: var(--signal-soft); }
+.msg.agent p { background: var(--signal-soft); }
 .chart { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
 .chart .plot { width: 100%; min-height: 14rem; }
 .chart svg { display: block; width: 100%; height: auto; }
@@ -156,22 +170,29 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
 <main>
   <div class="wrap hero">
     <div>
-      <p class="eyebrow">A plugin for Codex</p>
-      <h1>Give Codex eyes.</h1>
-      <p class="lede">Tell Codex what to keep an eye on. A small probe watches it on your machine without spending tokens, and when something changes, Codex comes back to your conversation with what it found and what it did.</p>
+      <p class="eyebrow">A plugin for Codex and Claude Code</p>
+      <h1>Give <span class="agent-name">Codex</span> eyes.</h1>
+      <p class="lede">Tell <span class="agent-name">Codex</span> what to keep an eye on. A small probe watches it on your machine without spending tokens, and when something changes, <span class="agent-name">Codex</span> comes back to your conversation with what it found and what it did.</p>
       <ul class="uses" aria-label="What it does today">
-        <li><b>CI fails on main.</b> <span>Codex finds the cause and proposes a fix.</span></li>
-        <li><b>A training run finishes.</b> <span>Codex compares it with the last one.</span></li>
-        <li><b>An error shows up in your app log.</b> <span>Codex traces it to the code.</span></li>
-        <li><b>Your PR gets review comments.</b> <span>Codex addresses them.</span></li>
+        <li><b>CI fails on main.</b> <span><span class="agent-name">Codex</span> finds the cause and proposes a fix.</span></li>
+        <li><b>A training run finishes.</b> <span><span class="agent-name">Codex</span> compares it with the last one.</span></li>
+        <li><b>An error shows up in your app log.</b> <span><span class="agent-name">Codex</span> traces it to the code.</span></li>
+        <li><b>Your PR gets review comments.</b> <span><span class="agent-name">Codex</span> addresses them.</span></li>
       </ul>
       <div class="start">
+        <div class="agents" role="group" aria-label="Your agent">
+          <button type="button" data-pick="codex" aria-pressed="true">Codex</button>
+          <button type="button" data-pick="claude" aria-pressed="false">Claude Code</button>
+        </div>
         <div class="cmd">
-          <pre id="install"><code>codex plugin marketplace add hyprh/self-starter
+          <pre id="install-codex" class="for-codex"><code>codex plugin marketplace add hyprh/self-starter
 codex plugin add self-starter@self-starter</code></pre>
+          <pre id="install-claude" class="for-claude"><code>claude plugin marketplace add hyprh/self-starter
+claude plugin install self-starter@self-starter</code></pre>
           <button type="button" id="copy" aria-label="Copy the install commands">Copy</button>
         </div>
-        <p class="fine">macOS or Linux, Node.js 20 or newer, and the Codex app or CLI. Restart the Codex app; the first start sets up the rest.</p>
+        <p class="fine for-codex">macOS or Linux, Node.js 20 or newer, and the Codex app or CLI. Restart the Codex app; the first start sets up the rest.</p>
+        <p class="fine for-claude">macOS or Linux, Node.js 20 or newer, and Claude Code 2.1.224 or newer. Start a new session; the first start sets up the rest.</p>
       </div>
     </div>
 
@@ -184,8 +205,8 @@ codex plugin add self-starter@self-starter</code></pre>
         <div class="plot" id="plot"></div>
         <figcaption>NVDA daily candles, Jul 13 to Oct 9, 2026 (Yahoo Finance). One quiet check after each close, then a fire on Oct 5. The conversation is an example.</figcaption>
       </figure>
-      <div class="msg codex">
-        <span class="who">Codex · Oct 5, 4:05 pm</span>
+      <div class="msg agent">
+        <span class="who"><span class="agent-name">Codex</span> · Oct 5, 4:05 pm</span>
         <p>NVDA closed at $238.90, above your $235 line: up 2.1% on 127M shares, 16% more than its 20-day average. On Oct 2 it touched $237.88 but closed at $233.95, so the trigger waited for today's close.</p>
       </div>
     </div>
@@ -197,15 +218,16 @@ codex plugin add self-starter@self-starter</code></pre>
       <ol class="steps">
         <li>
           <h3>Ask in your conversation</h3>
-          <p>“Tell me when the training run finishes.” “If the dev server stops answering, restart it.” Plain words, in any Codex thread.</p>
+          <p>“Tell me when the training run finishes.” “If the dev server stops answering, restart it.” Plain words, in any <span class="for-codex">Codex thread</span><span class="for-claude">Claude Code session</span>.</p>
         </li>
         <li>
           <h3>A probe keeps watch</h3>
-          <p>Codex writes a few lines of TypeScript that read a file, run a command or call an API, tries them once and starts them. They run on your machine on a schedule, with no model and no tokens.</p>
+          <p><span class="agent-name">Codex</span> writes a few lines of TypeScript that read a file, run a command or call an API, tries them once and starts them. They run on your machine on a schedule, with no model and no tokens.</p>
         </li>
         <li>
-          <h3>Codex reacts and reports</h3>
-          <p>When it happens, the task comes back to the same conversation. If Codex is closed, Self-Starter opens the thread in the background, so the answer is waiting for you. A notification or an email tells you.</p>
+          <h3><span class="agent-name">Codex</span> reacts and reports</h3>
+          <p class="for-codex">When it happens, the task comes back to the same conversation. If Codex is closed, Self-Starter opens the thread in the background, so the answer is waiting for you. A notification or an email tells you.</p>
+          <p class="for-claude">When it happens, the task comes back to the same session, as soon as Claude is done with what it is doing. If no terminal has the session open, Self-Starter resumes it in the background, so the answer is waiting for you. A notification or an email tells you.</p>
         </li>
       </ol>
     </div>
@@ -223,7 +245,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-12T17:24:50Z">17:24:50</time>running: epoch 1/3  loss 0.912  val_loss 0.874</p>
             <p><time datetime="2026-10-12T17:25:00Z">17:25:00</time>finished: Finished training in 3h12m  best val_loss 0.412 (epoch 3) <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> compares the two runs and says which one to keep.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> compares the two runs and says which one to keep.</p>
         </article>
         <article class="run">
           <header><h3>An error shows up in the app log</h3><span class="tag">local file</span></header>
@@ -232,7 +254,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-13T06:41:25Z">06:41:25</time>0 error(s) in logs/app.log</p>
             <p><time datetime="2026-10-13T06:41:35Z">06:41:35</time>ERROR POST /api/orders 500 TypeError: Cannot read properties of undefined (reading 'id') <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> reads the stack trace and the code it points to, and proposes a fix.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> reads the stack trace and the code it points to, and proposes a fix.</p>
         </article>
         <article class="run">
           <header><h3>The dev server stops answering</h3><span class="tag">local service</span></header>
@@ -241,7 +263,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-12T17:24:50Z">17:24:50</time>http://127.0.0.1:3000/health answered 200 in 8 ms</p>
             <p><time datetime="2026-10-12T17:25:20Z">17:25:20</time>http://127.0.0.1:3000/health did not answer: Connection refused (os error 111) <span class="fired">· fired after 20 s down</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> reads the server log, fixes what it can and starts it again (this trigger gives Codex full access).</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> reads the server log, fixes what it can and starts it again (this trigger gives <span class="agent-name">Codex</span> full access).</p>
         </article>
         <article class="run">
           <header><h3>A new invoice lands in a folder</h3><span class="tag">local folder</span></header>
@@ -250,7 +272,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-12T17:24:50Z">17:24:50</time>2 invoice(s) in invoices</p>
             <p><time datetime="2026-10-12T17:25:00Z">17:25:00</time>new file: 2026-10-acme-cloud.pdf (184 KB) <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> reads the PDF and adds the row.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> reads the PDF and adds the row.</p>
         </article>
         <article class="run">
           <header><h3>A dependency ships a new version</h3><span class="tag">npm registry</span></header>
@@ -259,7 +281,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-13T08:31:26Z">08:31:26</time>typescript@next: 7.1.0-dev.20261012.1</p>
             <p><time datetime="2026-10-13T08:36:27Z">08:36:27</time>typescript 7.1.0-dev.20261013.1 is out <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> installs it in a scratch copy, runs <code>tsc</code> and lists what would break.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> installs it in a scratch copy, runs <code>tsc</code> and lists what would break.</p>
         </article>
         <article class="run">
           <header><h3>Codex comes up on Hacker News</h3><span class="tag">Hacker News search</span></header>
@@ -268,7 +290,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time datetime="2026-10-13T08:51:48Z">08:51:48</time>72 mention(s) of Codex on Hacker News in the last 24 h, in 19 thread(s)</p>
             <p><time datetime="2026-10-13T08:56:49Z">08:56:49</time>comment on “Where is all the new, good software?” <span class="fired">· fired</span></p>
           </div>
-          <p class="then"><b>Then Codex</b> reads the thread and sums up what people like, what they don't, and any bug reports, with links.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> reads the thread and sums up what people like, what they don't, and any bug reports, with links.</p>
         </article>
         <article class="run wide">
           <header><h3>Analysts change their view on a stock</h3><span class="tag">Futu news search</span></header>
@@ -278,7 +300,7 @@ codex plugin add self-starter@self-starter</code></pre>
             <p><time></time>“Morgan Stanley: Maintains "Overweight" rating on Tencent (00700) with a target price of HKD 550…”</p>
             <p><time></time>counts as seen; the next report fires</p>
           </div>
-          <p class="then"><b>Then Codex</b> reads the new report with <a href="https://www.futunn.com/skillhub">Futu's skills</a> (stock digest, community sentiment) and sums up what changed. A ready-made recipe: <code>futu-news</code>.</p>
+          <p class="then"><b>Then <span class="agent-name">Codex</span></b> reads the new report with <a href="https://www.futunn.com/skillhub">Futu's skills</a> (stock digest, community sentiment) and sums up what changed. A ready-made recipe: <code>futu-news</code>.</p>
         </article>
       </div>
     </div>
@@ -314,10 +336,13 @@ codex plugin add self-starter@self-starter</code></pre>
       <h2 id="notes">Good to know</h2>
       <ul class="notes">
         <li>Probes run as you, like a script you run. <code>probe.access: sandbox</code> limits one to the web hosts it lists, with no files and no commands.</li>
-        <li>Codex asks before starting a trigger that acts for you. What a probe reports reaches Codex as untrusted data, and a turn handling a fire cannot create or change triggers.</li>
-        <li>Background runs use Codex's workspace-write sandbox unless a trigger asks for full access, and Codex runs at most 20 times a day by default.</li>
+        <li><span class="agent-name">Codex</span> asks before starting a trigger that acts for you. What a probe reports reaches <span class="agent-name">Codex</span> as untrusted data, and a turn handling a fire cannot create or change triggers.</li>
+        <li class="for-codex">Background runs use Codex's workspace-write sandbox unless a trigger asks for full access, and Codex runs at most 20 times a day by default.</li>
+        <li class="for-claude">Background runs get a permission mode from the trigger: by default Claude may edit files in its folder, and what would need your approval, such as most commands, is declined. A trigger can ask for full access. Claude runs at most 20 times a day by default.</li>
+        <li class="for-claude">A fire never interrupts a turn. If you stopped Claude with Esc, which Claude Code does not report, the fire comes in once the session has been quiet for 15 minutes.</li>
         <li>Conditions are checked in code, so judgment calls such as “news about an acquisition” are not supported yet. Windows is not supported.</li>
-        <li>Tested with the Codex CLI and app server on Linux. How the Codex desktop app shows these threads still needs a check on a Mac.</li>
+        <li class="for-codex">Tested end to end on Linux and macOS with the Codex CLI and app server. How the Codex desktop app shows these threads still needs a check on a Mac.</li>
+        <li class="for-claude">Tested end to end on Linux and macOS with the Claude Code CLI in a terminal. The desktop app and the editor extensions are not checked yet.</li>
       </ul>
     </div>
   </section>
@@ -326,7 +351,7 @@ codex plugin add self-starter@self-starter</code></pre>
 <footer>
   <div class="wrap">
     <span>The code is on <a href="https://github.com/hyprh/self-starter">GitHub</a>; the <a href="https://github.com/hyprh/self-starter/blob/main/README.md">README</a> lists every command.</span>
-    <span>An independent project, not made by OpenAI.</span>
+    <span>An independent project, not made by OpenAI or Anthropic.</span>
   </div>
 </footer>
 
@@ -415,7 +440,7 @@ if ("ResizeObserver" in window) new ResizeObserver(redraw).observe(plot);
 
 document.getElementById("copy").addEventListener("click", async (event) => {
   const button = event.currentTarget;
-  const install = document.getElementById("install");
+  const install = document.getElementById(document.documentElement.dataset.agent === "claude" ? "install-claude" : "install-codex");
   try {
     await navigator.clipboard.writeText(install.innerText);
     button.textContent = "Copied";
@@ -429,6 +454,25 @@ document.getElementById("copy").addEventListener("click", async (event) => {
   }
   setTimeout(() => (button.textContent = "Copy"), 1600);
 });
+
+const NAMES = { codex: "Codex", claude: "Claude" };
+function pick(agent) {
+  if (agent === "claude") document.documentElement.dataset.agent = "claude";
+  else delete document.documentElement.dataset.agent;
+  for (const node of document.querySelectorAll(".agent-name")) node.textContent = NAMES[agent];
+  for (const button of document.querySelectorAll("[data-pick]")) button.setAttribute("aria-pressed", String(button.dataset.pick === agent));
+}
+pick(document.documentElement.dataset.agent === "claude" ? "claude" : "codex");
+for (const button of document.querySelectorAll("[data-pick]")) {
+  button.addEventListener("click", () => {
+    const agent = button.dataset.pick;
+    pick(agent);
+    try {
+      localStorage.setItem("agent", agent);
+    } catch {}
+    history.replaceState(null, "", agent === "claude" ? "#claude-code" : location.pathname + location.search);
+  });
+}
 </script>
 </body>
 </html>
