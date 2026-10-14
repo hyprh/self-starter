@@ -199,15 +199,19 @@ claude plugin install self-starter@self-starter</code></pre>
     <div class="chat" aria-label="Example conversation">
       <div class="msg you">
         <span class="who">You · Jul 13</span>
-        <p>Tell me when NVDA closes above $235, with the numbers.</p>
+        <p>Watch NVDA for me. If it moves sharply, find out why and tell me. Sell when it reaches $235.</p>
       </div>
       <figure class="chart">
         <div class="plot" id="plot"></div>
-        <figcaption>NVDA daily candles, Jul 13 to Oct 9, 2026 (Yahoo Finance). One quiet check after each close, then a fire on Oct 5. The conversation is an example.</figcaption>
+        <figcaption>NVDA daily candles, Jul 13 to Oct 9, 2026 (Yahoo Finance), checked every 5 minutes while the market is open. The conversation is an example; selling needs a trading tool your agent can use, such as your broker's API.</figcaption>
       </figure>
       <div class="msg agent">
-        <span class="who"><span class="agent-name">Codex</span> · Oct 5, 4:05 pm</span>
-        <p>NVDA closed at $238.90, above your $235 line: up 2.1% on 127M shares, 16% more than its 20-day average. On Oct 2 it touched $237.88 but closed at $233.95, so the trigger waited for today's close.</p>
+        <span class="who"><span class="agent-name">Codex</span> · Aug 27, 9:38 am</span>
+        <p>NVDA opened 6.3% higher, at $222.86, after yesterday's earnings: revenue of $96.2 billion, up 106% from a year ago and above what analysts expected, and an outlook of $108 billion for this quarter.</p>
+      </div>
+      <div class="msg agent">
+        <span class="who"><span class="agent-name">Codex</span> · Oct 2, 9:36 am</span>
+        <p>NVDA opened at $236.06, above your $235 line, so I sold your shares at market. I'll keep watching it for big moves.</p>
       </div>
     </div>
   </div>
@@ -364,7 +368,11 @@ claude plugin install self-starter@self-starter</code></pre>
 // NVDA daily candles [date, open, high, low, close], Jul 13 to Oct 9, 2026, from Yahoo Finance.
 const CANDLES = [["07-13",208.54,210.57,203,203.53],["07-14",208.2,212.55,203.8,211.8],["07-15",211.96,213.81,206.04,212.5],["07-16",210.17,211.08,205.85,207.4],["07-17",202.64,206.65,197.97,202.81],["07-20",205.87,207.74,202.28,203.28],["07-21",207.54,208.65,204.01,207.29],["07-22",205.81,214.39,204.95,212.06],["07-23",209.46,210.87,205.96,208.76],["07-24",207.45,211.91,204.81,206.84],["07-27",208.2,208.75,195.44,196.51],["07-28",195,198.7,192.74,197.01],["07-29",195.85,197.07,190.01,190.01],["07-30",193.45,197.25,191.52,195.04],["07-31",198.44,202,194.95,200.75],["08-03",197.69,208.74,196.85,206.64],["08-04",211.3,213.06,209.05,211.94],["08-05",216.86,222.22,216.4,219.22],["08-06",221.53,223.63,217,218.99],["08-07",221.54,224.76,220.66,223.96],["08-10",223.4,224.14,216.77,217.55],["08-11",222.17,222.2,216.2,217.5],["08-12",221.04,225.1,220.2,224.09],["08-13",225.06,227.23,223.71,225.3],["08-14",226.77,227.49,224.5,225.16],["08-17",225.98,227.92,224.86,225.01],["08-18",220.45,221.64,218.69,219.74],["08-19",221.67,222.87,216.76,217.56],["08-20",218.36,219.86,215.66,216.85],["08-21",218.42,218.74,214.5,214.72],["08-24",215.53,215.59,207.25,208.48],["08-25",211.03,214.73,210.11,213.05],["08-26",212.64,213.6,209.23,209.66],["08-27",222.86,230.47,220.9,227.98],["08-28",227.36,229.26,216.81,217.55],["08-31",218.87,221.3,216.21,220.78],["09-01",216.75,220.41,215.1,217.44],["09-02",218.79,227.95,218.48,224.41],["09-03",226.02,230.4,224.75,228.45],["09-04",231.09,234.76,229.63,230.36],["09-08",233.11,233.71,224.85,225.73],["09-09",225.28,226.18,223.46,223.67],["09-10",220.53,220.99,217.2,218.36],["09-11",221.24,222,218.15,218.29],["09-14",211.24,212.77,208.93,210.96],["09-15",213.38,213.94,211.16,212.17],["09-16",214.14,216.76,212.5,213.9],["09-17",218.38,219.91,217.15,219.34],["09-18",219.35,222.73,218.03,222.27],["09-21",222.94,228.5,221.56,227.38],["09-22",226.85,229.98,226.5,228.87],["09-23",228.03,228.95,224.02,225.51],["09-24",222.08,224.94,221.09,224.58],["09-25",225.13,226.94,223.13,225.07],["09-28",229.75,233.21,228.04,228.86],["09-29",230.97,232.82,227.03,227.21],["09-30",229.27,232.37,228.17,228.38],["10-01",229.98,232.29,228.16,230.86],["10-02",236.06,237.88,233.6,233.95],["10-05",236.09,240.1,235.15,238.9],["10-06",242.1,243.37,238.93,239.24],["10-07",237.69,239.08,236.38,237.47],["10-08",234.92,237.07,229.85,230.48],["10-09",233.84,233.92,229.11,229.28]];
 const LINE = 235;
-const FIRED = CANDLES.findIndex(([, , , , close]) => close > LINE);
+// What the probe reports, checking every 5 minutes: a price 6% or more away from the last close (on Aug 27 it opened 6.3%
+// higher), and the first price at or above the line (on Oct 2 it opened at 236.06).
+const MOVE = 0.06;
+const MOVED = CANDLES.findIndex(([, , high, low], i) => i > 0 && Math.max(high / CANDLES[i - 1][4] - 1, 1 - low / CANDLES[i - 1][4]) >= MOVE);
+const SOLD = CANDLES.findIndex(([, , high]) => high >= LINE);
 const MONTHS = { "07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct" };
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -395,7 +403,7 @@ function drawChart(box) {
     width,
     height,
     role: "img",
-    "aria-label": "NVDA daily candles from July 13 to October 9, 2026, with a line at $235. The first close above it was $238.90 on October 5, where the trigger fired.",
+    "aria-label": "NVDA daily candles from July 13 to October 9, 2026, with a line at $235. The trigger fired when NVDA opened 6.3% higher on August 27, after earnings, and when it opened at $236.06, above the line, on October 2, when it sold.",
   });
 
   for (const price of [200, 220, 240]) {
@@ -417,17 +425,21 @@ function drawChart(box) {
   svg.append(el("line", { x1: pad.left, x2: pad.left + plotW, y1: y(LINE), y2: y(LINE), stroke: "var(--signal)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
   svg.append(text(width - pad.right + 7, y(LINE) + 4, LINE, { fill: "var(--signal)", "font-weight": 600 }));
 
-  // One check after each close until the fire, and none after it.
-  for (let i = 0; i <= FIRED; i++) {
-    const fired = i === FIRED;
+  // Every market day is checked; two of them fired.
+  CANDLES.forEach((_, i) => {
+    const fired = i === MOVED || i === SOLD;
     svg.append(el("circle", { cx: x(i), cy: checksY, r: fired ? 4 : 1.6, fill: fired ? "var(--signal)" : "var(--muted)", opacity: fired ? 1 : 0.55 }));
-  }
-  svg.append(text(pad.left, checksY - 9, `${FIRED} quiet checks, no tokens`, { "font-size": 10.5 }));
+  });
+  svg.append(text(pad.left, checksY - 9, "checked every 5 min, no tokens", { "font-size": 10.5 }));
 
-  const fx = x(FIRED);
-  svg.append(el("line", { x1: fx, x2: fx, y1: y(CANDLES[FIRED][2]) - 6, y2: checksY - 6, stroke: "var(--signal)", "stroke-width": 1, "stroke-dasharray": "2 3" }));
-  svg.append(el("circle", { cx: fx, cy: y(CANDLES[FIRED][4]), r: 5.5, fill: "none", stroke: "var(--signal)", "stroke-width": 2 }));
-  svg.append(text(fx, y(CANDLES[FIRED][2]) - 12, "fired · Oct 5 close 238.90", { fill: "var(--accent)", "font-weight": 600, "text-anchor": "end" }));
+  // Each fire at the day's open, labeled with what it did in the free band above $240.
+  const labelY = y(244);
+  for (const [i, label, anchor] of [[MOVED, "big move", "middle"], [SOLD, "sold", "end"]]) {
+    const open = CANDLES[i][1];
+    svg.append(el("line", { x1: x(i), x2: x(i), y1: labelY + 5, y2: checksY - 6, stroke: "var(--signal)", "stroke-width": 1, "stroke-dasharray": "2 3" }));
+    svg.append(el("circle", { cx: x(i), cy: y(open), r: 5.5, fill: "var(--surface)", stroke: "var(--signal)", "stroke-width": 2 }));
+    svg.append(text(anchor === "end" ? x(i) + 4 : x(i), labelY, label, { fill: "var(--accent)", "font-weight": 600, "text-anchor": anchor }));
+  }
 
   box.replaceChildren(svg);
 }
