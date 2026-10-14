@@ -236,7 +236,7 @@ claude plugin install self-starter@self-starter</code></pre>
   <section aria-labelledby="runs">
     <div class="wrap">
       <h2 id="runs">Seven real runs</h2>
-      <p class="sub">Recorded on October 12 and 13, 2026. Each line is what the probe reported, unedited; times are UTC.</p>
+      <p class="sub">Recorded on October 12 <span class="for-codex">and 13</span><span class="for-claude">to 14</span>, 2026. Each line is what the probe reported, unedited; times are UTC.</p>
       <div class="runs">
         <article class="run">
           <header><h3>A training run finishes</h3><span class="tag">local file</span></header>
@@ -284,9 +284,14 @@ claude plugin install self-starter@self-starter</code></pre>
           <p class="then"><b>Then <span class="agent-name">Codex</span></b> installs it in a scratch copy, runs <code>tsc</code> and lists what would break.</p>
         </article>
         <article class="run">
-          <header><h3>Codex comes up on Hacker News</h3><span class="tag">Hacker News search</span></header>
-          <p class="say">“When Codex comes up on Hacker News, sum up what people say about it and list any bug reports.”</p>
-          <div class="log">
+          <header><h3><span class="for-codex">Codex</span><span class="for-claude">Claude Code</span> comes up on Hacker News</h3><span class="tag">Hacker News search</span></header>
+          <p class="say for-codex">“When Codex comes up on Hacker News, sum up what people say about it and list any bug reports.”</p>
+          <p class="say for-claude">“When Claude Code comes up on Hacker News, sum up what people say about it and list any bug reports.”</p>
+          <div class="log for-claude">
+            <p><time datetime="2026-10-14T02:39:29Z">02:39:29</time>35 mention(s) of Claude Code on Hacker News in the last 24 h, in 22 thread(s)</p>
+            <p><time datetime="2026-10-14T02:59:33Z">02:59:33</time>new thread on “Show HN: Evaluate and improve your agent steering” <span class="fired">· fired</span></p>
+          </div>
+          <div class="log for-codex">
             <p><time datetime="2026-10-13T08:51:48Z">08:51:48</time>72 mention(s) of Codex on Hacker News in the last 24 h, in 19 thread(s)</p>
             <p><time datetime="2026-10-13T08:56:49Z">08:56:49</time>comment on “Where is all the new, good software?” <span class="fired">· fired</span></p>
           </div>
