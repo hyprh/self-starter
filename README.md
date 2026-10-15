@@ -57,7 +57,7 @@ Anything a few lines of code can check: a file, a command, a local service, a we
 |---|---|---|
 | **Long jobs** | "When the training run finishes, compare it with the last one." | the end of the training log |
 | | "When the GPU is idle for 10 min, start the next experiment." | `nvidia-smi` |
-| **Code** | "Whenever CI fails on main, find the cause and propose a fix." | `gh run list` |
+| **Code** | "Whenever CI fails on main, find the cause and propose a fix." | GitHub Actions ([try it](docs/ci-watch.md)) |
 | | "When my PR gets review comments, address them and push." | `gh pr view` |
 | | "When a new version of zod is out, try it on a branch." | the npm registry |
 | **Services** | "If the dev server is down for two minutes, find out why." | the health endpoint |
