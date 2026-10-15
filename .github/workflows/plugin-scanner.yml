@@ -1,0 +1,43 @@
+name: Plugin scanner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan (${{ matrix.version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The catalog's centralized admission scanner.
+          - version: 2.0.1116
+            sha256: 40d40308484e49b438c6ef47a7794ab6aac617914447174f80fe4578911cdcb3
+          # The reviewed release documented in the catalog's CONTRIBUTING.md.
+          - version: 3.45.0
+            sha256: 93dc4155435056995168c1e8888be3fb819b3618cbcbf9e4181fbf8f83bc9c00
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install the checksum-verified scanner
+        env:
+          SCANNER_VERSION: ${{ matrix.version }}
+          SCANNER_SHA256: ${{ matrix.sha256 }}
+        run: |
+          python -m pip download --no-deps --only-binary=:all: \
+            --dest "$RUNNER_TEMP/scanner-wheel" "plugin-scanner==$SCANNER_VERSION"
+          scanner_wheel="$RUNNER_TEMP/scanner-wheel/plugin_scanner-$SCANNER_VERSION-py3-none-any.whl"
+          printf '%s  %s\n' "$SCANNER_SHA256" "$scanner_wheel" | sha256sum --check --strict
+          python -m pip install "$scanner_wheel"
+      - name: Scan the repository
+        run: plugin-scanner scan . --format text --min-score 80 --fail-on-severity high

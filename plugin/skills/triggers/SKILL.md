@@ -1,4 +1,5 @@
 ---
+license: MIT
 name: triggers
 description: Create and manage triggers that watch for something (a job that finishes, a service that goes down, a failing CI run, a new release, a price crossing a threshold) and hand a task to Codex when it happens. Use when the user wants to be told, or wants something done, "when X happens", and when handling a message that starts with [self-starter].
 ---

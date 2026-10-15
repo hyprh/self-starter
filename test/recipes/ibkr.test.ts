@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -12,7 +13,8 @@ import { tempHome } from "../engine/fixtures.js";
 
 const deno = bundledDeno();
 const RECIPES = join(PACKAGE_ROOT, "recipes");
-const TOKEN = "good-token";
+// Each local fake server run gets its own credential; no live Flex token is used.
+const TOKEN = randomUUID();
 
 /** Speaks the Flex Web Service protocol: SendRequest hands out a reference, GetStatement returns the report. */
 class FakeFlex {
