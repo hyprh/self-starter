@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1200">
+<title>Self-Starter social sharing card</title>
+<!--
+Editable source for site/assets/social-card.png (1200 × 630).
+Serve the repository root: python3 -m http.server 8000 --bind 127.0.0.1
+Open http://127.0.0.1:8000/docs/assets/social-card.html in Chromium at
+1200 × 630 with deviceScaleFactor 1, then save to site/assets/social-card.png.
+Wait for document.fonts.ready and the image below to load before taking a PNG
+screenshot. Only local assets and system fonts are used; no build is required.
+-->
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1200px; height: 630px; }
+body {
+  background: #f6f7f8;
+  color: #14181d;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.card {
+  width: 1200px;
+  height: 630px;
+  padding: 54px 64px 38px;
+  display: flex;
+  flex-direction: column;
+}
+header { display: flex; align-items: center; justify-content: space-between; }
+.brand { display: flex; align-items: center; gap: 18px; }
+.brand img { display: block; width: 62px; height: 62px; }
+.brand-name { font-size: 30px; font-weight: 700; letter-spacing: -0.8px; }
+.agents { color: #5b6470; font-size: 21px; }
+main { margin-top: 53px; }
+h1 { margin: 0; font-size: 82px; font-weight: 750; letter-spacing: -3.4px; line-height: 1.04; }
+h1 span { display: block; }
+h1 .action { color: #a84f06; }
+.description { margin: 27px 0 0; font-size: 25px; line-height: 1.45; color: #5b6470; }
+footer {
+  margin-top: auto;
+  padding-top: 23px;
+  border-top: 1px solid #dde2e8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 18px;
+  color: #5b6470;
+}
+.waiting { display: flex; align-items: center; gap: 10px; }
+.waiting::before { content: ""; width: 8px; height: 8px; background: #e8870e; border-radius: 50%; }
+</style>
+</head>
+<body>
+<article class="card" aria-label="Self-Starter: custom events for Codex and Claude Code">
+  <header>
+    <div class="brand">
+      <img src="../../site/icon-trigger.svg" alt="" width="62" height="62">
+      <span class="brand-name">Self-Starter</span>
+    </div>
+    <span class="agents">Codex · Claude Code</span>
+  </header>
+  <main>
+    <h1><span>Custom events.</span><span class="action">Work resumes.</span></h1>
+    <p class="description">Define a condition in plain language.<br>Watch files, logs, commands and APIs. Act when it happens.</p>
+  </main>
+  <footer>
+    <span class="waiting">No model tokens while waiting.</span>
+    <span>hyprh.github.io/self-starter</span>
+  </footer>
+</article>
+</body>
+</html>

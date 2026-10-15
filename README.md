@@ -1,14 +1,15 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Give Codex eyes.</b><br>
-Tell Codex what to keep an eye on. A small probe watches it on your machine without spending tokens,<br>
-and when something changes, Codex comes back to your conversation with what it found and what it did.<br>
-Get a desktop notification when the result needs your attention.</p>
+<p align="center"><b>Custom event triggers for Codex and Claude Code.</b><br>
+Describe your condition in plain language. Your agent writes a small probe to watch files, commands or APIs.<br>
+The probe runs on your machine without calling a model while it waits.<br>
+When the condition is met, your agent picks up the task and reports back to your conversation.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
   <a href="#demo">Demo</a> ·
   <a href="#install">Install</a> ·
+  <a href="#try-it-in-two-minutes">Quick start</a> ·
   <a href="#what-to-watch">Use cases</a> ·
   <a href="docs/guide.md">Guide</a> ·
   <a href="docs/design.md">Design</a>
@@ -30,6 +31,16 @@ In Claude Code ([how it works there](docs/guide.md#claude-code)):
 ```
 /plugin install self-starter --marketplace hyprh/self-starter
 ```
+
+## Try it in two minutes
+
+After [installing](#install), use a file that does not exist yet. If you have tried this before, change the filename in both steps.
+
+1. In a Codex or Claude Code conversation: "Tell me once when /tmp/self-starter-demo/done appears, and what it says. Check every 10 seconds and reply here. After starting the watch, confirm the first scheduled check found no file."
+2. After that confirmation, run: `mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done`
+3. Your agent replies in that conversation. `~/.self-starter/bin/self-starter history` shows the event and where it was handled.
+
+For a development workflow, try [watching a CI failure](docs/ci-watch.md).
 
 ## Demo
 
@@ -76,12 +87,6 @@ You need macOS or Linux, [Node.js](https://nodejs.org) 20 or newer, and the Code
 The first time Codex starts the plugin, it downloads the rest of Self-Starter (about 50 MB, with [Deno](https://deno.com) for the probes) and sets up a small background service (launchd or systemd), so triggers keep running when Codex is closed. Secrets and email are set up in a terminal with `~/.self-starter/bin/self-starter`; see the [guide](docs/guide.md).
 
 Or from a clone of this repository: `npm install && npm link && self-starter install`.
-
-## Try it in two minutes
-
-1. In a Codex conversation: "Tell me when /tmp/self-starter-demo/done appears, and what it says. Check every 10 seconds."
-2. Close the Codex app if you like, then: `mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done`
-3. Codex answers in that conversation and you get a notification. `~/.self-starter/bin/self-starter history` shows where it answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
 
 ## How it works
 
