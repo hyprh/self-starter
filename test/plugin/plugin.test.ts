@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -103,10 +103,10 @@ describe("the plugin's launcher", () => {
   after(() => rmSync(scratch, { recursive: true, force: true }));
 
   /** Starts the launcher as Codex does (or as Claude Code does) and returns what `initialize` answered, or its exit code and error output. */
-  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" = "codex"): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
+  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" = "codex", pluginSource = PLUGIN_SOURCE): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
     const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs")];
     const child = spawn(process.execPath, [...launcher, "mcp"], {
-      cwd: host === "codex" ? PLUGIN_SOURCE : scratch,
+      cwd: host === "codex" ? pluginSource : scratch,
       env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: scratch, SELF_STARTER_HOME: home, SELF_STARTER_RUNTIME: PACKAGE_ROOT, ...extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -146,6 +146,19 @@ describe("the plugin's launcher", () => {
   it("starts the same way from the Claude Code plugin, which has its own manifest", async () => {
     const started = await start({ SELF_STARTER_HOME: join(scratch, "home-cc"), CLAUDE_CODE_SESSION_ID: "s1" }, "claude-code");
     assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
+  });
+
+  it("starts from a catalog bundle containing only manifest-declared paths", async () => {
+    const manifest = json("plugin/.codex-plugin/plugin.json");
+    const bundle = join(scratch, "catalog-bundle");
+    mkdirSync(bundle);
+    // Catalogs mirror the manifest, its declared content paths and interface assets.
+    // A launcher directory omitted from the manifest must not be copied implicitly.
+    for (const path of [".codex-plugin", manifest.skills, manifest.scripts, manifest.mcpServers, "assets"]) {
+      if (typeof path === "string") cpSync(join(PLUGIN_SOURCE, path), join(bundle, path), { recursive: true });
+    }
+    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-catalog") }, "codex", bundle);
+    assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION }, started.stderr);
   });
 
   it("answers Claude Code in time when the first start takes longer than it waits, then brings the tools in", async () => {

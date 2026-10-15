@@ -16,6 +16,7 @@
 // and tmux: npm run build && node dist/test/e2e/cc-agent.js
 
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -171,7 +172,8 @@ const modelUrl = `http://127.0.0.1:${(model.address() as AddressInfo).port}`;
 
 // ---- an isolated Claude Code: its own home and config, the stand-in model, no telemetry ----
 
-const KEY = "sk-ant-e2e-stand-in-key";
+// An ephemeral credential for the loopback stand-in; never a provider API key.
+const KEY = randomUUID();
 writeFileSync(
   join(configDir, ".claude.json"),
   JSON.stringify({
