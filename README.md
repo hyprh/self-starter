@@ -2,10 +2,12 @@
 
 <p align="center"><b>Give Codex eyes.</b><br>
 Tell Codex what to keep an eye on. A small probe watches it on your machine without spending tokens,<br>
-and when something changes, Codex comes back to your conversation with what it found and what it did.</p>
+and when something changes, Codex comes back to your conversation with what it found and what it did.<br>
+Get a desktop notification when the result needs your attention.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
+  <a href="#demo">Demo</a> ·
   <a href="#install">Install</a> ·
   <a href="#what-to-watch">Use cases</a> ·
   <a href="docs/guide.md">Guide</a> ·
@@ -29,7 +31,15 @@ In Claude Code ([how it works there](docs/guide.md#claude-code)):
 /plugin install self-starter --marketplace hyprh/self-starter
 ```
 
-<p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
+## Demo
+
+**Keep working. The result comes to your desktop.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
+
+<p align="center">
+  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
+</p>
+
+*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
 
 ```
 You:    When the run in runs/exp42 finishes, compare it with exp41.
@@ -74,6 +84,8 @@ Or from a clone of this repository: `npm install && npm link && self-starter ins
 3. Codex answers in that conversation and you get a notification. `~/.self-starter/bin/self-starter history` shows where it answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
 
 ## How it works
+
+<p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
 
 - **Probes, not prompts.** Codex writes a few lines of TypeScript once; the background service runs them on a schedule. No model is called while waiting.
 - **The engine owns the rules.** It fires only when the condition becomes true, with optional minimum duration, cooldown and limits, deduplicates events, retries, and tells you when a probe keeps failing. When a trigger turns out noisy, Codex can make it quieter on its own, never louder, and tells you.
