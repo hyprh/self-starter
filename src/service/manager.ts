@@ -280,9 +280,10 @@ const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
  */
 export function writeCommand(paths: Paths): string {
   const file = join(paths.home, "bin", "self-starter");
+  const command = ["exec", shellQuote(process.execPath), shellQuote(CLI_SCRIPT), '"$@"'].join(" ");
   const lines = ["#!/bin/sh", "# Runs the Self-Starter installation that the background service runs."];
   if (process.env.SELF_STARTER_HOME) lines.push(`export SELF_STARTER_HOME=${shellQuote(paths.home)}`);
-  lines.push(`exec ${shellQuote(process.execPath)} ${shellQuote(CLI_SCRIPT)} "$@"`, "");
+  lines.push(command, "");
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, lines.join("\n"), { mode: 0o755 });
   return file;

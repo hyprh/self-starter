@@ -55,7 +55,7 @@ const decode = (text: string) =>
     return String.fromCodePoint(parseInt(entity.slice(hex ? 2 : 1), hex ? 16 : 10));
   });
 const textOf = (xml: string, tag: string) => {
-  const match = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(xml);
+  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));
   return match ? decode(match[1]!.trim()) : undefined;
 };
 const attrsOf = (text: string): Attrs => {

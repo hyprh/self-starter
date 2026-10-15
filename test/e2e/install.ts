@@ -126,8 +126,9 @@ async function fromMarketplace(): Promise<void> {
   expect(status.version === VERSION && status.home === pluginPaths.home, `the plugin's first start installed its runtime and started Self-Starter ${status.version}`);
   expect(serviceState() === RUNNING, `and set up the background service: ${manager.kind} runs it (${serviceState()})`);
   const command = join(pluginPaths.home, "bin", "self-starter");
-  expect(spawnSync(command, ["version"], { encoding: "utf8" }).stdout.trim() === VERSION, `${command} runs it from a terminal`);
-  show(`${command} uninstall --purge`, spawnSync(command, ["uninstall", "--purge"], { encoding: "utf8", env: pluginEnv }).stdout.trim());
+  const runCommand = (args: string[]) => spawnSync(command, args, { encoding: "utf8", env: pluginEnv }).stdout.trim();
+  expect(runCommand(["version"]) === VERSION, `${command} runs it from a terminal`);
+  show(`${command} uninstall --purge`, runCommand(["uninstall", "--purge"]));
   expect(serviceState() !== RUNNING && !existsSync(pluginPaths.home), `the service and the folder are gone (${serviceState()})`);
 }
 

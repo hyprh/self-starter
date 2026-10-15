@@ -1,4 +1,5 @@
 ---
+license: MIT
 name: ibkr
 description: Keep an eye on an Interactive Brokers (IBKR) account or prices and speak up when something changes - new executions, prices crossing a level, option assignments and exercises, deposits and withdrawals, big moves in net asset value. Use when the user wants you to watch their IBKR account or IBKR market data, and when handling a fire of an IBKR trigger.
 ---
