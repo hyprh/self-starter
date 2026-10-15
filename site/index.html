@@ -3,9 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Self-Starter</title>
+<title>Self-Starter — Custom event triggers for Codex and Claude Code</title>
 <link rel="icon" type="image/svg+xml" sizes="any" href="./icon-trigger.svg">
-<meta name="description" content="Give Codex or Claude Code eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, it starts working on its own, right in your conversation, even if it&#39;s closed. Zero tokens while it waits.">
+<meta name="description" content="Custom event triggers for Codex and Claude Code. Describe a condition; local probes watch files, commands and APIs, then resume your task when it happens.">
+<link rel="canonical" href="https://hyprh.github.io/self-starter/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Self-Starter">
+<meta property="og:title" content="Self-Starter — Custom event triggers for Codex and Claude Code">
+<meta property="og:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
+<meta property="og:url" content="https://hyprh.github.io/self-starter/">
+<meta property="og:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Self-Starter: custom event triggers for Codex and Claude Code, using files, logs, commands and APIs.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Self-Starter — Custom event triggers for Codex and Claude Code">
+<meta name="twitter:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
+<meta name="twitter:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
+<meta name="twitter:image:alt" content="Self-Starter: custom event triggers for Codex and Claude Code, using files, logs, commands and APIs.">
 <script>
   // The page reads for Codex until the visitor picks Claude Code (remembered, or linked as #claude-code); set before the first paint.
   try {
@@ -98,6 +114,8 @@ p { margin: 0; }
 .cmd button { flex: none; border: 0; border-left: 1px solid var(--line); background: var(--soft); color: var(--fg); font: 500 0.82rem var(--font-body); padding: 0 0.9rem; cursor: pointer; }
 .cmd button:hover { background: var(--line); }
 .fine { font-size: 0.86rem; color: var(--muted); }
+.start-links { display: flex; flex-wrap: wrap; gap: 0.3rem 1.25rem; font-size: 0.9rem; }
+.start-links a { padding-block: 0.35rem; }
 
 /* One page for Codex and for Claude Code: what differs is written for each, and the switch shows one. */
 html:not([data-agent="claude"]) .for-claude, html[data-agent="claude"] .for-codex { display: none; }
@@ -188,9 +206,9 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
 <main>
   <div class="wrap hero">
     <div>
-      <p class="eyebrow">A plugin for Codex and Claude Code</p>
+      <p class="eyebrow">Custom event triggers for Codex and Claude Code</p>
       <h1>Give <span class="agent-name">Codex</span> eyes.</h1>
-      <p class="lede">Tell <span class="agent-name">Codex</span> what to keep an eye on. A small probe watches it on your machine without spending tokens, and when something changes, <span class="agent-name">Codex</span> comes back to your conversation with what it found and what it did.</p>
+      <p class="lede">Describe your condition in plain language. <span class="agent-name">Codex</span> writes a small probe to check it on your machine, without calling a model while it waits. When the condition is met, <span class="agent-name">Codex</span> picks up the task and reports back to your conversation.</p>
       <ul class="uses" aria-label="What it does today">
         <li><b>CI fails on main.</b> <span><span class="agent-name">Codex</span> finds the cause and proposes a fix.</span></li>
         <li><b>A training run finishes.</b> <span><span class="agent-name">Codex</span> compares it with the last one.</span></li>
@@ -211,6 +229,10 @@ claude plugin install self-starter@self-starter</code></pre>
         </div>
         <p class="fine for-codex">macOS or Linux, Node.js 20 or newer, and the Codex app or CLI. Restart the Codex app; the first start sets up the rest.</p>
         <p class="fine for-claude">macOS or Linux, Node.js 20 or newer, and Claude Code 2.1.224 or newer. Start a new session; the first start sets up the rest.</p>
+        <nav class="start-links" aria-label="Try Self-Starter">
+          <a href="https://github.com/hyprh/self-starter/blob/main/README.md#try-it-in-two-minutes">Try your first custom event →</a>
+          <a href="https://github.com/hyprh/self-starter/blob/main/docs/ci-watch.md">Watch a CI failure →</a>
+        </nav>
       </div>
     </div>
 
