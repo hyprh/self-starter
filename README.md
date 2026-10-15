@@ -36,12 +36,10 @@ In Claude Code ([how it works there](docs/guide.md#claude-code)):
 **Keep working. The result comes to your desktop.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
 
 <p align="center">
-  <a href="docs/demos/futu-notification.mp4"><img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready."></a>
+  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
 </p>
 
-[Watch the MP4](docs/demos/futu-notification.mp4) · [Demo source and rendering instructions](docs/demos/README.md)
-
-*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical. The video is in English and contains no dates, clock times, or private conversation identifiers.*
+*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
 
 ```
 You:    When the run in runs/exp42 finishes, compare it with exp41.
