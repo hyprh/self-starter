@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.0.3 (2026-10-16)
+
+This release prepares Self-Starter for plugin catalogs and gives the plugin and website a shared event-trigger icon.
+
+- **Catalog bundles retain the launcher.** The Codex manifest now declares `bin/`, so a catalog that mirrors only declared plugin paths can still start the MCP server. A regression test covers that installation layout.
+- **Complete plugin metadata and documentation.** The bundle includes repository and license metadata, installation policy, its own README, license and security policy, and an icon. Descriptions emphasize custom events defined in plain language.
+- **A shared visual identity.** The plugin and GitHub Pages favicon use the same mint ring and signal dot. The website includes Codex and Claude Code examples, and the README adds a desktop-notification demo.
+- **Repeatable security checks.** GitHub Actions are pinned to commit SHAs, scanner wheels are checksum-verified, and CI checks both scanner versions used or recommended by the awesome catalog. Dependabot checks dependency and action updates.
+- **Clearer scanner inputs.** Local test credentials are generated per run; equivalent regex and command-building changes remove scanner false positives without changing execution permissions or trigger behavior.
+
+Validated with 155 tests, catalog manifest and icon checks, a mirrored-bundle startup check, and both plugin scanners with no high or critical findings. Existing Codex and Claude Code end-to-end checks pass on Linux and macOS.
+
 ## 0.0.2 (2026-10-13)
 
 Self-Starter now works in Claude Code too, with the same triggers, background service and command line.
