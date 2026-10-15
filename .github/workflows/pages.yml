@@ -4,7 +4,7 @@ name: Pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "docs/demos/futu-notification.gif", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Include the shared notification demo
+        run: |
+          mkdir -p site/assets
+          cp docs/demos/futu-notification.gif site/assets/futu-notification.gif
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

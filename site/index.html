@@ -77,7 +77,7 @@ p { margin: 0; }
 
 .wrap { max-width: 72rem; margin: 0 auto; padding-inline: 1.25rem; }
 
-.top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding-block: 1.1rem 0; }
+.top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 1rem; padding-block: 1.1rem 0; }
 .mark { font-family: var(--font-display); font-weight: 800; font-size: 1.05rem; letter-spacing: -0.01em; }
 .top nav { display: flex; gap: 1.1rem; font-size: 0.92rem; }
 .top nav a { color: var(--muted); text-decoration: none; }
@@ -125,6 +125,23 @@ h2 { font-weight: 700; font-size: 1.6rem; line-height: 1.2; letter-spacing: -0.0
 h3 { font-weight: 700; font-size: 1.05rem; line-height: 1.3; }
 .sub { color: var(--muted); max-width: 44rem; }
 
+.demo-intro { display: flex; flex-direction: column; gap: 0.7rem; }
+.demo { margin: 0; display: flex; flex-direction: column; gap: 0.85rem; }
+.demo-media { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #0b111b; aspect-ratio: 16 / 9; }
+.demo-media img { display: block; width: 100%; height: auto; }
+.demo-still { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-evenly; gap: 1rem; width: 100%; height: 100%; padding: clamp(1rem, 3vw, 2.5rem); color: #eef4ff; }
+.demo-still h3 { font-size: clamp(1.1rem, 2.8vw, 2.6rem); max-width: 20ch; }
+.demo-toast { flex: 0 1 30rem; padding: clamp(0.65rem, 2vw, 1.4rem); border: 1px solid #4a8e7b; border-radius: 12px; background: #172b35; }
+.demo-toast .label { font: 500 clamp(0.65rem, 1.2vw, 0.9rem) var(--font-mono); color: #6ae4b4; }
+.demo-toast strong { display: block; margin-block: 0.3rem; font-size: clamp(1rem, 2vw, 1.5rem); }
+.demo-toast p:last-child { font-size: clamp(0.8rem, 1.6vw, 1.1rem); }
+.demo-media [hidden] { display: none; }
+.demo figcaption { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem 1.5rem; }
+.demo figcaption p { flex: 1 1 28rem; color: var(--muted); font-size: 0.86rem; }
+.demo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; font-size: 0.86rem; }
+.demo-actions button { min-height: 44px; padding: 0.45rem 0.85rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); font: 500 0.86rem var(--font-body); cursor: pointer; }
+.demo-actions button:hover { background: var(--soft); }
+
 .steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem 1.75rem; counter-reset: step; }
 .steps li { display: flex; flex-direction: column; gap: 0.4rem; counter-increment: step; min-width: 0; }
 .steps li::before { content: counter(step); font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); }
@@ -161,6 +178,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
   <header class="top">
     <span class="mark">Self-Starter</span>
     <nav aria-label="Project">
+      <a href="#demo">Demo</a>
       <a href="https://github.com/hyprh/self-starter">GitHub</a>
       <a href="https://github.com/hyprh/self-starter/blob/main/docs/design.md">Design notes</a>
     </nav>
@@ -215,6 +233,36 @@ claude plugin install self-starter@self-starter</code></pre>
       </div>
     </div>
   </div>
+
+  <section id="demo" aria-labelledby="demo-heading">
+    <div class="wrap">
+      <div class="demo-intro">
+        <p class="eyebrow">See it in action</p>
+        <h2 id="demo-heading">Keep working. The result finds you.</h2>
+        <p class="sub">A Futu watch runs in the background. When a move stands out, Codex investigates it and Self-Starter brings the result to your desktop.</p>
+      </div>
+      <figure class="demo">
+        <div class="demo-media" id="notification-demo-frame">
+          <img id="notification-demo" src="assets/futu-notification.gif" width="1280" height="720" loading="lazy" decoding="async" alt="An illustrated Codex and Futu watch: ask once, keep working while a local probe waits, then receive a desktop notification when the AMD investigation is ready.">
+          <div class="demo-still" id="notification-demo-still" hidden>
+            <h3>The result finds you.</h3>
+            <div class="demo-toast">
+              <p class="label">SELF-STARTER / DESKTOP NOTIFICATION</p>
+              <strong>AMD down 4.31%.</strong>
+              <p>Investigation ready in Codex.</p>
+            </div>
+          </div>
+        </div>
+        <figcaption>
+          <p>A 26-second Codex + Futu example. Edited replay; the interface and desktop notification are illustrated, and quotes are historical.</p>
+          <div class="demo-actions">
+            <button id="demo-toggle" type="button" aria-controls="notification-demo-frame" hidden>Pause demo</button>
+            <a href="assets/futu-notification.gif" download="self-starter-demo.gif">Download GIF</a>
+          </div>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
 
   <section aria-labelledby="how">
     <div class="wrap">
@@ -490,6 +538,28 @@ for (const button of document.querySelectorAll("[data-pick]")) {
     history.replaceState(null, "", agent === "claude" ? "#claude-code" : location.pathname + location.search);
   });
 }
+</script>
+<script>
+// Show a readable notification still while paused, including for reduced-motion visitors.
+const demoImage = document.getElementById("notification-demo");
+const demoToggle = document.getElementById("demo-toggle");
+const demoStill = document.getElementById("notification-demo-still");
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+let demoPaused = false;
+
+function pauseDemo(paused) {
+  demoPaused = paused;
+  demoImage.hidden = paused;
+  demoStill.hidden = !paused;
+  demoToggle.textContent = paused ? "Play demo" : "Pause demo";
+}
+
+demoToggle.hidden = false;
+pauseDemo(reducedMotion.matches);
+demoToggle.addEventListener("click", () => pauseDemo(!demoPaused));
+reducedMotion.addEventListener("change", (event) => {
+  if (event.matches) pauseDemo(true);
+});
 </script>
 </body>
 </html>
