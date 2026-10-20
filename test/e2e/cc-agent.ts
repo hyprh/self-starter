@@ -79,6 +79,7 @@ type Block = { type: "text"; text: string } | { type: "tool_use"; name: string; 
 /** How long the user's slow request keeps Claude busy. */
 const SLOW_TURN_MS = 25_000;
 let toolUses = 0;
+const offeredTools = new Set<string>();
 
 const contentOf = (message: Json | undefined): Json[] =>
   typeof message?.content === "string" ? [{ type: "text", text: message.content }] : Array.isArray(message?.content) ? message.content : [];
@@ -87,6 +88,7 @@ const textOf = (blocks: Json[]): string =>
 
 function respond(request: Json, session: string): Block[] | { blocks: Block[]; delayMs: number } {
   const tools: string[] = (request.tools ?? []).map((tool: Json) => tool.name);
+  for (const name of tools) offeredTools.add(name);
   const tool = (name: string) => tools.find((candidate) => candidate.endsWith(`__${name}`));
   if (!tool("trigger_report")) return [{ type: "text", text: "OK" }]; // a side request, such as a title
   const messages: Json[] = request.messages ?? [];
@@ -202,6 +204,8 @@ const environment: Record<string, string> = {
   DISABLE_TELEMETRY: "1",
   DISABLE_ERROR_REPORTING: "1",
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  // The stand-in calls MCP tools directly rather than playing tool discovery.
+  ENABLE_TOOL_SEARCH: "false",
   SELF_STARTER_HOME: paths.home,
   ...Object.fromEntries(passed.map(([name, value]) => [name, value ?? ""])),
   NO_PROXY: "127.0.0.1,localhost",
@@ -230,7 +234,7 @@ async function fireOf(triggerId: string): Promise<FireView | undefined> {
 const explain = async () => {
   const history = await selfStarter(["history"]).catch((error: Error) => error.message);
   const logs = join(paths.logs, "daemon.log");
-  return `${history}\nstand-in saw: ${JSON.stringify(seen)}\n${existsSync(logs) ? readFileSync(logs, "utf8").split("\n").slice(-25).join("\n") : ""}`;
+  return `${history}\nstand-in saw: ${JSON.stringify(seen)}\ntools offered: ${JSON.stringify([...offeredTools])}\n${existsSync(logs) ? readFileSync(logs, "utf8").split("\n").slice(-25).join("\n") : ""}`;
 };
 const screen = () => tmux("capture-pane", "-t", "user", "-p");
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -339,6 +343,8 @@ try {
   console.log("\nAll good: fires reached the open session through its inbox, and closed sessions headless, each reported from the right session.");
 } catch (error) {
   console.error(`\nFAILED: ${(error as Error).stack ?? String(error)}`);
+  const message = ((error as Error).message ?? String(error)).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+  console.error(`::error::${message}`);
   process.exitCode = 1;
 } finally {
   answering = false;

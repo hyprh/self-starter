@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
-import { hostOf } from "../core/conversations.js";
+import { agentName, hostOf } from "../core/conversations.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
 import { loadConfig, saveConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
@@ -17,11 +17,11 @@ import { doctor, install, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
 
-const HELP = `self-starter ${VERSION}: let Codex or Claude Code act when something happens
+const HELP = `self-starter ${VERSION}: let your coding agent act when something happens
 
 Setup
-  self-starter install [--codex <path>] [--claude <path>] [--no-service]
-                                                         install the plugin in Codex and Claude Code (those found),
+  self-starter install [--codex <path>] [--claude <path>] [--zcode <path>] [--no-service]
+                                                         install the plugin in Codex, Claude Code and ZCode (those found),
                                                          and the background service
   self-starter uninstall [--purge]                       remove them (--purge also deletes triggers and history)
   self-starter doctor                                    check the installation
@@ -96,8 +96,9 @@ function answeredWhere(fire: FireView): string {
   const ref = fire.target?.threadId;
   if (!ref || (source !== "tool" && source !== "final-answer")) return "";
   const where = `${fire.target?.kind === "dedicated" ? "its own" : "your"} ${conversationNoun(ref)}`;
-  const codex = hostOf(ref) === "codex";
-  const how = fire.wokenAt ? (codex ? "opened in the background" : "resumed in the background") : codex ? "open in Codex" : "open in Claude Code";
+  const host = hostOf(ref);
+  const app = host === "claude-code" ? "Claude Code" : agentName(host);
+  const how = fire.wokenAt ? (host === "codex" ? "opened in the background" : "resumed in the background") : `open in ${app}`;
   return `  (${where}, ${how})`;
 }
 
@@ -201,8 +202,8 @@ async function main(argv: string[]): Promise<void> {
       await runDaemonForeground();
       return;
     case "install":
-      await install(paths, { codex: flag(args, "codex"), claude: flag(args, "claude"), service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
-      out("\nDone. Restart the Codex app, or start a new `codex` or `claude` session, so it loads the plugin. Then ask, for example:");
+      await install(paths, { codex: flag(args, "codex"), claude: flag(args, "claude"), zcode: flag(args, "zcode"), service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
+      out("\nDone. Restart the host app, or start a new `codex`, `claude` or `zcode` session, so it loads the plugin. Then ask, for example:");
       out('  "Watch https://example.com/status and tell me when it stops returning 200."');
       out("The agent uses the plugin's skill (self-starter:triggers) to set it up.");
       return;
@@ -217,7 +218,7 @@ async function main(argv: string[]): Promise<void> {
     }
     case "list": {
       const list = await daemonCall<TriggerSummary[]>("trigger.list");
-      if (list.length === 0) return out("No triggers yet. Ask Codex or Claude to watch something for you.");
+      if (list.length === 0) return out("No triggers yet. Ask your coding agent to watch something for you.");
       list.forEach((t, i) => {
         if (i > 0) out();
         printSummary(t);
