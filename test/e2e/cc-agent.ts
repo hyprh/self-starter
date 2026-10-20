@@ -339,6 +339,8 @@ try {
   console.log("\nAll good: fires reached the open session through its inbox, and closed sessions headless, each reported from the right session.");
 } catch (error) {
   console.error(`\nFAILED: ${(error as Error).stack ?? String(error)}`);
+  const message = ((error as Error).message ?? String(error)).replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+  console.error(`::error::${message}`);
   process.exitCode = 1;
 } finally {
   answering = false;
