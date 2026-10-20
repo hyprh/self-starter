@@ -24,6 +24,7 @@ function parseCaller(raw: unknown): Caller {
   if (typeof value.threadId === "string" && value.threadId) caller.threadId = value.threadId;
   if (typeof value.turnId === "string" && value.turnId) caller.turnId = value.turnId;
   if (typeof value.turnTrigger === "string" && value.turnTrigger) caller.turnTrigger = value.turnTrigger;
+  if (typeof value.cwd === "string" && value.cwd) caller.cwd = value.cwd;
   return caller;
 }
 
