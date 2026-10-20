@@ -21,7 +21,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           test "$(node -p 'require("./package.json").version')" = "$version"
-          test "$(node -p 'require("./plugin/.codex-plugin/plugin.json").version')" = "$version"
+          test "$(node -p 'require("./codex-plugin/.codex-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./cc-plugin/.claude-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./zcode-plugin/.zcode-plugin/plugin.json").version')" = "$version"
       - name: Take the notes from CHANGELOG.md

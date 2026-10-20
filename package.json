@@ -23,7 +23,7 @@
   },
   "files": [
     "dist/src",
-    "plugin",
+    "codex-plugin",
     "cc-plugin",
     "zcode-plugin",
     "recipes"

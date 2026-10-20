@@ -6,7 +6,7 @@
 // SELF_STARTER_RUNTIME installs from somewhere else, such as a tarball in tests.
 //
 // The same file is the launcher for Codex, Claude Code and ZCode; a test keeps
-// the copies in plugin/, cc-plugin/ and zcode-plugin/ identical.
+// the copies in codex-plugin/, cc-plugin/ and zcode-plugin/ identical.
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
