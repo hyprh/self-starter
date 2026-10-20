@@ -5,8 +5,8 @@
 // deno, into ~/.self-starter/runtime/<version>; later starts need no network.
 // SELF_STARTER_RUNTIME installs from somewhere else, such as a tarball in tests.
 //
-// The same file is the launcher of both plugins (plugin/ for Codex, cc-plugin/ for
-// Claude Code); a test keeps the two copies identical.
+// The same file is the launcher for Codex, Claude Code and ZCode; a test keeps
+// the copies in plugin/, cc-plugin/ and zcode-plugin/ identical.
 
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
@@ -24,7 +24,7 @@ function fail(message) {
 if (Number(process.versions.node.split(".")[0]) < 20) fail(`Node.js 20 or newer is required (this is ${process.version})`);
 
 const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const manifest = [".codex-plugin", ".claude-plugin"].map((dir) => join(pluginRoot, dir, "plugin.json")).find((path) => existsSync(path));
+const manifest = [".codex-plugin", ".claude-plugin", ".zcode-plugin"].map((dir) => join(pluginRoot, dir, "plugin.json")).find((path) => existsSync(path));
 if (!manifest) fail(`no plugin manifest in ${pluginRoot}`);
 const { version } = JSON.parse(readFileSync(manifest, "utf8"));
 const home = resolve(process.env.SELF_STARTER_HOME || join(homedir(), ".self-starter"));

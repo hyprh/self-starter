@@ -25,6 +25,8 @@ export interface Config {
   codexBin?: string;
   /** Absolute path of the claude CLI, for fires of triggers made in Claude Code; found on PATH otherwise. */
   claudeBin?: string;
+  /** Absolute path of ZCode for dedicated result sessions. */
+  zcodeBin?: string;
   /**
    * Whether the daemon runs as a launchd or systemd service. Unset until the user
    * decides: the Codex plugin then sets one up on first use; false after

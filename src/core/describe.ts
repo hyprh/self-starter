@@ -45,6 +45,11 @@ const SANDBOX_TEXT = {
     "workspace-write": "can edit files in its folder",
     "danger-full-access": "no permission checks",
   },
+  zcode: {
+    "read-only": "plan mode: restricts writes and commands; no OS sandbox",
+    "workspace-write": "edit mode: permits workspace edits; other tools may need approval; no OS sandbox",
+    "danger-full-access": "yolo mode: skips ordinary tool approvals; no OS sandbox",
+  },
 } as const;
 
 export function describeAction(def: TriggerDefinition): string {
