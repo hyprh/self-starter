@@ -17,3 +17,6 @@ export const PLUGIN_SOURCE = join(PACKAGE_ROOT, "plugin");
 
 /** Source of the Claude Code plugin (skills, hooks and manifest). */
 export const CC_PLUGIN_SOURCE = join(PACKAGE_ROOT, "cc-plugin");
+
+/** Source of the ZCode plugin (skill and manifest). */
+export const ZCODE_PLUGIN_SOURCE = join(PACKAGE_ROOT, "zcode-plugin");

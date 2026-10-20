@@ -43,6 +43,10 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 - Runs in the background can change files and run commands in their folder (Codex's `workspace-write` sandbox); a trigger can choose `read-only`, or `danger-full-access` when it needs more.
 - `self-starter history` ends each answered fire with where Codex answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
 
+## ZCode
+
+The ZCode integration uses dedicated CLI result sessions. It shares the probe engine and event rules, but does not resume the desktop conversation where a watch was created. See the [ZCode installation and permissions guide](../zcode-plugin/README.md).
+
 ## Claude Code
 
 Self-Starter also works as a Claude Code plugin, with the same triggers, service and command line. Inside a session:

@@ -1,0 +1,13 @@
+{
+  "name": "self-starter",
+  "description": "Custom events for ZCode, checked locally without model tokens while waiting.",
+  "plugins": [
+    {
+      "name": "self-starter",
+      "source": "./zcode-plugin",
+      "version": "0.0.4",
+      "description": "Define custom events in plain language and let ZCode handle them in dedicated result sessions, with no model tokens spent while waiting.",
+      "category": "productivity"
+    }
+  ]
+}

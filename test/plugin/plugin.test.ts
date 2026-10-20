@@ -5,11 +5,13 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
 import { after, describe, it } from "node:test";
-import { buildMarketplace, MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_NAME } from "../../src/cli/install.js";
+import { buildMarketplace, doctor, install, MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_ID, PLUGIN_NAME } from "../../src/cli/install.js";
+import { loadConfig } from "../../src/engine/config.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { PLUGIN_SERVER_RULE } from "../../src/engine/sessions.js";
 import { TOOLS } from "../../src/mcp/server.js";
 import { CLI_SCRIPT, PACKAGE_ROOT, PLUGIN_SOURCE, VERSION } from "../../src/runtime.js";
+import { stopRunningDaemon } from "../../src/service/manager.js";
 
 const json = (path: string) => JSON.parse(readFileSync(join(PACKAGE_ROOT, path), "utf8"));
 
@@ -65,7 +67,7 @@ describe("the Claude Code plugin marketplace in this repository", () => {
 });
 
 describe("the local marketplace that self-starter install writes", () => {
-  it("holds both plugins, at this version, starting this installation's MCP server through absolute paths", () => {
+  it("holds all three plugins, at this version, starting this installation's MCP server through absolute paths", () => {
     const home = mkdtempSync(join(tmpdir(), "ss-marketplace-"));
     try {
       const paths = resolvePaths(home);
@@ -82,8 +84,73 @@ describe("the local marketplace that self-starter install writes", () => {
       assert.equal(read("cc-plugin/.claude-plugin/plugin.json").version, VERSION);
       assert.deepEqual(read("cc-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME], { ...server, env: { SELF_STARTER_HOME: paths.home } });
       assert.ok(existsSync(join(paths.marketplace, "cc-plugin", "hooks", "hooks.json")), "with its hooks");
+
+      assert.deepEqual(read("marketplace.json").plugins, [{ name: PLUGIN_NAME, source: "./zcode-plugin", version: VERSION }]);
+      assert.equal(read("zcode-plugin/.zcode-plugin/plugin.json").version, VERSION);
+      assert.deepEqual(read("zcode-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME], {
+        ...server,
+        env: { SELF_STARTER_HOME: paths.home, SELF_STARTER_HOST: "zcode" },
+        timeoutMs: 30_000,
+      });
     } finally {
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the ZCode plugin", () => {
+  it("uses its native manifest, explicit host and native startup timeout", () => {
+    const marketplace = json("marketplace.json");
+    const manifest = json("zcode-plugin/.zcode-plugin/plugin.json");
+    assert.equal(marketplace.name, MARKETPLACE_NAME);
+    assert.deepEqual(marketplace.plugins.map((entry: { name: string; source: string; version: string }) => [entry.name, entry.source, entry.version]), [[PLUGIN_NAME, "./zcode-plugin", VERSION]]);
+    assert.equal(manifest.version, VERSION);
+    const server = json("zcode-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
+    assert.deepEqual([server.command, ...server.args], ["node", "${ZCODE_PLUGIN_ROOT}/bin/start.mjs", "mcp"]);
+    assert.deepEqual(server.env, { SELF_STARTER_HOST: "zcode" });
+    assert.equal(server.timeoutMs, 180_000);
+    assert.equal(readFileSync(join(PACKAGE_ROOT, "zcode-plugin", "bin", "start.mjs"), "utf8"), readFileSync(join(PLUGIN_SOURCE, "bin", "start.mjs"), "utf8"), "all hosts share the same launcher");
+    assert.ok(json("package.json").files.includes("zcode-plugin"), "the runtime package includes its ZCode plugin");
+  });
+
+  it("registers and enables the plugin, and doctor rejects disabled, broken or malformed plugin listings", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "ss-zcode-install-"));
+    const paths = resolvePaths(join(scratch, "home"));
+    const calls = join(scratch, "calls.jsonl");
+    const mode = join(scratch, "mode");
+    writeFileSync(mode, "enabled");
+    const binaries = ["codex", "claude", "zcode"].map((name) => {
+      const bin = join(scratch, `${name}.mjs`);
+      writeFileSync(bin, `#!${process.execPath}\nimport { appendFileSync, readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify([${JSON.stringify(name)}, ...args]) + "\\n");
+if (args[0] === "--version") console.log("3.16.1");
+else if (args[0] === "plugins" && args[1] === "list") {
+  const mode = readFileSync(${JSON.stringify(mode)}, "utf8");
+  console.log(mode === "invalid" ? "not json" : JSON.stringify([{ id: ${JSON.stringify(PLUGIN_ID)}, enabled: mode !== "disabled", diagnostics: mode === "error" ? [{ severity: "error" }] : [] }]));
+} else console.log("self-starter@self-starter");
+`);
+      chmodSync(bin, 0o755);
+      return bin;
+    });
+    try {
+      await install(paths, { codex: binaries[0]!, claude: binaries[1]!, zcode: binaries[2]!, service: false, log: () => {} });
+      assert.equal(loadConfig(paths).zcodeBin, binaries[2]);
+      const zcodeCalls = readFileSync(calls, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]).filter(([name]) => name === "zcode");
+      assert.deepEqual(zcodeCalls, [
+        ["zcode", "plugins", "marketplace", "add", join(paths.marketplace, "marketplace.json"), "--scope", "user"],
+        ["zcode", "plugins", "install", PLUGIN_ID, "--scope", "user"],
+        ["zcode", "plugins", "enable", PLUGIN_ID, "--scope", "user"],
+      ]);
+      const check = async () => (await doctor(paths)).find((entry) => entry.label === "zcode plugin")!;
+      assert.equal((await check()).ok, true);
+      for (const state of ["disabled", "error", "invalid"]) {
+        writeFileSync(mode, state);
+        assert.equal((await check()).ok, false, state);
+      }
+    } finally {
+      await stopRunningDaemon(paths);
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 });
@@ -102,9 +169,9 @@ describe("the plugin's launcher", () => {
   chmodSync(join(bin, "npm"), 0o755);
   after(() => rmSync(scratch, { recursive: true, force: true }));
 
-  /** Starts the launcher as Codex does (or as Claude Code does) and returns what `initialize` answered, or its exit code and error output. */
-  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" = "codex", pluginSource = PLUGIN_SOURCE): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
-    const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs")];
+  /** Starts the launcher as its host does and returns `initialize`, or its exit code and error output. */
+  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" | "zcode" = "codex", pluginSource = PLUGIN_SOURCE): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
+    const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, host === "zcode" ? "zcode-plugin" : "cc-plugin", "bin", "start.mjs")];
     const child = spawn(process.execPath, [...launcher, "mcp"], {
       cwd: host === "codex" ? pluginSource : scratch,
       env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: scratch, SELF_STARTER_HOME: home, SELF_STARTER_RUNTIME: PACKAGE_ROOT, ...extraEnv },
@@ -145,6 +212,11 @@ describe("the plugin's launcher", () => {
 
   it("starts the same way from the Claude Code plugin, which has its own manifest", async () => {
     const started = await start({ SELF_STARTER_HOME: join(scratch, "home-cc"), CLAUDE_CODE_SESSION_ID: "s1" }, "claude-code");
+    assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
+  });
+
+  it("starts from the ZCode plugin's native manifest and explicit host", async () => {
+    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-zcode"), SELF_STARTER_HOST: "zcode" }, "zcode");
     assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
   });
 

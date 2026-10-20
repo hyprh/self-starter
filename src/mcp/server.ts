@@ -8,7 +8,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { callDaemon, RemoteError } from "../client/client.js";
-import { agentName, sessionRef, type Host } from "../core/conversations.js";
+import { agentName, sessionRef, zcodeRef, type Host } from "../core/conversations.js";
 import { isRecord } from "../core/patch.js";
 import { resolvePaths, type Paths } from "../engine/paths.js";
 import { currentSession, startRelay } from "../engine/sessions.js";
@@ -187,7 +187,7 @@ export const TOOLS = [
   },
   {
     name: "service_status",
-    description: "Check the Self-Starter background service: version, whether deno, codex and claude were found, trigger counts and today's agent runs.",
+    description: "Check the Self-Starter background service: version, available agent CLIs, trigger counts and today's agent runs.",
     inputSchema: { type: "object", properties: {} },
     annotations: { title: "Service status", readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   },
@@ -214,8 +214,20 @@ function str(value: unknown): string | undefined {
 }
 
 /** Who is calling, from the _meta Codex attaches to each tool call. */
-export function callerFrom(meta: unknown): Caller {
+export function callerFrom(meta: unknown, host: Host = "codex"): Caller {
   const m = isRecord(meta) ? meta : {};
+  if (host === "zcode") {
+    const sessionId = str(m.session_id);
+    if (!sessionId) throw new Error("ZCode did not supply session_id in the MCP request metadata; update ZCode before using Self-Starter.");
+    const turnId = str(m.turn_id);
+    const cwd = str(m.workspace_path);
+    return {
+      via: "mcp",
+      threadId: zcodeRef(sessionId),
+      ...(turnId ? { turnId } : {}),
+      ...(cwd ? { cwd } : {}),
+    };
+  }
   let turn: unknown = m["x-codex-turn-metadata"];
   if (typeof turn === "string") {
     try {
@@ -275,6 +287,9 @@ export interface McpServerOptions {
   ensureDaemon?: (paths: Paths) => Promise<unknown>;
   /** Set when Claude Code started the server; read from the environment by default. */
   session?: SessionHost;
+  host?: Host;
+  /** Set only for MCP servers inherited by a daemon-started ZCode turn. */
+  triggerTurn?: boolean;
   /**
    * The plugin's launcher already answered `initialize` (with no tools), because installing this runtime
    * took longer than the host waits: the server tells the host that its tools changed, so it lists them again.
@@ -288,14 +303,20 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
   const output = options.output ?? process.stdout;
   const ensure = options.ensureDaemon ?? ensureDaemon;
   const session = "session" in options ? options.session : sessionHostFrom(process.env);
-  const host: Host = session ? "claude-code" : "codex";
+  const host: Host = options.host ?? (process.env.SELF_STARTER_HOST === "zcode" ? "zcode" : session ? "claude-code" : "codex");
+  const triggerTurn = options.triggerTurn ?? process.env.SELF_STARTER_TRIGGER_TURN === "1";
 
   /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
   const callerOf = (meta: unknown): Caller => {
+    if (host === "zcode") {
+      const caller = callerFrom(meta, host);
+      if (triggerTurn) caller.turnTrigger = "self-starter";
+      return caller;
+    }
     if (!session) return callerFrom(meta);
     return { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) };
   };
-  const relayStarted = session?.inbox
+  const relayStarted = host === "claude-code" && session?.inbox
     ? startRelay(paths, session.inbox, session.token).catch((error: Error) => {
         process.stderr.write(`self-starter: fires cannot be relayed into this session: ${error.message}\n`);
         return undefined;

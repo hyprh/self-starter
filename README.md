@@ -31,6 +31,8 @@ In Claude Code ([how it works there](docs/guide.md#claude-code)):
 /plugin install self-starter --marketplace hyprh/self-starter
 ```
 
+ZCode is supported through a [local source installation](zcode-plugin/README.md). Events run tasks in dedicated ZCode CLI sessions; delivery into the original desktop conversation is not supported yet.
+
 ## Demo
 
 **Keep working. The result comes to your desktop.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
