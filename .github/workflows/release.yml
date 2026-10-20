@@ -1,6 +1,8 @@
 # Publishes a GitHub release when a version tag is pushed, with its section of CHANGELOG.md.
 # A release made on the website (which creates the tag) gets the same notes.
 # The plugin's launcher installs the runtime from this tag (github:hyprh/self-starter#v<version>).
+# During development, existing catalogs keep their published runtime version.
+# Before tagging, update all three plugin manifests to match package.json.
 name: Release
 
 on:
@@ -21,6 +23,7 @@ jobs:
           test "$(node -p 'require("./package.json").version')" = "$version"
           test "$(node -p 'require("./plugin/.codex-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./cc-plugin/.claude-plugin/plugin.json").version')" = "$version"
+          test "$(node -p 'require("./zcode-plugin/.zcode-plugin/plugin.json").version')" = "$version"
       - name: Take the notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"

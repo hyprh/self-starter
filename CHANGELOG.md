@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.4 (unreleased)
+
+- **ZCode custom events.** A local plugin connects ZCode to the shared trigger engine. Probes wait without calling a model; agent actions run in dedicated CLI sessions that are reused for subsequent events. The original desktop conversation is not resumed.
+- **Install and inspect ZCode.** `self-starter install --zcode /absolute/path/to/zcode` registers the native plugin and configures the background service. `doctor` checks its installation, and `history` shows results and session resume commands.
+- **Explicit background permissions.** Actions select ZCode's `plan`, `edit` or `yolo` tool policy. These policies do not provide operating-system isolation. Background turns cannot create new triggers or expand existing ones.
+- **Keep sessions separate.** Turn guards include the host and conversation, and a completed session initialization cannot attach to a trigger that changed while it was being created.
+
 ## 0.0.3 (2026-10-16)
 
 This release prepares Self-Starter for plugin catalogs and gives the plugin and website a shared event-trigger icon.

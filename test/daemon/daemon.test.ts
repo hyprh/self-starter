@@ -6,7 +6,7 @@ import { callDaemon, RemoteError } from "../../src/client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../../src/daemon/daemon.js";
 import { bundledDeno } from "../../src/engine/config.js";
 import { callerFrom, runMcpServer, TOOLS } from "../../src/mcp/server.js";
-import { eventually, FakeCodex, RecordingNotifier, STATE_PROBE, startServer, tempHome, type TestServer } from "../engine/fixtures.js";
+import { eventually, FakeCodex, FakeZCode, RecordingNotifier, STATE_PROBE, startServer, tempHome, type TestServer } from "../engine/fixtures.js";
 
 const deno = bundledDeno();
 
@@ -64,6 +64,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   let home: ReturnType<typeof tempHome>;
   let daemon: Daemon;
   const codex = new FakeCodex();
+  const zcode = new FakeZCode();
   const notifier = new RecordingNotifier();
 
   const definition = (id: string) => ({
@@ -83,7 +84,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   before(async () => {
     server = await startServer();
     home = tempHome();
-    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => undefined, notifier });
+    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => undefined, zcode: () => zcode, notifier });
   });
   after(async () => {
     await daemon.stop();
@@ -157,5 +158,62 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     assert.match(changed.text, /^Changed "watch-c": probe\.params\.threshold: 150 → 300\. It took effect at once/);
     assert.equal(daemon.store.loadTrigger("watch-c").definition.probe.params.threshold, 300);
     await mcp.close();
+  });
+
+  it("requires ZCode's own session metadata instead of accepting another host's thread id", async () => {
+    assert.deepEqual(callerFrom({ session_id: "sess_origin", turn_id: "turn-1", workspace_path: home.paths.home }, "zcode"), {
+      via: "mcp", threadId: "zc:sess_origin", turnId: "turn-1", cwd: home.paths.home,
+    });
+    const mcp = new McpClient({ paths: home.paths, host: "zcode", ensureDaemon: async () => undefined });
+    try {
+      const init = await mcp.request("initialize", { capabilities: {} });
+      assert.match(init.result.instructions, /what ZCode should do/);
+      const result = await mcp.tool("trigger_draft", { definition: definition("missing-session"), code: STATE_PROBE }, meta("codex-thread", "turn-1"));
+      assert.equal(result.isError, true);
+      assert.match(result.text, /ZCode did not supply session_id/);
+      assert.equal(daemon.store.hasTrigger("missing-session"), false);
+    } finally {
+      await mcp.close();
+    }
+  });
+
+  it("passes ZCode context through the socket and keeps a background turn locked after its receipt", async () => {
+    server.price = 100;
+    const metadata = { session_id: "sess_origin", turn_id: "user-turn", workspace_path: home.paths.home };
+    const user = new McpClient({ paths: home.paths, host: "zcode", ensureDaemon: async () => undefined });
+    const background = new McpClient({ paths: home.paths, host: "zcode", triggerTurn: true, ensureDaemon: async () => undefined });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    zcode.during = async (options) => { if (options.sessionId) await gate; };
+    try {
+      const draft = await user.tool("trigger_draft", { definition: definition("zcode-watch"), code: STATE_PROBE }, metadata);
+      assert.equal(draft.isError, false, draft.text);
+      const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
+      const activated = await user.tool("trigger_activate", { draft_id: draftId }, metadata);
+      assert.equal(activated.isError, false, activated.text);
+      const target = await eventually(() => daemon.store.loadTrigger("zcode-watch").definition.target.thread_id);
+      assert.ok(target);
+      assert.match(target, /^zc:sess_/);
+      assert.equal(daemon.store.loadTrigger("zcode-watch").definition.target.cwd, home.paths.home);
+      server.price = 200;
+      const fire = await daemon.engine.runNow("zcode-watch");
+      assert.ok(fire?.fireId);
+      await eventually(() => zcode.runs.find((run) => run.sessionId === target.slice(3)));
+      const firing = { session_id: target.slice(3), turn_id: "event-turn", workspace_path: home.paths.home };
+      const report = await background.tool("trigger_report", { fire_id: fire.fireId, summary: "ZCode investigated the event", notify: true }, firing);
+      assert.equal(report.isError, false, report.text);
+      assert.equal(daemon.fires.get(fire.fireId)?.receipt?.source, "tool");
+      const mutation = await background.tool("trigger_pause", { trigger_id: "zcode-watch" }, { ...firing, turn_id: "after-compaction" });
+      assert.equal(mutation.isError, true);
+      assert.match(mutation.text, /this turn was started by Self-Starter/);
+      finish();
+      await eventually(() => daemon.executor.status().activeAgentRuns === 0);
+      const paused = await user.tool("trigger_pause", { trigger_id: "zcode-watch" }, { ...metadata, turn_id: "next-user-turn" });
+      assert.equal(paused.isError, false, paused.text);
+    } finally {
+      finish();
+      zcode.during = undefined;
+      await Promise.all([user.close(), background.close()]);
+    }
   });
 });
