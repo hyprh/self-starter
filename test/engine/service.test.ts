@@ -910,6 +910,32 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
     assert.deepEqual(t.fires.get(delivered.fireId)?.target, { kind: "dedicated", threadId: `cc:${start!.sessionId}`, via: "headless" });
   });
 
+  it("replaces a missing dedicated session and runs the waiting fire in its replacement", async () => {
+    await t.activate({ target: { kind: "dedicated", cwd: t.paths.home } }, STATE_PROBE, fromSession());
+    const oldRef = await eventually(() => t.store.loadTrigger("price-alert").definition.target.thread_id);
+    const oldSession = t.claude.runs[0]!.sessionId;
+    assert.equal(oldRef, `cc:${oldSession}`);
+    t.claude.during = (options) => {
+      t.claude.error = options.sessionId === oldSession ? `claude -p: No conversation found with session ID: ${oldSession}` : undefined;
+    };
+    server.price = 200;
+    const fireId = (await t.engine.runNow("price-alert"))!.fireId!;
+    await eventually(() => t.fires.get(fireId)?.status === "pending" && t.fires.get(fireId)?.failures === 1);
+    t.clock.at += 31_000;
+    await t.executor.tick();
+    const done = await eventually(() => t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined);
+    const [original, failed, replacement, resumed] = t.claude.runs;
+    assert.equal(t.claude.runs.length, 4, "one failed resume creates and runs just one replacement");
+    assert.equal(failed!.sessionId, original!.sessionId);
+    assert.ok(replacement!.start);
+    assert.notEqual(replacement!.sessionId, oldSession);
+    assert.equal(resumed!.sessionId, replacement!.sessionId);
+    const newRef = `cc:${replacement!.sessionId}`;
+    assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, newRef);
+    assert.deepEqual(done.target, { kind: "dedicated", threadId: newRef, via: "headless" });
+    assert.equal(done.receipt?.source, "final-answer");
+  });
+
   it("hands the fire to a session of its own when claude no longer finds the origin session", async () => {
     record("s1"); // no transcript recorded, so only claude can tell that it is gone
     await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());

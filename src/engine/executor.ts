@@ -383,7 +383,7 @@ export class Executor {
   private bindDedicated(definition: TriggerDefinition, ref: string): string {
     const latest = this.deps.store.loadTrigger(definition.id).definition;
     if (this.creationKey(latest) !== this.creationKey(definition)) throw new Error("the trigger changed while its result session was being created");
-    if (!latest.target.thread_id) {
+    if (!latest.target.thread_id || latest.target.thread_id === definition.target.thread_id) {
       latest.target.thread_id = ref;
       this.deps.store.saveDefinition(latest);
     }
