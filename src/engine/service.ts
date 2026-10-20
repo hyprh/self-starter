@@ -42,6 +42,8 @@ export interface Caller {
   turnId?: string;
   /** "queue" for turns started by a queued message, such as a trigger fire. */
   turnTrigger?: string;
+  /** The working directory supplied by the host, rather than a tool argument. */
+  cwd?: string;
 }
 
 const MAX_CODE_BYTES = 64 * 1024;
@@ -69,6 +71,7 @@ export interface ServiceDeps {
   deno: () => string | undefined;
   codexBin: () => string | undefined;
   claudeBin?: () => string | undefined;
+  zcodeBin?: () => string | undefined;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -177,8 +180,10 @@ export class TriggerService {
   /** Why the caller's turn counts as handling a trigger fire, or undefined when it does not. */
   private handlingFire(caller: Caller): string | undefined {
     if (caller.via !== "mcp") return undefined;
+    if (caller.turnTrigger === "self-starter") return "this turn was started by Self-Starter.";
     if (caller.threadId && this.deps.fires.threadBusy(caller.threadId)) return "this thread is handling a trigger fire that has not been reported yet.";
-    if (caller.turnId && this.reportedTurns.has(caller.turnId)) return "this turn handled a trigger fire.";
+    const turn = this.turnKey(caller);
+    if (turn && this.reportedTurns.has(turn)) return "this turn handled a trigger fire.";
     if (caller.turnTrigger === "queue" && caller.threadId && this.recentFireIn(caller.threadId)) {
       return "this turn was started by a queued message, and this thread recently received a trigger fire.";
     }
@@ -191,16 +196,21 @@ export class TriggerService {
   /** The triggers whose fires the caller's turn is handling or handled. */
   private firingTriggers(caller: Caller): Set<string> {
     const ids = new Set<string>();
-    const reported = caller.turnId ? this.reportedTurns.get(caller.turnId) : undefined;
+    const turn = this.turnKey(caller);
+    const reported = turn ? this.reportedTurns.get(turn) : undefined;
     if (reported) ids.add(reported);
     const sessionId = sessionIdOf(caller.threadId);
     const fireId = sessionId ? triggerTurn(this.deps.paths, sessionId)?.fireId : undefined;
     const started = fireId ? this.deps.fires.get(fireId) : undefined;
     if (started) ids.add(started.triggerId);
     for (const fire of this.deps.fires.all()) {
-      if (fire.status === "delivered" && caller.threadId && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
+      if ((fire.status === "delivered" || caller.turnTrigger === "self-starter") && caller.threadId && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
     }
     return ids;
+  }
+
+  private turnKey(caller: Caller): string | undefined {
+    return caller.turnId ? JSON.stringify([caller.threadId ?? null, caller.turnId]) : undefined;
   }
 
   private recentFireIn(threadId: string): boolean {
@@ -300,6 +310,9 @@ export class TriggerService {
     const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     delete cleaned.meta;
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
+    if (hostOf(caller.threadId) === "zcode") {
+      cleaned.target = { kind: "dedicated", ...(caller.cwd ? { cwd: caller.cwd } : {}), ...(isRecord(cleaned.target) ? cleaned.target : {}) };
+    }
     const validated = validateDefinition(cleaned);
     if (!validated.ok) throw new ServiceError("invalid", `the definition has problems:\n- ${validated.errors.join("\n- ")}`);
     const definition = validated.definition;
@@ -319,6 +332,7 @@ export class TriggerService {
       revision: (existing?.definition.meta.revision ?? 0) + 1,
     };
     if (recipeRef) definition.meta.recipe = recipeRef;
+    this.checkTarget(definition);
 
     this.cleanupDrafts();
     const meta: Parameters<Store["createDraft"]>[2] = { originThreadId: definition.meta.origin_thread_id ?? null };
@@ -420,7 +434,13 @@ export class TriggerService {
   /** A dedicated trigger keeps its thread across versions. */
   private keptThread(previous: TriggerDefinition | undefined, next: TriggerDefinition): string | null {
     const before = previous?.target;
-    return next.target.kind === "dedicated" && before?.kind === "dedicated" ? (before.thread_id ?? null) : null;
+    return previous && hostFor(previous) === hostFor(next) && next.target.kind === "dedicated" && before?.kind === "dedicated" ? (before.thread_id ?? null) : null;
+  }
+
+  private checkTarget(definition: TriggerDefinition): void {
+    if (hostFor(definition) === "zcode" && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
+      throw new ServiceError("invalid", "ZCode currently supports dedicated result sessions; set target.kind to dedicated.");
+    }
   }
 
   /** Creates the dedicated thread right away, so it exists before the first fire. */
@@ -462,6 +482,7 @@ export class TriggerService {
     const validated = validateDefinition(candidate);
     if (!validated.ok) throw new ServiceError("invalid", `the changed definition has problems:\n- ${validated.errors.join("\n- ")}`);
     const def = validated.definition;
+    this.checkTarget(def);
     const changed = describeChanges(existing.definition, def, BOOKKEEPING);
     if (changed.length === 0) throw new ServiceError("invalid", "these changes do not change anything");
     def.meta = { ...existing.definition.meta, revision: existing.definition.meta.revision + 1 };
@@ -662,8 +683,9 @@ export class TriggerService {
       const message = (error as Error).message;
       throw new ServiceError(message.startsWith("no such fire") ? "not_found" : "refused", message);
     }
-    if (caller.turnId) {
-      this.reportedTurns.set(caller.turnId, fire.triggerId);
+    const turn = this.turnKey(caller);
+    if (turn) {
+      this.reportedTurns.set(turn, fire.triggerId);
       if (this.reportedTurns.size > REPORTED_TURNS_MAX) this.reportedTurns.delete(this.reportedTurns.keys().next().value!);
     }
     const when = this.tryLoad(fire.triggerId)?.definition.notify.when ?? "never";
@@ -685,6 +707,7 @@ export class TriggerService {
       deno: this.deps.deno() ?? null,
       codex: this.deps.codexBin() ?? null,
       claude: this.deps.claudeBin?.() ?? null,
+      zcode: this.deps.zcodeBin?.() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {

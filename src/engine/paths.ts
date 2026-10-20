@@ -19,7 +19,7 @@ export interface Paths {
   denoDir: string;
   /** The local plugin marketplace that `self-starter install` registers with Codex. */
   marketplace: string;
-  /** What the Claude Code plugin's hooks record about each session (conversation), by session id. */
+  /** Claude Code session state and ZCode CLI session locks. */
   sessions: string;
   /** One file per running Claude Code process: the session it shows and its inbox socket. */
   inboxes: string;
