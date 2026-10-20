@@ -274,7 +274,7 @@ describe("triggers end to end", { skip: deno ? false : "the deno npm package is 
     const full = { params: { url: server.origin, threshold: 150 }, permissions: { env: ["API_KEY"] } };
     const readsKey = `${STATE_PROBE.replace('summary: "price " + price', 'summary: "price " + price + " key " + Deno.env.get("API_KEY")')}`;
     const fullView = await t.service.createDraft({ definition: t.definition({ probe: full, id: "price-alert-3" }), code: readsKey }, fromThread());
-    assert.equal(fullView.trial?.ok, true, fullView.trial?.error);
+    assert.equal(fullView.trial?.ok, true, fullView.trial?.error ?? "probe trial failed");
     assert.match(fullView.trial?.summary ?? "", /key s3cret$/);
   });
 
@@ -1436,7 +1436,7 @@ describe("recipes", { skip: deno ? false : "the deno npm package is not installe
       );
 
       const view = await t.service.createDraft({ definition: { ...base, probe: { params: { url: server.origin } } }, recipe: "price-watch" }, fromThread());
-      assert.equal(view.trial?.ok, true, view.trial?.error);
+      assert.equal(view.trial?.ok, true, view.trial?.error ?? "probe trial failed");
       assert.match(view.description, /Probe: the ready-made recipe price-watch@2, shipped with the plugin/);
       assert.match(view.definitionYaml, /recipe: price-watch@2/);
       assert.match(view.definitionYaml, /threshold: 150/);
