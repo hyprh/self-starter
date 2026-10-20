@@ -32,6 +32,8 @@ In Claude Code ([how it works there](docs/guide.md#claude-code)):
 /plugin install self-starter --marketplace hyprh/self-starter
 ```
 
+ZCode is supported through a [local source installation](zcode-plugin/README.md). Events run tasks in dedicated ZCode CLI sessions; delivery into the original desktop conversation is not supported yet.
+
 ## Try it in two minutes
 
 After [installing](#install), use a file that does not exist yet. If you have tried this before, change the filename in both steps.

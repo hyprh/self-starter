@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "self_starter": {
+      "command": "node",
+      "args": ["${ZCODE_PLUGIN_ROOT}/bin/start.mjs", "mcp"],
+      "env": { "SELF_STARTER_HOST": "zcode" },
+      "timeoutMs": 180000
+    }
+  }
+}

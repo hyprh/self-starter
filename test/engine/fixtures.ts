@@ -10,6 +10,7 @@ import type { CodexRunner, ThreadView, TurnResult, WakeOptions } from "../../src
 import type { Notification, Notifier } from "../../src/engine/notify.js";
 import { resolvePaths, type Paths } from "../../src/engine/paths.js";
 import type { SessionRunner, SessionRunOptions } from "../../src/engine/sessions.js";
+import type { ZCodeRunner, ZCodeRunOptions } from "../../src/engine/zcode.js";
 
 export function tempHome(): { paths: Paths; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), "ct-"));
@@ -110,6 +111,25 @@ export class FakeClaude implements SessionRunner {
     this.runs.push(options);
     await this.during?.(options);
     return this.error ? { ok: false, error: this.error } : { ok: true, lastMessage: this.answer };
+  }
+}
+
+/** Dedicated ZCode sessions: seed runs allocate an id, subsequent runs resume it. */
+export class FakeZCode implements ZCodeRunner {
+  runs: ZCodeRunOptions[] = [];
+  answer = "Looked into it: the price moved on earnings.";
+  error: string | undefined;
+  busy = false;
+  during: ((options: ZCodeRunOptions) => Promise<void> | void) | undefined;
+  private sessions = 0;
+
+  async run(options: ZCodeRunOptions): Promise<TurnResult & { sessionId?: string; busy?: boolean }> {
+    this.runs.push(options);
+    if (this.busy) return { ok: false, busy: true };
+    const sessionId = options.sessionId ?? `sess_${++this.sessions}`;
+    options.onStart?.();
+    await this.during?.(options);
+    return this.error ? { ok: false, error: this.error } : { ok: true, sessionId, lastMessage: this.answer };
   }
 }
 
