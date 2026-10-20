@@ -13,7 +13,7 @@ export const VERSION: string = (JSON.parse(readFileSync(join(PACKAGE_ROOT, "pack
 export const CLI_SCRIPT = join(PACKAGE_ROOT, "dist", "src", "cli", "main.js");
 
 /** Source of the Codex plugin (skill and manifest). */
-export const PLUGIN_SOURCE = join(PACKAGE_ROOT, "plugin");
+export const PLUGIN_SOURCE = join(PACKAGE_ROOT, "codex-plugin");
 
 /** Source of the Claude Code plugin (skills, hooks and manifest). */
 export const CC_PLUGIN_SOURCE = join(PACKAGE_ROOT, "cc-plugin");

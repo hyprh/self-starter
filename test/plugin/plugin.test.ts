@@ -19,14 +19,14 @@ describe("the plugin marketplace in this repository", () => {
   it("lists the plugin, with the published runtime shared by the existing catalogs", () => {
     const marketplace = json(".agents/plugins/marketplace.json");
     assert.equal(marketplace.name, MARKETPLACE_NAME);
-    assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, { source: "local", path: "./plugin" }]]);
-    const version = json("plugin/.codex-plugin/plugin.json").version;
+    assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, { source: "local", path: "./codex-plugin" }]]);
+    const version = json("codex-plugin/.codex-plugin/plugin.json").version;
     assert.equal(version, json("cc-plugin/.claude-plugin/plugin.json").version);
     assert.ok(compareVersions(version, VERSION) <= 0, "catalogs cannot require a newer runtime than this source checkout");
   });
 
   it("starts the MCP server through the launcher, which installs the runtime of the plugin's version from this repository", () => {
-    const server = json("plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
+    const server = json("codex-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
     assert.deepEqual([server.command, ...server.args, server.cwd], ["node", "./bin/start.mjs", "mcp", "."]);
     // Codex gives MCP servers only a few variables (HOME, PATH, USER...); these are passed on too, the proxy for the first install.
     assert.deepEqual(server.env_vars.slice(0, 3), ["SELF_STARTER_HOME", "SELF_STARTER_RUNTIME", "CODEX_HOME"]);
@@ -41,7 +41,7 @@ describe("the Claude Code plugin marketplace in this repository", () => {
     const marketplace = json(".claude-plugin/marketplace.json");
     assert.equal(marketplace.name, MARKETPLACE_NAME);
     assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, "./cc-plugin"]]);
-    assert.equal(json("cc-plugin/.claude-plugin/plugin.json").version, json("plugin/.codex-plugin/plugin.json").version);
+    assert.equal(json("cc-plugin/.claude-plugin/plugin.json").version, json("codex-plugin/.codex-plugin/plugin.json").version);
     const server = json("cc-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
     assert.deepEqual([server.command, ...server.args], ["node", "${CLAUDE_PLUGIN_ROOT}/bin/start.mjs", "mcp"]);
     assert.equal(readFileSync(join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs"), "utf8"), readFileSync(join(PLUGIN_SOURCE, "bin", "start.mjs"), "utf8"), "one launcher, in both plugins");
@@ -158,7 +158,7 @@ else if (args[0] === "plugins" && args[1] === "list") {
 });
 
 describe("the plugin's launcher", () => {
-  const catalogVersion = json("plugin/.codex-plugin/plugin.json").version as string;
+  const catalogVersion = json("codex-plugin/.codex-plugin/plugin.json").version as string;
   const scratch = mkdtempSync(join(tmpdir(), "ss-launcher-"));
   const home = join(scratch, "home");
   const npmLog = join(scratch, "npm.log");
@@ -224,7 +224,7 @@ describe("the plugin's launcher", () => {
   });
 
   it("starts from a catalog bundle containing only manifest-declared paths", async () => {
-    const manifest = json("plugin/.codex-plugin/plugin.json");
+    const manifest = json("codex-plugin/.codex-plugin/plugin.json");
     const bundle = join(scratch, "catalog-bundle");
     mkdirSync(bundle);
     // Catalogs mirror the manifest, its declared content paths and interface assets.
