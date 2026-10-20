@@ -127,10 +127,10 @@ try {
   const runner = new ZCodeCli(bin, paths.sessions);
   const prompt = { message: "Use service_status once, then confirm the local smoke test.", cwd: project, sandbox: "read-only" as const, timeoutMs: 45000 };
   const first = await runner.run(prompt);
-  assert.ok(first.ok && first.sessionId, first.error);
+  assert.ok(first.ok && first.sessionId, first.error ?? "ZCode did not return a session");
   const second = await runner.run({ ...prompt, sessionId: first.sessionId });
   for (const result of [first, second]) {
-    assert.ok(result.ok && result.sessionId, result.error);
+    assert.ok(result.ok && result.sessionId, result.error ?? "ZCode did not return a session");
     assert.match(result.sessionId, /^sess_/);
     assert.equal(result.lastMessage, response);
   }

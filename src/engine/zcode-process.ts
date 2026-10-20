@@ -100,7 +100,7 @@ process.on("message", (message: unknown) => {
     clearTimeout(timer);
     release();
     process.exitCode = code ?? 1;
-    if (process.connected) process.disconnect();
+    if (process.connected) process.disconnect?.();
   });
 });
 
