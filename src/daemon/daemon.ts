@@ -14,6 +14,7 @@ import { resolvePaths, type Paths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
 import { TriggerService } from "../engine/service.js";
 import { ClaudeCli, findClaude, type SessionRunner } from "../engine/sessions.js";
+import { findZCode, ZCodeCli, type ZCodeRunner } from "../engine/zcode.js";
 import { Store } from "../engine/store.js";
 import { PACKAGE_ROOT, VERSION } from "../runtime.js";
 import { startControlServer } from "./control.js";
@@ -29,6 +30,7 @@ export interface DaemonOptions {
   codex?: () => CodexRunner | undefined;
   /** Overrides how headless Claude Code turns run (tests). */
   claude?: () => SessionRunner | undefined;
+  zcode?: () => ZCodeRunner | undefined;
   logToStderr?: boolean;
   now?: () => Date;
   /** Called when a client asks the daemon to stop. */
@@ -128,12 +130,17 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
         const bin = claudeBin();
         return bin ? new ClaudeCli(bin) : undefined;
       });
+    const zcodeBin = () => loadConfig(paths).zcodeBin ?? findZCode();
+    const zcode = options.zcode ?? (() => {
+      const bin = zcodeBin();
+      return bin ? new ZCodeCli(bin, paths.sessions) : undefined;
+    });
     const deno = () => resolveDeno(config);
     const clock = options.now ? { now: options.now } : {};
-    const executor = new Executor({ store, fires, paths, config, notifier, codex, claude, log, ...clock });
+    const executor = new Executor({ store, fires, paths, config, notifier, codex, claude, zcode, log, ...clock });
     const engine = new Engine({ store, executor, secrets, paths, config, deno, log, ...clock });
     const recipesDir = options.recipesDir ?? join(PACKAGE_ROOT, "recipes");
-    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, claudeBin, log, ...clock });
+    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, claudeBin, zcodeBin, log, ...clock });
     const handlers = service.handlers();
     handlers["daemon.stop"] = () => {
       setTimeout(() => options.onStopRequest?.(), 50);
@@ -143,7 +150,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     engine.start();
     executor.kick();
     log(
-      `self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"}, claude ${claudeBin() ?? "missing"})`,
+      `self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"}, claude ${claudeBin() ?? "missing"}, zcode ${zcodeBin() ?? "missing"})`,
     );
     return {
       paths,

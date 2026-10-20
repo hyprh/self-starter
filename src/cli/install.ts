@@ -1,8 +1,8 @@
 // `self-starter install`, `self-starter uninstall` and `self-starter doctor`: wiring Self-Starter into
-// the agents on this machine, Codex and Claude Code.
+// the agents on this machine: Codex, Claude Code and ZCode.
 //
 // The plugins are copied into a local marketplace under ~/.self-starter, laid out like this
-// repository (one folder that both agents read), with an MCP server command that starts this
+// repository (one folder that all agents read), with an MCP server command that starts this
 // installation through absolute paths, so it does not depend on the PATH an agent gives its MCP servers.
 
 import { spawnSync } from "node:child_process";
@@ -14,7 +14,8 @@ import { ensurePrivateDir, writeJsonAtomic } from "../engine/fs-util.js";
 import type { Paths } from "../engine/paths.js";
 import { findClaude } from "../engine/sessions.js";
 import { Store } from "../engine/store.js";
-import { CC_PLUGIN_SOURCE, CLI_SCRIPT, PLUGIN_SOURCE, VERSION } from "../runtime.js";
+import { findZCode } from "../engine/zcode.js";
+import { CC_PLUGIN_SOURCE, CLI_SCRIPT, PLUGIN_SOURCE, VERSION, ZCODE_PLUGIN_SOURCE } from "../runtime.js";
 import { compareVersions, installService, serviceManager, spawnDetachedDaemon, stopRunningDaemon } from "../service/manager.js";
 
 export const MARKETPLACE_NAME = "self-starter";
@@ -49,7 +50,7 @@ function copyPlugin(source: string, target: string, manifestDir: string): string
   return target;
 }
 
-/** Writes the local marketplace: the Codex plugin in plugins/self-starter, the Claude Code plugin in cc-plugin. */
+/** Writes each host's plugin and marketplace manifest beside the others. */
 export function buildMarketplace(paths: Paths): void {
   ensurePrivateDir(paths.marketplace);
   const server = { command: process.execPath, args: [CLI_SCRIPT, "mcp"] };
@@ -74,6 +75,15 @@ export function buildMarketplace(paths: Paths): void {
     owner: { name: "Self-Starter" },
     plugins: [{ name: PLUGIN_NAME, source: "./cc-plugin" }],
   });
+
+  const zcodePlugin = copyPlugin(ZCODE_PLUGIN_SOURCE, join(paths.marketplace, "zcode-plugin"), ".zcode-plugin");
+  writeJsonAtomic(join(zcodePlugin, ".mcp.json"), {
+    mcpServers: { [MCP_SERVER_NAME]: { ...server, env: { ...env, SELF_STARTER_HOST: "zcode" }, timeoutMs: 30_000 } },
+  });
+  writeJsonAtomic(join(paths.marketplace, "marketplace.json"), {
+    name: MARKETPLACE_NAME,
+    plugins: [{ name: PLUGIN_NAME, source: "./zcode-plugin", version: VERSION }],
+  });
 }
 
 export interface Check {
@@ -87,7 +97,7 @@ interface Agent {
   /** As the user knows it. */
   name: string;
   /** The config.json key that records its CLI. */
-  configKey: "codexBin" | "claudeBin";
+  configKey: "codexBin" | "claudeBin" | "zcodeBin";
   bin: string;
   install(paths: Paths): void;
   uninstall(): void;
@@ -169,16 +179,63 @@ function claudeAgent(bin: string): Agent {
   };
 }
 
+function zcodeAgent(bin: string): Agent {
+  const run = (args: string[]) => runCli(bin, args);
+  return {
+    name: "ZCode",
+    configKey: "zcodeBin",
+    bin,
+    install(paths) {
+      // A directory also has Claude Code's catalog, which ZCode would prefer over marketplace.json.
+      const added = run(["plugins", "marketplace", "add", join(paths.marketplace, "marketplace.json"), "--scope", "user"]);
+      if (!added.ok) throw new Error(`zcode plugins marketplace add failed: ${added.output}`);
+      const plugin = run(["plugins", "install", PLUGIN_ID, "--scope", "user"]);
+      if (!plugin.ok) throw new Error(`zcode plugins install failed: ${plugin.output}`);
+      const enabled = run(["plugins", "enable", PLUGIN_ID, "--scope", "user"]);
+      if (!enabled.ok) throw new Error(`zcode plugins enable failed: ${enabled.output}`);
+    },
+    uninstall() {
+      run(["plugins", "uninstall", PLUGIN_ID, "--scope", "user", "--keep-data", "--force"]);
+      run(["plugins", "marketplace", "remove", MARKETPLACE_NAME]);
+    },
+    checks() {
+      const version = run(["--version"]);
+      const listed = run(["plugins", "list", "--json"]);
+      let plugin: { enabled?: boolean; diagnostics?: Array<{ severity?: string }> } | undefined;
+      try {
+        plugin = (JSON.parse(listed.output) as Array<typeof plugin & { id?: string }>).find((entry) => entry?.id === PLUGIN_ID);
+      } catch {
+        // Missing or invalid output is reported below, without claiming the plugin is loaded.
+      }
+      const usable = listed.ok && plugin?.enabled === true && !plugin.diagnostics?.some((diagnostic) => diagnostic.severity === "error");
+      return [
+        { ok: version.ok, label: "zcode", detail: `${version.output.split("\n")[0] ?? ""} (${bin})` },
+        {
+          ok: usable,
+          label: "zcode plugin",
+          detail: usable
+            ? `${PLUGIN_ID} enabled (dedicated CLI result sessions; model access is not checked)`
+            : plugin?.enabled === false
+              ? `${PLUGIN_ID} is disabled; run \`zcode plugins enable ${PLUGIN_ID} --scope user\``
+              : "not loaded without errors; run `self-starter install` and `zcode plugins list --json`",
+        },
+      ];
+    },
+  };
+}
+
 /** The agents here, from the CLIs given, or found on PATH (and, for codex, in the macOS app bundles). */
-function agentsFound(bins: { codex?: string | undefined; claude?: string | undefined }): Agent[] {
+function agentsFound(bins: { codex?: string | undefined; claude?: string | undefined; zcode?: string | undefined }): Agent[] {
   const codex = bins.codex ?? findCodex();
   const claude = bins.claude ?? findClaude();
-  return [...(codex ? [codexAgent(codex)] : []), ...(claude ? [claudeAgent(claude)] : [])];
+  const zcode = bins.zcode ?? findZCode();
+  return [...(codex ? [codexAgent(codex)] : []), ...(claude ? [claudeAgent(claude)] : []), ...(zcode ? [zcodeAgent(zcode)] : [])];
 }
 
 export interface InstallOptions {
   codex?: string;
   claude?: string;
+  zcode?: string;
   service: boolean;
   log: (line: string) => void;
 }
@@ -189,14 +246,14 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   if (major < 20) throw new Error(`Node.js 20 or newer is required (this is ${process.version})`);
   new Store(paths).ensureLayout();
 
-  for (const [name, bin] of [["codex", options.codex], ["claude", options.claude]] as const) {
+  for (const [name, bin] of [["codex", options.codex], ["claude", options.claude], ["zcode", options.zcode]] as const) {
     if (bin && !isExecutable(bin)) throw new Error(`--${name} ${bin} is not an executable`);
   }
   const config = loadConfig(paths);
   const agents = agentsFound(options);
   if (agents.length === 0) {
     throw new Error(
-      "Neither codex nor claude was found. Install the Codex CLI (npm install -g @openai/codex) or Claude Code, or pass --codex <path> or --claude <path> (the Codex app on macOS ships codex inside its bundle).",
+      "No supported agent was found. Install the Codex CLI (npm install -g @openai/codex), Claude Code or ZCode, or pass --codex <path>, --claude <path> or --zcode <path> (the Codex app on macOS ships codex inside its bundle).",
     );
   }
   for (const agent of agents) {
@@ -240,7 +297,7 @@ export async function uninstall(paths: Paths, options: { purge: boolean; log: (l
   await stopRunningDaemon(paths);
   log("background service removed");
   const config = loadConfig(paths);
-  for (const agent of agentsFound({ codex: config.codexBin, claude: config.claudeBin })) {
+  for (const agent of agentsFound({ codex: config.codexBin, claude: config.claudeBin, zcode: config.zcodeBin })) {
     agent.uninstall();
     log(`${agent.name} plugin removed`);
   }
@@ -269,8 +326,8 @@ export async function doctor(paths: Paths): Promise<Check[]> {
     add(false, "deno", "not found; run `npm install` in the self-starter folder");
   }
 
-  const agents = agentsFound({ codex: config.codexBin, claude: config.claudeBin });
-  add(agents.length > 0, "agents", agents.length > 0 ? agents.map((agent) => agent.name).join(", ") : "neither codex nor claude found; install the Codex CLI or Claude Code");
+  const agents = agentsFound({ codex: config.codexBin, claude: config.claudeBin, zcode: config.zcodeBin });
+  add(agents.length > 0, "agents", agents.length > 0 ? agents.map((agent) => agent.name).join(", ") : "no supported agent found; install the Codex CLI, Claude Code or ZCode");
   for (const agent of agents) checks.push(...agent.checks());
 
   const manager = serviceManager();

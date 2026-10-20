@@ -10,6 +10,7 @@ import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js"
 import { findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
 import type { Paths } from "../engine/paths.js";
 import { findClaude } from "../engine/sessions.js";
+import { findZCode } from "../engine/zcode.js";
 import { CLI_SCRIPT, VERSION } from "../runtime.js";
 
 export const LAUNCHD_LABEL = "dev.self-starter.daemon";
@@ -103,7 +104,7 @@ export function systemdUnit(spec: ServiceSpec): string {
     .map(([key, value]) => `Environment=${systemdQuote(`${key}=${value}`)}`)
     .join("\n");
   return `[Unit]
-Description=Self-Starter: runs trigger probes and hands fires to Codex or Claude Code
+Description=Self-Starter: runs trigger probes and hands events to coding agents
 
 [Service]
 ExecStart=${systemdQuote(spec.node)} ${systemdQuote(spec.script)} daemon
@@ -299,11 +300,12 @@ export async function installService(paths: Paths, manager = serviceManager()): 
   const config = loadConfig(paths);
   config.codexBin ??= findCodex();
   config.claudeBin ??= findClaude();
+  config.zcodeBin ??= findZCode();
   config.service = true;
   saveConfig(paths, config);
   await stopRunningDaemon(paths);
   writeCommand(paths);
-  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin]));
+  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin, config.zcodeBin]));
 }
 
 /**
