@@ -986,6 +986,11 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     assert.equal(t.codex.started.length + t.codex.queued.length + t.codex.wakes.length, 0, "ZCode never falls back to Codex");
     assert.equal(t.claude.runs.length + t.inboxes.length, 0, "ZCode does not use Claude sessions");
   };
+  const replaceWithClaude = async () => {
+    const caller = fromThread({ threadId: "cc:replacement" });
+    const draft = await t.service.createDraft({ definition: t.definition({ target: { kind: "origin" }, action: { type: "agent", prompt: "New task for Claude" } }), code: STATE_PROBE, replace: true }, caller);
+    t.service.activateDraft({ draftId: draft.draftId }, caller);
+  };
 
   beforeEach(async () => {
     server = await startServer();
@@ -1249,6 +1254,7 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     assert.equal(t.fires.get(fireId)?.wokenAt, undefined);
     assert.equal(t.fires.get(fireId)?.receipt, undefined, "the receipt deadline starts only after the prompt starts");
 
+    t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { interval: { default: "2m" } } } }, fromZCode());
     t.zcode.busy = false;
     t.clock.uptime += 59_999;
     await t.executor.tick();
@@ -1265,6 +1271,75 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     assert.equal(t.fires.forTrigger("price-alert").length, 1);
     noOtherHostRuns();
   });
+
+  for (const change of ["another host", "notification only"] as const) {
+    it(`discards a queued ZCode fire when its watch changes to ${change}`, async () => {
+      await t.activate({}, STATE_PROBE, fromZCode());
+      await ownSession();
+      t.zcode.busy = true;
+      const fireId = await fire();
+      await eventually(() => t.zcode.runs.length === 2 && t.executor.status().activeAgentRuns === 0);
+      assert.equal(t.fires.get(fireId)?.target?.via, undefined);
+      if (change === "another host") await replaceWithClaude();
+      else t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromZCode());
+
+      t.zcode.busy = false;
+      t.clock.at += 60_000;
+      await t.executor.tick();
+      assert.equal(t.fires.get(fireId)?.status, "skipped");
+      assert.match(t.fires.get(fireId)?.skippedBecause ?? "", /action or result session changed/);
+      assert.equal(t.zcode.runs.length, 2, "the old session never runs the changed action");
+      assert.equal(t.fires.get(fireId)?.wokenAt, undefined);
+      noOtherHostRuns();
+    });
+  }
+
+  for (const [change, update] of [
+    ["another host", replaceWithClaude],
+    ["notification only", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromZCode())],
+    ["deletion", () => t.service.delete({ triggerId: "price-alert" }, { via: "cli" })],
+    ["read-only permissions", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { sandbox: "read-only" } } }, fromZCode())],
+    ["a new task", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { prompt: "Report without changing anything" } } }, fromZCode())],
+    ["a different folder", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { cwd: t.paths.logs } } }, fromZCode())],
+  ] as const) {
+    it(`cancels a ZCode action before CLI authorization after ${change}`, async () => {
+      await t.activate({}, STATE_PROBE, fromZCode());
+      await ownSession();
+      let entered = false;
+      let ran = false;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const run = t.zcode.run.bind(t.zcode);
+      t.zcode.run = async (options) => {
+        entered = true;
+        await gate; // The session owner has not called onStart or launched the CLI yet.
+        try { return await run(options); }
+        catch (error) { return { ok: false, error: (error as Error).message }; }
+      };
+      t.zcode.during = () => { ran = true; };
+      try {
+        const fireId = await fire();
+        await eventually(() => entered);
+        assert.equal(t.fires.get(fireId)?.target?.via, undefined);
+        await update();
+
+        release();
+        await eventually(() => t.executor.status().activeAgentRuns === 0);
+        const cancelled = t.fires.get(fireId)!;
+        assert.equal(cancelled.status, change === "deletion" ? "done" : "skipped");
+        assert.equal(cancelled.receipt?.source, change === "deletion" ? "closed" : undefined);
+        assert.equal(cancelled.target?.via, undefined, "cancellation cannot become a failed execution attempt");
+        assert.equal(cancelled.wokenAt, undefined);
+        assert.equal(ran, false, "the owner's authorization callback stops the CLI before it can run");
+        await t.executor.tick();
+        assert.equal(t.fires.get(fireId)?.status, cancelled.status, "the cancelled fire stays closed");
+        noOtherHostRuns();
+      } finally {
+        release();
+        await eventually(() => t.executor.status().activeAgentRuns === 0);
+      }
+    });
+  }
 
   it("records a missing ZCode runner as a retryable delivery failure without choosing another host", async () => {
     t.cleanup();

@@ -30,14 +30,14 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
 }
 
-function spawnParent(bin: string, sessionId: string, timeoutMs: number, crashBeforeStart = false) {
+function spawnParent(bin: string, sessionId: string | undefined, timeoutMs: number, crashBeforeStart = false) {
   const script = join(scratch, "daemon.mjs");
   writeFileSync(script, `
     import { writeFileSync } from 'node:fs';
     const [module, bin, sessions, cwd, sessionId, timeoutMs, crash] = process.argv.slice(2);
     const { ZCodeCli } = await import(module);
     await new ZCodeCli(bin, sessions).run({
-      cwd, sessionId, message:'continue', sandbox:'workspace-write', timeoutMs:Number(timeoutMs),
+      cwd, sessionId:sessionId || undefined, message:'continue', sandbox:'workspace-write', timeoutMs:Number(timeoutMs),
       onStart: () => {
         if (crash !== '1') return;
         writeFileSync('acquired', 'yes');
@@ -47,7 +47,7 @@ function spawnParent(bin: string, sessionId: string, timeoutMs: number, crashBef
   `);
   return spawn(process.execPath, [
     script, new URL("../../src/engine/zcode.js", import.meta.url).href,
-    bin, join(scratch, "sessions"), scratch, sessionId, String(timeoutMs), crashBeforeStart ? "1" : "0",
+    bin, join(scratch, "sessions"), scratch, sessionId ?? "", String(timeoutMs), crashBeforeStart ? "1" : "0",
   ], { cwd: scratch, stdio: "ignore" });
 }
 
@@ -286,6 +286,46 @@ describe("ZCode's dedicated CLI sessions", () => {
       if (owner && existsSync(lock)) {
         try { process.kill(owner, "SIGTERM"); } catch { /* already closed */ }
         await waitFor(() => !existsSync(lock));
+      }
+    }
+  });
+
+  it("keeps a new session's deadline after daemon death and stops its CLI and tools", async () => {
+    const tool = join(scratch, "seed-tool.mjs");
+    writeFileSync(tool, `
+      import { appendFileSync } from 'node:fs';
+      setInterval(() => appendFileSync('seed.heartbeat', 'x'), 10);
+    `);
+    const bin = fakeZCode(`
+      import { spawn } from 'node:child_process';
+      import { writeFileSync } from 'node:fs';
+      writeFileSync('seed-cli.pid', String(process.pid));
+      writeFileSync('seed-owner.pid', String(process.ppid));
+      spawn(process.execPath, ['seed-tool.mjs'], {stdio:['ignore',process.stdout,process.stderr]});
+      setInterval(() => {}, 1000);
+    `);
+    const parent = spawnParent(bin, undefined, 1500);
+    const parentExit = new Promise((resolve) => parent.once("close", resolve));
+    let owner: number | undefined;
+    try {
+      await waitFor(() => existsSync(join(scratch, "seed.heartbeat")));
+      owner = Number(readFileSync(join(scratch, "seed-owner.pid"), "utf8"));
+      const cliPid = Number(readFileSync(join(scratch, "seed-cli.pid"), "utf8"));
+      parent.kill("SIGKILL");
+      await parentExit;
+      process.kill(cliPid, 0); // The seed has started and survived the daemon.
+      await waitFor(() => {
+        try { process.kill(cliPid, 0); return false; }
+        catch (error) { return (error as NodeJS.ErrnoException).code === "ESRCH"; }
+      });
+      const heartbeat = readFileSync(join(scratch, "seed.heartbeat"), "utf8");
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.equal(readFileSync(join(scratch, "seed.heartbeat"), "utf8"), heartbeat, "the orphan's deadline also stops tools");
+    } finally {
+      parent.kill("SIGKILL");
+      await parentExit;
+      if (owner) {
+        try { process.kill(owner, "SIGTERM"); } catch { /* already closed */ }
       }
     }
   });

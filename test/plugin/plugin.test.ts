@@ -11,16 +11,18 @@ import { resolvePaths } from "../../src/engine/paths.js";
 import { PLUGIN_SERVER_RULE } from "../../src/engine/sessions.js";
 import { TOOLS } from "../../src/mcp/server.js";
 import { CLI_SCRIPT, PACKAGE_ROOT, PLUGIN_SOURCE, VERSION } from "../../src/runtime.js";
-import { stopRunningDaemon } from "../../src/service/manager.js";
+import { compareVersions, stopRunningDaemon } from "../../src/service/manager.js";
 
 const json = (path: string) => JSON.parse(readFileSync(join(PACKAGE_ROOT, path), "utf8"));
 
 describe("the plugin marketplace in this repository", () => {
-  it("lists the plugin, at the package's version", () => {
+  it("lists the plugin, with the published runtime shared by the existing catalogs", () => {
     const marketplace = json(".agents/plugins/marketplace.json");
     assert.equal(marketplace.name, MARKETPLACE_NAME);
     assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, { source: "local", path: "./plugin" }]]);
-    assert.equal(json("plugin/.codex-plugin/plugin.json").version, VERSION);
+    const version = json("plugin/.codex-plugin/plugin.json").version;
+    assert.equal(version, json("cc-plugin/.claude-plugin/plugin.json").version);
+    assert.ok(compareVersions(version, VERSION) <= 0, "catalogs cannot require a newer runtime than this source checkout");
   });
 
   it("starts the MCP server through the launcher, which installs the runtime of the plugin's version from this repository", () => {
@@ -35,11 +37,11 @@ describe("the plugin marketplace in this repository", () => {
 });
 
 describe("the Claude Code plugin marketplace in this repository", () => {
-  it("lists the plugin at the package's version, started through the same launcher as the Codex plugin", () => {
+  it("lists the plugin at its advertised runtime version, started through the same launcher as the Codex plugin", () => {
     const marketplace = json(".claude-plugin/marketplace.json");
     assert.equal(marketplace.name, MARKETPLACE_NAME);
     assert.deepEqual(marketplace.plugins.map((plugin: { name: string; source: unknown }) => [plugin.name, plugin.source]), [[PLUGIN_NAME, "./cc-plugin"]]);
-    assert.equal(json("cc-plugin/.claude-plugin/plugin.json").version, VERSION);
+    assert.equal(json("cc-plugin/.claude-plugin/plugin.json").version, json("plugin/.codex-plugin/plugin.json").version);
     const server = json("cc-plugin/.mcp.json").mcpServers[MCP_SERVER_NAME];
     assert.deepEqual([server.command, ...server.args], ["node", "${CLAUDE_PLUGIN_ROOT}/bin/start.mjs", "mcp"]);
     assert.equal(readFileSync(join(PACKAGE_ROOT, "cc-plugin", "bin", "start.mjs"), "utf8"), readFileSync(join(PLUGIN_SOURCE, "bin", "start.mjs"), "utf8"), "one launcher, in both plugins");
@@ -156,6 +158,7 @@ else if (args[0] === "plugins" && args[1] === "list") {
 });
 
 describe("the plugin's launcher", () => {
+  const catalogVersion = json("plugin/.codex-plugin/plugin.json").version as string;
   const scratch = mkdtempSync(join(tmpdir(), "ss-launcher-"));
   const home = join(scratch, "home");
   const npmLog = join(scratch, "npm.log");
@@ -201,13 +204,13 @@ describe("the plugin's launcher", () => {
     const first = await start();
     assert.deepEqual(first.serverInfo, { name: "self-starter", version: VERSION });
     assert.match(first.stderr, /installing .* once for this version/);
-    assert.match(npmCalls().at(-1)!, new RegExp(`^install --prefix ${join(home, "runtime", VERSION)}\\.\\d+\\.partial `));
+    assert.match(npmCalls().at(-1)!, new RegExp(`^install --prefix ${join(home, "runtime", catalogVersion)}\\.\\d+\\.partial `));
 
     const calls = npmCalls().length;
     const again = await start({ SELF_STARTER_RUNTIME: "/nowhere" });
     assert.deepEqual(again.serverInfo, { name: "self-starter", version: VERSION });
     assert.equal(npmCalls().length, calls, "the second start does not install again");
-    assert.deepEqual(readdirSync(join(home, "runtime")), [VERSION]);
+    assert.deepEqual(readdirSync(join(home, "runtime")), [catalogVersion]);
   });
 
   it("starts the same way from the Claude Code plugin, which has its own manifest", async () => {
@@ -282,7 +285,7 @@ describe("the plugin's launcher", () => {
     const launcher = spawn(process.execPath, ["./bin/start.mjs", "mcp"], { cwd: PLUGIN_SOURCE, env, stdio: ["pipe", "pipe", "pipe"] });
     while (npmCalls().length === before) await new Promise((resolve) => setTimeout(resolve, 20));
     launcher.kill("SIGKILL"); // in the middle of the install, as a host does when its startup timeout runs out
-    const cli = join(slowHome, "runtime", VERSION, "node_modules", "self-starter");
+    const cli = join(slowHome, "runtime", catalogVersion, "node_modules", "self-starter");
     for (let waited = 0; !existsSync(cli); waited += 100) {
       assert.ok(waited < 10_000, "the install did not finish");
       await new Promise((resolve) => setTimeout(resolve, 100));

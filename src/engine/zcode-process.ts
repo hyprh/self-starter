@@ -1,5 +1,5 @@
-// Dedicated resumed-turn wrapper. Its PID, rather than the daemon's PID, owns
-// the session until the CLI and its output streams close.
+// The CLI owner keeps its deadline after a daemon crash. Resumed turns also
+// hold a session lease until the CLI and its output streams close.
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { linkSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -8,7 +8,7 @@ import { isRecord } from "../core/patch.js";
 import { ensurePrivateDir } from "./fs-util.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
-if (!sessionsDir || !sessionId || !command || !process.send) throw new Error("ZCode wrapper requires a session and IPC parent");
+if (!sessionsDir || sessionId === undefined || !command || !process.send) throw new Error("ZCode wrapper requires a session argument and IPC parent");
 const lock = join(sessionsDir, `${sessionId}.zcode.lock`);
 const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });
 let owned = false;
@@ -87,7 +87,7 @@ process.on("disconnect", () => {
 for (const output of [process.stdout, process.stderr]) output.on("error", () => {});
 
 process.on("message", (message: unknown) => {
-  if (!owned || started || !isRecord(message) || message.type !== "go") return;
+  if (started || !isRecord(message) || message.type !== "go") return;
   started = true;
   const child = spawn(command!, args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
   cliPid = child.pid;
@@ -105,7 +105,7 @@ process.on("message", (message: unknown) => {
 });
 
 try {
-  if (!acquire()) process.send!({ type: "busy" }, () => process.exit(0));
+  if (sessionId && !acquire()) process.send!({ type: "busy" }, () => process.exit(0));
   else process.send!({ type: "ready" }, (error) => { if (error) process.exit(1); });
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

@@ -4,16 +4,17 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildMarketplace } from "../../src/cli/install.js";
 import { startDaemon } from "../../src/daemon/daemon.js";
-import { cliCommand } from "../../src/engine/config.js";
+import { cliCommand, DEFAULT_CONFIG, saveConfig } from "../../src/engine/config.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { findZCode, ZCodeCli } from "../../src/engine/zcode.js";
+import { waitFor } from "./harness.js";
 
 type Json = Record<string, any>;
 const bin = findZCode();
@@ -26,6 +27,7 @@ for (const dir of [project, user, data]) mkdirSync(dir);
 const paths = resolvePaths(join(scratch, "self-starter"));
 let replies = 0;
 let toolCalls = 0;
+const reportResults: string[] = [];
 const response = "SELF_STARTER_NATIVE_SMOKE_OK";
 
 const model = createServer(async (request, result) => {
@@ -33,13 +35,20 @@ const model = createServer(async (request, result) => {
   for await (const chunk of request) body += chunk;
   const input = JSON.parse(body) as Json;
   const last = input.messages?.at(-1);
+  const previousCall = input.messages?.flatMap((message: Json) => message.tool_calls ?? []).find((call: Json) => call.id === last?.tool_call_id);
   if (last?.role === "tool") {
-    assert.match(String(last.content), /"triggers"/);
-    replies++;
+    if (previousCall?.function.name.endsWith("trigger_report")) reportResults.push(String(last.content));
+    else {
+      assert.match(String(last.content), /"triggers"/);
+      replies++;
+    }
   }
-  const tool = input.tools?.find((entry: Json) => entry.function?.name.endsWith("service_status"));
+  const userMessage = input.messages?.findLast((message: Json) => message.role === "user");
+  const text = typeof userMessage?.content === "string" ? userMessage.content : userMessage?.content?.map((block: Json) => block.text ?? "").join("") ?? "";
+  const fireId = /fire_id="(fire_[a-z0-9]+)"/.exec(text)?.[1];
+  const tool = input.tools?.find((entry: Json) => entry.function?.name.endsWith(fireId ? "trigger_report" : "service_status"));
   const calls = tool && last?.role !== "tool" ? [{
-    id: `call_${++toolCalls}`, type: "function", function: { name: tool.function.name, arguments: "{}" },
+    id: `call_${++toolCalls}`, type: "function", function: { name: tool.function.name, arguments: JSON.stringify(fireId ? { fire_id: fireId, summary: "Observed the flag file", notify: false } : {}) },
   }] : undefined;
   const message = calls ? { role: "assistant", tool_calls: calls } : { role: "assistant", content: response };
   const base = { id: "chatcmpl-local-smoke", created: 1, model: "local-smoke" };
@@ -101,6 +110,7 @@ function zcode(args: string[]): Promise<string> {
     });
   });
 }
+saveConfig(paths, { ...DEFAULT_CONFIG, zcodeBin: bin, agentRunTimeoutMinutes: 0.25 });
 const daemon = await startDaemon({ paths });
 let passed = false;
 try {
@@ -126,8 +136,47 @@ try {
   }
   assert.equal(first.sessionId, second.sessionId);
   assert.equal(replies, 2, "each real ZCode turn called Self-Starter through MCP with native session metadata");
+
+  const flag = join(project, "training-finished");
+  const caller = { via: "mcp" as const, threadId: `zc:${first.sessionId}`, turnId: "user-setup", cwd: project };
+  const draft = await daemon.service.createDraft({
+    definition: {
+      id: "training-finished", name: "Training finished", intent: "Report when the local flag appears",
+      probe: { params: { flag }, interval: { min: "10s", default: "1m" } },
+      policy: { max_fires: 1 },
+      action: { type: "agent", prompt: "Confirm the flag file appeared and report this fire.", sandbox: "read-only" },
+      target: { kind: "dedicated", cwd: project }, notify: { when: "never" },
+    },
+    code: `
+      const {params} = JSON.parse(await new Response(Deno.stdin.readable).text());
+      const fire = await Deno.stat(params.flag).then(() => true, (error) => {
+        if (error instanceof Deno.errors.NotFound) return false;
+        throw error;
+      });
+      console.log(JSON.stringify({fire, summary:fire ? "Flag appeared" : "Waiting for the flag"}));
+    `,
+  }, caller);
+  assert.equal(draft.trial?.fire, false);
+  daemon.service.activateDraft({ draftId: draft.draftId }, caller);
+  const baseline = await daemon.engine.runNow("training-finished");
+  assert.equal(baseline?.fireId, undefined);
+  writeFileSync(flag, "done\n");
+  const fired = await daemon.engine.runNow("training-finished");
+  assert.ok(fired?.fireId, "the file change produces a fire");
+  const fireId = fired.fireId;
+  const completed = await waitFor("the real ZCode fire receipt", async () => {
+    const fire = daemon.fires.get(fireId);
+    return fire?.receipt ? fire : undefined;
+  }, { timeoutMs: 30_000, explain: async () => `${JSON.stringify(reportResults)}\n${readFileSync(join(paths.logs, "daemon.log"), "utf8")}` });
+  assert.equal(completed.receipt?.source, "tool", JSON.stringify({ completed, reportResults }));
+  assert.equal(completed.receipt.summary, "Observed the flag file");
+  assert.equal(completed.target?.via, "headless");
+  assert.equal(completed.target?.threadId, daemon.store.loadTrigger("training-finished").definition.target.thread_id);
+  await waitFor("the background CLI to finish", async () => daemon.executor.status().activeAgentRuns === 0 ? true : undefined, { timeoutMs: 30_000 });
+  assert.equal(reportResults.length, 1);
+  assert.match(reportResults[0]!, /Receipt recorded/);
   passed = true;
-  console.log("ZCode: native plugin installation, MCP calls, and session resume passed.");
+  console.log("ZCode: native plugin installation, MCP calls, session resume, and a file-triggered background receipt passed.");
 } finally {
   await daemon.stop();
   await new Promise<void>((resolve) => model.close(() => resolve()));

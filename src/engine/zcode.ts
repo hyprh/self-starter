@@ -56,16 +56,15 @@ export class ZCodeCli implements ZCodeRunner {
     const args = ["--prompt", options.message, "--cwd", options.cwd, "--mode", MODES[options.sandbox], "--output-format", "json"];
     if (options.sessionId) args.push("--resume", options.sessionId);
     return new Promise((resolve) => {
-      // A resumed turn's wrapper owns the lease, so killing the daemon does not
-      // unlock a CLI that is still working. New sessions have no shared id yet.
-      const resumed = options.sessionId !== undefined;
-      const child = spawn(resumed ? process.execPath : this.command, resumed ? [
+      // The wrapper owns the deadline even after a daemon crash, and a resumed
+      // turn also owns a lease until the CLI finishes.
+      const child = spawn(process.execPath, [
         fileURLToPath(new URL("./zcode-process.js", import.meta.url)),
-        this.sessionsDir, options.sessionId!, String(options.timeoutMs), this.command, ...this.prefix, ...args,
-      ] : [...this.prefix, ...args], {
+        this.sessionsDir, options.sessionId ?? "", String(options.timeoutMs), this.command, ...this.prefix, ...args,
+      ], {
         cwd: options.cwd,
         env: { ...process.env, SELF_STARTER_HOST: "zcode", SELF_STARTER_TRIGGER_TURN: "1" },
-        stdio: resumed ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
         detached: true,
       });
       let stdout = "";
@@ -85,10 +84,9 @@ export class ZCodeCli implements ZCodeRunner {
       const stop = (reason: string) => {
         if (stopped || settled) return;
         stopped = reason;
-        // A resumed turn's owner kills its CLI group and releases the lease.
-        // New sessions own their group directly, including tools holding stdout.
+        // The owner kills the CLI's process group, including tools holding stdout.
         try {
-          if (child.pid) process.kill(resumed ? child.pid : -child.pid, resumed ? "SIGTERM" : "SIGKILL");
+          if (child.pid) process.kill(child.pid, "SIGTERM");
         } catch {
           child.kill("SIGKILL");
         }
@@ -104,16 +102,15 @@ export class ZCodeCli implements ZCodeRunner {
           stop(`could not record turn start: ${error instanceof Error ? error.message : String(error)}`);
           return;
         }
-        if (resumed) child.send!({ type: "go" }, (error) => {
+        child.send({ type: "go" }, (error) => {
           if (error) stop(`could not start owned session: ${error.message}`);
         });
       };
-      if (resumed) child.on("message", (message: unknown) => {
+      child.on("message", (message: unknown) => {
         if (!isRecord(message) || started) return;
         if (message.type === "ready") start();
         else if (message.type === "busy") busy = true;
       });
-      else child.once("spawn", start);
       child.stdout!.setEncoding("utf8");
       child.stderr!.setEncoding("utf8");
       child.stdout!.on("data", (chunk: string) => {

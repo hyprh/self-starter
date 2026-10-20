@@ -427,13 +427,32 @@ export class Executor {
     }
   }
 
+  /** A queued fire can outlive the action or session it was delivered to. */
+  private zcodeTask(fire: FireRecord, ref: string, expected?: TriggerDefinition): TriggerDefinition | undefined {
+    if (fire.status !== "delivered" || fire.target?.via !== undefined) {
+      this.outcome.delete(fire.fireId);
+      return undefined;
+    }
+    const definition = this.deps.store.hasTrigger(fire.triggerId) ? this.deps.store.loadTrigger(fire.triggerId).definition : undefined;
+    if (definition?.action.type === "agent" && hostFor(definition) === "zcode"
+      && definition.target.kind === "dedicated" && definition.target.thread_id === ref
+      && (!expected || definition.action.sandbox === expected.action.sandbox && definition.action.prompt === expected.action.prompt
+        && (definition.target.cwd ?? homedir()) === (expected.target.cwd ?? homedir()))) return definition;
+    this.deps.fires.record({ type: "skipped", fireId: fire.fireId, why: definition
+      ? "the trigger's action or result session changed before execution"
+      : "the trigger was deleted", at: this.now().toISOString() });
+    this.outcome.delete(fire.fireId);
+    this.kick();
+    return undefined;
+  }
+
   private async followZCode(fire: FireRecord, age: number): Promise<void> {
     const ref = fire.target?.threadId;
     if (!ref || this.headlessSessions.has(ref)) return;
     const zcode = this.deps.zcode?.();
-    if (fire.target?.via === undefined && zcode && this.runSlotFree()
-      && this.deps.store.hasTrigger(fire.triggerId) && (this.nextCheck.get(fire.fireId) ?? 0) <= this.uptime()) {
-      const { definition } = this.deps.store.loadTrigger(fire.triggerId);
+    if (fire.target?.via === undefined && zcode && this.runSlotFree() && (this.nextCheck.get(fire.fireId) ?? 0) <= this.uptime()) {
+      const definition = this.zcodeTask(fire, ref);
+      if (!definition) return;
       const sessionId = zcodeSessionIdOf(ref)!;
       this.headlessSessions.add(ref);
       this.runTurn(fire, `ZCode session ${sessionId}`, async () => {
@@ -444,6 +463,7 @@ export class Executor {
           sandbox: definition.action.sandbox,
           timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
           onStart: () => {
+            if (!this.zcodeTask(fire, ref, definition)) throw new Error("the queued ZCode action was cancelled before execution");
             this.wentIn(fire, "headless");
             this.deps.fires.record({ type: "woken", fireId: fire.fireId, at: this.now().toISOString() });
           },
@@ -454,6 +474,7 @@ export class Executor {
           return;
         }
         if (!result.ok) {
+          if (fire.status !== "delivered") return;
           // A failed start is still a failed attempt, not a reason to retry on every tick.
           if (fire.target?.via === undefined) this.wentIn(fire, "headless");
           throw new Error(result.error ?? "ZCode did not complete the turn");
