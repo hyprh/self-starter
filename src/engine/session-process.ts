@@ -8,8 +8,10 @@ import { isRecord } from "../core/patch.js";
 import { ensurePrivateDir } from "./fs-util.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
-if (!sessionsDir || sessionId === undefined || !command || !process.send) throw new Error("ZCode wrapper requires a session argument and IPC parent");
-const lock = join(sessionsDir, `${sessionId}.zcode.lock`);
+const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : "zcode";
+const name = host === "opencode" ? "OpenCode" : "ZCode";
+if (!sessionsDir || sessionId === undefined || !command || !process.send) throw new Error(`${name} wrapper requires a session argument and IPC parent`);
+const lock = join(sessionsDir, `${sessionId}.${host}.lock`);
 const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });
 let owned = false;
 let started = false;
@@ -20,14 +22,14 @@ function release(): void {
   try {
     if (readFileSync(lock, "utf8") === owner) unlinkSync(lock);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") process.stderr.write(`Could not release ZCode lease ${lock}: ${String(error)}\n`);
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") process.stderr.write(`Could not release ${name} lease ${lock}: ${String(error)}\n`);
   }
   owned = false;
 }
 
 function acquire(): boolean {
   ensurePrivateDir(sessionsDir!);
-  const temp = join(sessionsDir!, `.zcode-${process.pid}-${randomUUID()}.tmp`);
+  const temp = join(sessionsDir!, `.${host}-${process.pid}-${randomUUID()}.tmp`);
   writeFileSync(temp, owner, { flag: "wx", mode: 0o600 });
   try {
     for (;;) {
@@ -47,7 +49,7 @@ function acquire(): boolean {
       let previous: unknown;
       try { previous = JSON.parse(text); } catch { /* Invalid records require manual recovery. */ }
       if (!isRecord(previous) || !Number.isSafeInteger(previous.pid) || Number(previous.pid) <= 0 || typeof previous.token !== "string" || !previous.token) {
-        throw new Error(`Invalid ZCode lease ${lock}; inspect and remove it manually before retrying`);
+        throw new Error(`Invalid ${name} lease ${lock}; inspect and remove it manually before retrying`);
       }
       try {
         process.kill(Number(previous.pid), 0);
@@ -89,13 +91,18 @@ for (const output of [process.stdout, process.stderr]) output.on("error", () => 
 process.on("message", (message: unknown) => {
   if (started || !isRecord(message) || message.type !== "go") return;
   started = true;
-  const child = spawn(command!, args, { stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const stdin = typeof message.stdin === "string" ? message.stdin : undefined;
+  const child = spawn(command!, args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: true });
   cliPid = child.pid;
-  for (const [input, output] of [[child.stdout, process.stdout], [child.stderr, process.stderr]] as const) {
+  if (stdin !== undefined) {
+    child.stdin!.on("error", () => {}); // A failed CLI may close stdin before reading it.
+    child.stdin!.end(stdin);
+  }
+  for (const [input, output] of [[child.stdout!, process.stdout], [child.stderr!, process.stderr]] as const) {
     input.pipe(output, { end: false });
     output.once("error", () => { input.unpipe(output); input.resume(); });
   }
-  child.on("error", (error) => process.stderr.write(`could not start ZCode: ${error.message}\n`));
+  child.on("error", (error) => process.stderr.write(`could not start ${name}: ${error.message}\n`));
   child.on("close", (code) => {
     clearTimeout(timer);
     release();

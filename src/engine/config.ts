@@ -27,6 +27,10 @@ export interface Config {
   claudeBin?: string;
   /** Absolute path of ZCode for dedicated result sessions. */
   zcodeBin?: string;
+  /** Absolute path of OpenCode for dedicated result sessions. */
+  opencodeBin?: string;
+  /** Global OpenCode config directory where our native plugin loader is installed. */
+  opencodeConfigDir?: string;
   /**
    * Whether the daemon runs as a launchd or systemd service. Unset until the user
    * decides: the Codex plugin then sets one up on first use; false after

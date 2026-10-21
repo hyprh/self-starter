@@ -297,42 +297,19 @@ export interface McpServerOptions {
   toolsChanged?: boolean;
 }
 
-export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
+/** The tools shared by the MCP transport and native host plugins. */
+export function createToolCaller(options: {
+  paths?: Paths;
+  ensureDaemon?: (paths: Paths) => Promise<unknown>;
+} = {}): (name: string, args: Json, caller: Caller) => Promise<ToolResult> {
   const paths = options.paths ?? resolvePaths();
-  const input = options.input ?? process.stdin;
-  const output = options.output ?? process.stdout;
   const ensure = options.ensureDaemon ?? ensureDaemon;
-  const session = "session" in options ? options.session : sessionHostFrom(process.env);
-  const host: Host = options.host ?? (process.env.SELF_STARTER_HOST === "zcode" ? "zcode" : session ? "claude-code" : "codex");
-  const triggerTurn = options.triggerTurn ?? process.env.SELF_STARTER_TRIGGER_TURN === "1";
-
-  /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
-  const callerOf = (meta: unknown): Caller => {
-    if (host === "zcode") {
-      const caller = callerFrom(meta, host);
-      if (triggerTurn) caller.turnTrigger = "self-starter";
-      return caller;
-    }
-    if (!session) return callerFrom(meta);
-    return { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) };
-  };
-  const relayStarted = host === "claude-code" && session?.inbox
-    ? startRelay(paths, session.inbox, session.token).catch((error: Error) => {
-        process.stderr.write(`self-starter: fires cannot be relayed into this session: ${error.message}\n`);
-        return undefined;
-      })
-    : Promise.resolve(undefined);
-
-  const send = (message: Json) => {
-    output.write(`${JSON.stringify(message)}\n`);
-  };
-
   const call = async <T>(method: string, params: Json, caller: Caller, timeoutMs?: number): Promise<T> => {
     await ensure(paths);
     return callDaemon<T>(paths.socket, method, params, caller, timeoutMs);
   };
 
-  const callTool = async (name: string, args: Json, caller: Caller): Promise<ToolResult> => {
+  return async (name: string, args: Json, caller: Caller): Promise<ToolResult> => {
     switch (name) {
       case "trigger_draft": {
         const params: Json = { definition: args.definition, replace: args.replace === true };
@@ -394,6 +371,39 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
         return text(`Unknown tool: ${name}`, true);
     }
   };
+}
+
+export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
+  const paths = options.paths ?? resolvePaths();
+  const input = options.input ?? process.stdin;
+  const output = options.output ?? process.stdout;
+  const ensure = options.ensureDaemon ?? ensureDaemon;
+  const session = "session" in options ? options.session : sessionHostFrom(process.env);
+  const host: Host = options.host ?? (process.env.SELF_STARTER_HOST === "zcode" ? "zcode" : session ? "claude-code" : "codex");
+  const triggerTurn = options.triggerTurn ?? process.env.SELF_STARTER_TRIGGER_TURN === "1";
+
+  /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
+  const callerOf = (meta: unknown): Caller => {
+    if (host === "zcode") {
+      const caller = callerFrom(meta, host);
+      if (triggerTurn) caller.turnTrigger = "self-starter";
+      return caller;
+    }
+    if (!session) return callerFrom(meta);
+    return { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) };
+  };
+  const relayStarted = host === "claude-code" && session?.inbox
+    ? startRelay(paths, session.inbox, session.token).catch((error: Error) => {
+        process.stderr.write(`self-starter: fires cannot be relayed into this session: ${error.message}\n`);
+        return undefined;
+      })
+    : Promise.resolve(undefined);
+
+  const send = (message: Json) => {
+    output.write(`${JSON.stringify(message)}\n`);
+  };
+
+  const callTool = createToolCaller({ paths, ensureDaemon: ensure });
 
   const handleRequest = async (message: Json): Promise<void> => {
     const id = message.id;

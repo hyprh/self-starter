@@ -117,6 +117,10 @@ describe("the ZCode plugin", () => {
 
   it("registers and enables the plugin, and doctor rejects disabled, broken or malformed plugin listings", async () => {
     const scratch = mkdtempSync(join(tmpdir(), "ss-zcode-install-"));
+    const envKeys = ["HOME", "XDG_CONFIG_HOME", "PATH", "OPENCODE_BIN"] as const;
+    const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+    Object.assign(process.env, { HOME: scratch, XDG_CONFIG_HOME: join(scratch, "config"), PATH: scratch });
+    delete process.env.OPENCODE_BIN;
     const paths = resolvePaths(join(scratch, "home"));
     const calls = join(scratch, "calls.jsonl");
     const mode = join(scratch, "mode");
@@ -152,6 +156,10 @@ else if (args[0] === "plugins" && args[1] === "list") {
       }
     } finally {
       await stopRunningDaemon(paths);
+      for (const key of envKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
       rmSync(scratch, { recursive: true, force: true });
     }
   });

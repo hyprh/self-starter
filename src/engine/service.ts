@@ -72,6 +72,7 @@ export interface ServiceDeps {
   codexBin: () => string | undefined;
   claudeBin?: () => string | undefined;
   zcodeBin?: () => string | undefined;
+  opencodeBin?: () => string | undefined;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -310,7 +311,7 @@ export class TriggerService {
     const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     delete cleaned.meta;
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
-    if (hostOf(caller.threadId) === "zcode") {
+    if (hostOf(caller.threadId) === "zcode" || hostOf(caller.threadId) === "opencode") {
       cleaned.target = { kind: "dedicated", ...(caller.cwd ? { cwd: caller.cwd } : {}), ...(isRecord(cleaned.target) ? cleaned.target : {}) };
     }
     const validated = validateDefinition(cleaned);
@@ -438,8 +439,9 @@ export class TriggerService {
   }
 
   private checkTarget(definition: TriggerDefinition): void {
-    if (hostFor(definition) === "zcode" && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
-      throw new ServiceError("invalid", "ZCode currently supports dedicated result sessions; set target.kind to dedicated.");
+    const host = hostFor(definition);
+    if ((host === "zcode" || host === "opencode") && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
+      throw new ServiceError("invalid", `${agentName(host)} currently supports dedicated result sessions; set target.kind to dedicated.`);
     }
   }
 
@@ -708,6 +710,7 @@ export class TriggerService {
       codex: this.deps.codexBin() ?? null,
       claude: this.deps.claudeBin?.() ?? null,
       zcode: this.deps.zcodeBin?.() ?? null,
+      opencode: this.deps.opencodeBin?.() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
       channels: (() => {

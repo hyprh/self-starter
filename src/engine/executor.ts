@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { agentName, conversationNoun as conversation, hostFor, hostOf, sessionIdOf, sessionRef, zcodeRef, zcodeSessionIdOf } from "../core/conversations.js";
+import { agentName, conversationNoun as conversation, hostFor, hostOf, opencodeRef, opencodeSessionIdOf, sessionIdOf, sessionRef, zcodeRef, zcodeSessionIdOf } from "../core/conversations.js";
 import { renderDedicatedSeed, renderEnvelope, type EnvelopeInput } from "../core/envelope.js";
 import type { QuietHours, TriggerDefinition } from "../core/definition.js";
 import type { ProbeEvent } from "../core/probe-output.js";
@@ -27,6 +27,7 @@ import type { Notification, Notifier } from "./notify.js";
 import type { Paths } from "./paths.js";
 import { deliverToOpenSession, lastWritten, readSession, type SessionRunner } from "./sessions.js";
 import type { ZCodeRunner } from "./zcode.js";
+import type { OpenCodeRunner } from "./opencode.js";
 import type { Store } from "./store.js";
 
 const RETRY_DELAYS_MS = [30_000, 120_000, 600_000];
@@ -60,6 +61,7 @@ const POST_GRACE_MS = 60_000;
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
 /** What codex answers when another process, such as a Codex app, has the thread open. */
 const OPEN_ELSEWHERE = /active writer/i;
+type CliHost = "zcode" | "opencode";
 
 export interface ExecutorDeps {
   store: Store;
@@ -72,6 +74,7 @@ export interface ExecutorDeps {
   /** Runs headless turns of Claude Code sessions; undefined when no claude binary is available. */
   claude?: () => SessionRunner | undefined;
   zcode?: () => ZCodeRunner | undefined;
+  opencode?: () => OpenCodeRunner | undefined;
   /** Hands a message to a Claude Code process that shows the session (tests replace it). */
   deliverToSession?: (sessionId: string, text: string) => Promise<"relayed" | "posted" | undefined>;
   log: (line: string) => void;
@@ -249,7 +252,8 @@ export class Executor {
 
   /** A fire queued into a thread is still open: wake the thread if no Codex app has it open, or remind the user. */
   private async follow(fire: FireRecord, age: number): Promise<void> {
-    if (hostOf(fire.target?.threadId) === "zcode") return this.followZCode(fire, age);
+    const host = hostOf(fire.target?.threadId);
+    if (host === "zcode" || host === "opencode") return this.followCliSession(fire, age, host);
     if (sessionIdOf(fire.target?.threadId) !== undefined) return this.followSession(fire, age);
     const outcome = this.outcome.get(fire.fireId);
     // The trigger's own thread is always woken; the user can keep Self-Starter out of their own threads.
@@ -390,51 +394,51 @@ export class Executor {
     return latest.target.thread_id;
   }
 
-  // ---- ZCode dedicated sessions ------------------------------------------
+  // ---- Dedicated CLI sessions --------------------------------------------
 
-  private ensureZCodeSession(triggerId: string): Promise<string> {
+  private ensureCliSession(triggerId: string, host: CliHost): Promise<string> {
     const { definition } = this.deps.store.loadTrigger(triggerId);
     if (definition.target.thread_id) return Promise.resolve(definition.target.thread_id);
-    return this.createOnce(definition, () => this.createZCodeSession(definition));
+    return this.createOnce(definition, () => this.createCliSession(definition, host));
   }
 
-  private async createZCodeSession(definition: TriggerDefinition): Promise<string> {
-    const zcode = this.deps.zcode?.();
-    if (!zcode) throw new Error("the zcode CLI was not found; run `self-starter doctor`");
-    const result = await zcode.run({
+  private async createCliSession(definition: TriggerDefinition, host: CliHost): Promise<string> {
+    const runner = this.deps[host]?.();
+    if (!runner) throw new Error(`the ${host} CLI was not found; run \`self-starter doctor\``);
+    const result = await runner.run({
       cwd: definition.target.cwd ?? homedir(),
       message: renderDedicatedSeed(definition, "session"),
       sandbox: definition.action.sandbox,
       timeoutMs: Math.min(this.deps.config.agentRunTimeoutMinutes, 5) * 60_000,
     });
-    if (!result.ok || !result.sessionId) throw new Error(`could not create the ZCode session: ${result.error ?? "no session id"}`);
-    const ref = this.bindDedicated(definition, zcodeRef(result.sessionId));
-    this.log(`dedicated ZCode session of ${definition.id}: ${result.sessionId}`);
+    if (!result.ok || !result.sessionId) throw new Error(`could not create the ${agentName(host)} session: ${result.error ?? "no session id"}`);
+    const ref = this.bindDedicated(definition, host === "opencode" ? opencodeRef(result.sessionId) : zcodeRef(result.sessionId));
+    this.log(`dedicated ${agentName(host)} session of ${definition.id}: ${result.sessionId}`);
     return ref;
   }
 
-  private async dispatchToZCode(definition: TriggerDefinition, fire: FireRecord): Promise<void> {
+  private async dispatchToCliSession(definition: TriggerDefinition, fire: FireRecord, host: CliHost): Promise<void> {
     let threadId: string;
     try {
-      threadId = await this.ensureZCodeSession(definition.id);
+      threadId = await this.ensureCliSession(definition.id, host);
     } catch (error) {
       return this.failAttempt(definition, fire, (error as Error).message);
     }
     this.deps.fires.record({ type: "delivered", fireId: fire.fireId, target: { kind: "dedicated", threadId }, at: this.now().toISOString() });
     this.lookAgain();
     if (definition.notify.when === "always") {
-      await this.sendNotification(definition, fire.fireId, { title: definition.name, body: `${this.describe(fire)} (sent to ZCode)`, threadId });
+      await this.sendNotification(definition, fire.fireId, { title: definition.name, body: `${this.describe(fire)} (sent to ${agentName(host)})`, threadId });
     }
   }
 
   /** A queued fire can outlive the action or session it was delivered to. */
-  private zcodeTask(fire: FireRecord, ref: string, expected?: TriggerDefinition): TriggerDefinition | undefined {
+  private cliTask(fire: FireRecord, ref: string, host: CliHost, expected?: TriggerDefinition): TriggerDefinition | undefined {
     if (fire.status !== "delivered" || fire.target?.via !== undefined) {
       this.outcome.delete(fire.fireId);
       return undefined;
     }
     const definition = this.deps.store.hasTrigger(fire.triggerId) ? this.deps.store.loadTrigger(fire.triggerId).definition : undefined;
-    if (definition?.action.type === "agent" && hostFor(definition) === "zcode"
+    if (definition?.action.type === "agent" && hostFor(definition) === host
       && definition.target.kind === "dedicated" && definition.target.thread_id === ref
       && (!expected || definition.action.sandbox === expected.action.sandbox && definition.action.prompt === expected.action.prompt
         && (definition.target.cwd ?? homedir()) === (expected.target.cwd ?? homedir()))) return definition;
@@ -446,24 +450,24 @@ export class Executor {
     return undefined;
   }
 
-  private async followZCode(fire: FireRecord, age: number): Promise<void> {
+  private async followCliSession(fire: FireRecord, age: number, host: CliHost): Promise<void> {
     const ref = fire.target?.threadId;
     if (!ref || this.headlessSessions.has(ref)) return;
-    const zcode = this.deps.zcode?.();
-    if (fire.target?.via === undefined && zcode && this.runSlotFree() && (this.nextCheck.get(fire.fireId) ?? 0) <= this.uptime()) {
-      const definition = this.zcodeTask(fire, ref);
+    const runner = this.deps[host]?.();
+    if (fire.target?.via === undefined && runner && this.runSlotFree() && (this.nextCheck.get(fire.fireId) ?? 0) <= this.uptime()) {
+      const definition = this.cliTask(fire, ref, host);
       if (!definition) return;
-      const sessionId = zcodeSessionIdOf(ref)!;
+      const sessionId = (host === "opencode" ? opencodeSessionIdOf(ref) : zcodeSessionIdOf(ref))!;
       this.headlessSessions.add(ref);
-      this.runTurn(fire, `ZCode session ${sessionId}`, async () => {
-        const result = await zcode.run({
+      this.runTurn(fire, `${agentName(host)} session ${sessionId}`, async () => {
+        const result = await runner.run({
           sessionId,
           cwd: definition.target.cwd ?? homedir(),
           message: renderEnvelope(this.envelope(definition, fire)),
           sandbox: definition.action.sandbox,
           timeoutMs: this.deps.config.agentRunTimeoutMinutes * 60_000,
           onStart: () => {
-            if (!this.zcodeTask(fire, ref, definition)) throw new Error("the queued ZCode action was cancelled before execution");
+            if (!this.cliTask(fire, ref, host, definition)) throw new Error(`the queued ${agentName(host)} action was cancelled before execution`);
             this.wentIn(fire, "headless");
             this.deps.fires.record({ type: "woken", fireId: fire.fireId, at: this.now().toISOString() });
           },
@@ -477,7 +481,7 @@ export class Executor {
           if (fire.status !== "delivered") return;
           // A failed start is still a failed attempt, not a reason to retry on every tick.
           if (fire.target?.via === undefined) this.wentIn(fire, "headless");
-          throw new Error(result.error ?? "ZCode did not complete the turn");
+          throw new Error(result.error ?? `${agentName(host)} did not complete the turn`);
         }
         await this.turnDone(fire, result.lastMessage);
       }, () => this.headlessSessions.delete(ref));
@@ -797,7 +801,7 @@ export class Executor {
       return;
     }
     if (host === "claude-code") return this.dispatchToSession(definition, fire);
-    if (host === "zcode") return this.dispatchToZCode(definition, fire);
+    if (host === "zcode" || host === "opencode") return this.dispatchToCliSession(definition, fire, host);
 
     const codex = this.deps.codex();
     if (!codex) {
@@ -858,9 +862,9 @@ export class Executor {
   /** Creates the dedicated thread (or session) right after activation, so it exists before the first fire. */
   prepareDedicatedThread(triggerId: string): void {
     const host = hostFor(this.deps.store.loadTrigger(triggerId).definition);
-    if (host === "zcode") {
-      this.ensureZCodeSession(triggerId).catch((error: Error) => {
-        this.log(`could not create the ZCode session of ${triggerId} yet: ${error.message}`);
+    if (host === "zcode" || host === "opencode") {
+      this.ensureCliSession(triggerId, host).catch((error: Error) => {
+        this.log(`could not create the ${agentName(host)} session of ${triggerId} yet: ${error.message}`);
       });
       return;
     }

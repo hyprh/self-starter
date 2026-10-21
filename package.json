@@ -26,6 +26,7 @@
     "codex-plugin",
     "cc-plugin",
     "zcode-plugin",
+    "opencode-plugin",
     "recipes"
   ],
   "engines": {
@@ -38,6 +39,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@opencode-ai/plugin": "1.19.3",
     "deno": "2.9.6",
     "nodemailer": "10.1.0",
     "yaml": "2.9.1"

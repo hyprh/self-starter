@@ -16,6 +16,8 @@ Codex writes the probe, tries it once, and shows what it will watch. Confirm the
 
 For a repeating watch, explicitly ask for **this conversation** as above: repeating triggers otherwise use a dedicated conversation by default.
 
+With the [OpenCode source integration](../opencode-plugin/README.md), ask for a **dedicated result session** instead of “this conversation.” Subsequent events resume that session. An investigation that invokes `gh` requires an explicitly authorized `danger-full-access` action: OpenCode’s `read-only` and `workspace-write` tool policies deny shell commands. The request’s read-only wording limits the task, but does not provide shell isolation. Successful probe access does not establish that the later investigation can fetch logs.
+
 ## What to expect
 
 1. The first successful check after activation establishes a baseline. Existing failures do not trigger an investigation. Wait for this check before testing a new event.
