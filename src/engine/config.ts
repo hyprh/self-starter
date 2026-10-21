@@ -112,13 +112,19 @@ export function which(name: string, pathEnv = process.env.PATH ?? ""): string | 
   return undefined;
 }
 
-/** The deno binary from the deno npm package, if it was installed with its postinstall step. */
+/** The bundled Deno, including when npm blocked the package's postinstall script. */
 export function bundledDeno(): string | undefined {
   try {
     const require = createRequire(import.meta.url);
     const packageDir = dirname(require.resolve("deno/package.json"));
     const binary = join(packageDir, process.platform === "win32" ? "deno.exe" : "deno");
-    return existsSync(binary) && isExecutable(binary) ? binary : undefined;
+    if (isExecutable(binary)) return binary;
+    // The package's own installer selects the matching optional platform package
+    // (including macOS and Linux architectures), without downloading anything.
+    // It also returns that package's executable when the deno folder is read-only.
+    const installer = require("deno/install_api.cjs") as { runInstall(): string };
+    const installed = installer.runInstall();
+    return typeof installed === "string" && isExecutable(installed) ? installed : undefined;
   } catch {
     return undefined;
   }

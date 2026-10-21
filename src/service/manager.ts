@@ -11,6 +11,7 @@ import { findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
 import type { Paths } from "../engine/paths.js";
 import { findClaude } from "../engine/sessions.js";
 import { findZCode } from "../engine/zcode.js";
+import { SHARED_DAEMON_SCOPE } from "../engine/session-processes.js";
 import { CLI_SCRIPT, VERSION } from "../runtime.js";
 
 export const LAUNCHD_LABEL = "dev.self-starter.daemon";
@@ -240,10 +241,14 @@ export function serviceSpec(paths: Paths, agentBins: Array<string | undefined>):
 export function spawnDetachedDaemon(paths: Paths): void {
   mkdirSync(paths.logs, { recursive: true, mode: 0o700 });
   const out = openSync(join(paths.logs, "service.log"), "a", 0o600);
+  const env: NodeJS.ProcessEnv = { ...process.env, SELF_STARTER_HOME: paths.home };
+  // A shared daemon and the work it starts have their own lifetimes, even
+  // when a headless action had to restart the service after a daemon crash.
+  env.SELF_STARTER_RUN_TOKEN = SHARED_DAEMON_SCOPE;
   const child = spawn(process.execPath, [CLI_SCRIPT, "daemon"], {
     detached: true,
     stdio: ["ignore", out, out],
-    env: { ...process.env, SELF_STARTER_HOME: paths.home },
+    env,
   });
   child.unref();
 }

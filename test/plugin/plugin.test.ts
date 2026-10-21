@@ -213,6 +213,7 @@ describe("the plugin's launcher", () => {
     assert.deepEqual(first.serverInfo, { name: "self-starter", version: VERSION });
     assert.match(first.stderr, /installing .* once for this version/);
     assert.match(npmCalls().at(-1)!, new RegExp(`^install --prefix ${join(home, "runtime", catalogVersion)}\\.\\d+\\.partial `));
+    assert.match(npmCalls().at(-1)!, / --allow-git=root --allow-remote=root$/);
 
     const calls = npmCalls().length;
     const again = await start({ SELF_STARTER_RUNTIME: "/nowhere" });
