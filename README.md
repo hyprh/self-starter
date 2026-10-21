@@ -1,8 +1,8 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Stop checking. Let Codex follow up.</b><br>
+<p align="center"><b>Let Codex keep watch—and pick up where you left off.</b><br>
 CI failed? New PR comments? A training run finished?<br>
-Self-Starter watches for the event and starts the task you asked for.<br>
+Ask for follow-ups in the same Codex conversation, with its existing context.<br>
 Works with Codex, Claude Code, ZCode and OpenCode.</p>
 
 <p align="center">
@@ -22,9 +22,9 @@ Works with Codex, Claude Code, ZCode and OpenCode.</p>
 
 ## What this plugin solves
 
-You should not have to keep refreshing CI or PRs, then return to Codex with another prompt.
+Give Codex an ongoing responsibility: watch your PRs, jobs or account activity, and keep handling the follow-up in the conversation where you already work.
 
-**Ask once: "When this happens, do that."** Self-Starter watches in the background and hands the follow-up to Codex when your condition matches.
+**Ask once: "Keep watching this PR. When CI fails or new review comments arrive, investigate and continue in this conversation."** Self-Starter can bring future events back to the original Codex thread, so Codex can pick up the work with the context already there.
 
 | When this happens… | Codex picks up the next task |
 |---|---|
@@ -34,7 +34,9 @@ You should not have to keep refreshing CI or PRs, then return to Codex with anot
 | Your training run finishes | Compare its results with the previous run |
 | Your brokerage account report updates | Explain new trades or cash movements |
 
-Codex writes a custom probe for files, logs, commands or APIs, so you can define the event in your own terms. **Code does the waiting. Codex does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
+**Closing Codex does not end the watch.** While your machine is awake, an independent local service keeps checking the custom probe Codex wrote for your files, logs, commands or APIs. When the condition matches, it can resume the conversation and hand Codex the next task. **Code does the waiting. Codex does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
+
+Repeating watches use a dedicated result thread by default. Ask to **continue in this conversation** to keep follow-ups in your original Codex thread. See [where Codex answers](docs/guide.md#where-codex-answers) and the platform-specific destinations below.
 
 ## Install
 
