@@ -1,18 +1,17 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Custom event triggers for Codex and Claude Code.</b><br>
-Describe your condition in plain language. Your agent writes a small probe to watch files, commands or APIs.<br>
-The probe runs on your machine without calling a model while it waits.<br>
-When the condition is met, your agent picks up the task and reports back to your conversation.</p>
+<p align="center"><b>Let your agent act when something happens.</b><br>
+Custom event triggers for Codex, Claude Code and ZCode.<br>
+Describe what to watch and what to do. A small local probe checks the condition;<br>
+your agent picks up the task when it fires. No model calls while the probe waits.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
-  <a href="#demo">Demo</a> ·
   <a href="#install">Install</a> ·
-  <a href="#try-it-in-two-minutes">Quick start</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#demo">Demo</a> ·
   <a href="#what-to-watch">Use cases</a> ·
-  <a href="docs/guide.md">Guide</a> ·
-  <a href="docs/design.md">Design</a>
+  <a href="docs/guide.md">Guide</a>
 </p>
 
 <p align="center">
@@ -21,32 +20,82 @@ When the condition is met, your agent picks up the task and reports back to your
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
+When a training run finishes, ask your agent to compare the results. When CI fails, have it investigate. Keep working while Self-Starter watches files, commands, services or APIs on your machine.
+
+## Install
+
+Choose the integration for your agent. All three share the same local trigger engine; their installation and result destinations differ.
+
+| Agent | Installation | Where the agent answers |
+|---|---|---|
+| **[Codex](#codex)** | GitHub plugin marketplace | The original conversation or a dedicated thread |
+| **[Claude Code](#claude-code)** | GitHub plugin marketplace | The original session or a dedicated session |
+| **[ZCode](#zcode)** | Local source installation; unreleased | A dedicated CLI result session; no delivery into the original desktop conversation |
+
+You need **macOS or Linux**, [Node.js](https://nodejs.org) **20+** and your chosen agent configured with working model access. For the current ZCode CLI, use **Node.js 24.14.0+**.
+
+### Codex
+
+With the Codex CLI installed (`npm install -g @openai/codex` if needed):
+
 ```sh
 codex plugin marketplace add hyprh/self-starter
 codex plugin add self-starter@self-starter
 ```
 
-In Claude Code ([how it works there](docs/guide.md#claude-code)):
+Restart the Codex app, or start a new CLI session.
 
+### Claude Code
+
+Inside Claude Code:
+
+```text
+/plugin marketplace add hyprh/self-starter
+/plugin install self-starter@self-starter
 ```
-/plugin install self-starter --marketplace hyprh/self-starter
+
+Use Claude Code 2.1.224 or newer for delivery into open sessions, then start a new session after installation. See the [Claude Code guide](docs/guide.md#claude-code) for session delivery and permissions.
+
+On their first start, the Codex and Claude Code plugins download the matching runtime (about 50 MB, including [Deno](https://deno.com)) and set up a launchd or systemd background service. Allow a minute or two; later starts need no download. The terminal command is `~/.self-starter/bin/self-starter`.
+
+### ZCode
+
+ZCode support is **unreleased** and requires a local checkout containing the integration. The published `v0.0.3` runtime does not include it. From the repository root:
+
+```sh
+npm ci
+npm run build
+node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
+node dist/src/cli/main.js doctor
 ```
 
-ZCode is supported through a [local source installation](zcode-plugin/README.md). Events run tasks in dedicated ZCode CLI sessions; delivery into the original desktop conversation is not supported yet.
+Replace the placeholder with the absolute path to an authenticated ZCode CLI executable, not the desktop launcher. Keep the checkout available and start a new ZCode session. The installer registers a local marketplace and the background service. See the [ZCode guide](zcode-plugin/README.md) for setup, model access and permission modes.
 
-## Try it in two minutes
+<a id="try-it-in-two-minutes"></a>
 
-After [installing](#install), use a file that does not exist yet. If you have tried this before, change the filename in both steps.
+## Quick start
 
-1. In a Codex or Claude Code conversation: "Tell me once when /tmp/self-starter-demo/done appears, and what it says. Check every 10 seconds and reply here. After starting the watch, confirm the first scheduled check found no file."
-2. After that confirmation, run: `mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done`
-3. Your agent replies in that conversation. `~/.self-starter/bin/self-starter history` shows the event and where it was handled.
+Try a local file first: no API key or external service needed. Use a filename that does not exist yet; change it in both steps if you have tried this before.
+
+1. In your agent conversation, ask:
+
+   > Watch `/tmp/self-starter-demo/done` every 10 seconds for the next hour. When it appears, have the agent read it and summarize its contents once. Keep the task read-only. After activation, confirm that the first scheduled check found no file.
+
+2. Wait for that confirmation, then run in a terminal:
+
+   ```sh
+   mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done
+   ```
+
+3. Codex and Claude Code can answer in the conversation where you asked. ZCode runs the task in a dedicated CLI result session. Ask your agent for the watch's history to see the event, receipt and result destination.
+
+You can also inspect history in a terminal: `~/.self-starter/bin/self-starter history` after marketplace installation, or `node dist/src/cli/main.js history` from a source checkout. Then ask your agent to delete the demo watch.
 
 For a development workflow, try [watching a CI failure](docs/ci-watch.md).
 
 ## Demo
 
-**Keep working. The result comes to your desktop.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
+**Keep working. Get the result when it is ready.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
 
 <p align="center">
   <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
@@ -54,58 +103,45 @@ For a development workflow, try [watching a CI failure](docs/ci-watch.md).
 
 *Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
 
-```
-You:    When the run in runs/exp42 finishes, compare it with exp41.
-Codex:  I'll check the end of its log every two minutes and compare the runs here. Start it?
-You:    Yes.
-        ...four hours later, in the same conversation, even if Codex was closed:
-Codex:  exp42 finished: val loss 0.412 vs 0.437 for exp41, same accuracy. Keep exp42.
-```
-
 ## What to watch
 
-Anything a few lines of code can check: a file, a command, a local service, a web page or API. Ask Codex in one sentence; it writes the probe, tries it once and turns it on.
+Anything a small program can check. Your agent writes the probe, tries it once, and sets up the watch with the action you authorize.
 
-| | Ask Codex | Self-Starter watches |
+| Watch | Ask your agent | Source |
 |---|---|---|
-| **Long jobs** | "When the training run finishes, compare it with the last one." | the end of the training log |
-| | "When the GPU is idle for 10 min, start the next experiment." | `nvidia-smi` |
-| **Code** | "Whenever CI fails on main, find the cause and propose a fix." | GitHub Actions ([try it](docs/ci-watch.md)) |
-| | "When my PR gets review comments, address them and push." | `gh pr view` |
-| | "When a new version of zod is out, try it on a branch." | the npm registry |
-| **Services** | "If the dev server is down for two minutes, find out why." | the health endpoint |
-| | "When a new error shows up in logs/app.log, find the cause." | the log file |
-| **Reading** | "When a speculative decoding paper hits arXiv, sum it up." | the arXiv API |
-| | "When Codex comes up on Hacker News, tell me what people say." | Hacker News search |
-| **Files** | "When a new invoice lands in invoices/, add it to expenses.csv." | the folder |
-| **Markets** | "Tell me when NVDA closes above $235, with the numbers." | the daily close |
-| | "Tell me when analysts change their view on Tencent." | Futu research ([`futu-news`](recipes/futu-news)) |
-| | "Watch my IBKR account for anything unusual." | IBKR Flex reports ([`ibkr-account`](recipes/ibkr-account)) |
+| **Long jobs** | "When the training run finishes, compare it with the last one." | A log or output file |
+| **GPU availability** | "When the GPU is idle for ten minutes, start the next experiment." | `nvidia-smi` |
+| **CI** | "When CI fails on main, investigate and suggest a fix." | GitHub Actions ([guide](docs/ci-watch.md)) |
+| **Releases** | "When a new version of zod is out, try it on a branch." | The npm registry |
+| **Services** | "If the dev server is down for two minutes, find out why." | A health endpoint |
+| **Files** | "When a new invoice lands in invoices/, add it to expenses.csv." | A local folder |
+| **Research** | "When a speculative decoding paper hits arXiv, summarize it." | The arXiv API |
+| **Markets** | "Tell me when analysts change their view on Tencent." | Futu research ([recipe](recipes/futu-news)) |
+| **Accounts** | "Watch my IBKR account for anything unusual." | IBKR Flex reports ([recipe](recipes/ibkr-account)) |
 
-## Install
-
-You need macOS or Linux, [Node.js](https://nodejs.org) 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Then the two commands above, and restart the Codex app. In Claude Code, the one command above, then start a new session ([details](docs/guide.md#claude-code)).
-
-The first time Codex starts the plugin, it downloads the rest of Self-Starter (about 50 MB, with [Deno](https://deno.com) for the probes) and sets up a small background service (launchd or systemd), so triggers keep running when Codex is closed. Secrets and email are set up in a terminal with `~/.self-starter/bin/self-starter`; see the [guide](docs/guide.md).
-
-Or from a clone of this repository: `npm install && npm link && self-starter install`.
+These examples need access to their data sources. Network access and credentials for a probe and its later agent task are configured separately; the [CI guide](docs/ci-watch.md) walks through that distinction.
 
 ## How it works
 
-<p align="center"><img src="docs/architecture.svg" width="880" alt="You set up a trigger in a Codex conversation. The Self-Starter service on your machine runs its probe on a schedule, without calling a model. When it happens, the task goes back to the conversation, opened in the background if Codex is closed, and the result comes to your desktop or email."></p>
+1. **Describe the event.** Your agent writes a TypeScript probe or uses a ready-made recipe, tests it, and sets the action and destination.
+2. **Code does the waiting.** A local background service runs the probe on a schedule. The engine handles minimum duration, cooldown, deduplication, expiry and delivery retries without calling a model for each check.
+3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background. You can choose a notification without an agent task instead.
+4. **Check the result.** History records the event and the agent's receipt. Desktop notifications are supported; email is optional and configured in the [guide](docs/guide.md#email).
 
-- **Probes, not prompts.** Codex writes a few lines of TypeScript once; the background service runs them on a schedule. No model is called while waiting.
-- **The engine owns the rules.** It fires only when the condition becomes true, with optional minimum duration, cooldown and limits, deduplicates events, retries, and tells you when a probe keeps failing. When a trigger turns out noisy, Codex can make it quieter on its own, never louder, and tells you.
-- **The conversation answers by itself.** The task goes back to the conversation where you asked, or to a thread of the trigger's own. If Codex is closed, Self-Starter opens the conversation in the background. In Claude Code, the fire comes into your open session once Claude is done with what it is doing, or Self-Starter resumes the session in the background.
-- **You stay in control.** Codex asks before turning on triggers that act for you. API keys are typed in a terminal, never in the chat. What a probe saw reaches Codex as data, not instructions.
+## Running locally
+
+- **Keep the machine awake.** Checks run locally, including when the agent app is closed. External data sources also need connectivity.
+- **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. ZCode's permission modes do not provide OS isolation. See the [security policy](codex-plugin/SECURITY.md) and [ZCode permissions](zcode-plugin/README.md#permissions).
+- **Verify delivery once.** Run the quick start on your own setup. Desktop notifications need a working notification service; on macOS, `terminal-notifier` enables clicks that open a Codex thread. Use the [Codex app checklist](docs/codex-app-checklist.md) to check foreground and background behavior.
+- **Keep secrets in the terminal.** API keys and email app passwords are configured with the CLI, never in chat or probe source. What a probe saw is passed to the agent as untrusted data.
 
 ## More
 
-- [Guide](docs/guide.md): using triggers, where Codex answers, secrets, email, recipes, the command line
-- [Design](docs/design.md): how it is built, and what was verified against Codex
-- [Checklist for the Codex app](docs/codex-app-checklist.md): four checks on your machine, about ten minutes
+- [Guide](docs/guide.md): triggers, result destinations, secrets, email and CLI commands
+- [ZCode guide](zcode-plugin/README.md): local installation and dedicated result sessions
+- [Design](docs/design.md): architecture, execution boundaries and verification
 - [Changelog](CHANGELOG.md)
-- Development: `npm test` runs the unit and integration tests. CI also installs it for real on macOS and Linux, runs fires through the real Codex CLI with a stand-in model (`test/e2e/agent.ts`), and sends real email (`test/e2e/email.ts`).
+- Development: from a clone, `npm install && npm link && self-starter install` installs the plugin for supported agents it finds. `npm test` runs unit and integration tests. CI checks installation on macOS and Linux, agent delivery with real CLIs and a stand-in model, and email delivery.
 
 ## License
 

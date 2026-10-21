@@ -1,17 +1,19 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): how to use triggers day to day, where Codex answers, Self-Starter in Claude Code, secrets, email, the ready-made recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, the ZCode source preview, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and the Codex app or CLI (`npm install -g @openai/codex`). Deno is installed for you.
+Requirements: macOS or Linux, Node.js 20 or newer, and an authenticated Codex or Claude Code installation. Deno is installed for you. The [ZCode source preview](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer and has a separate installation path.
+
+For Codex:
 
 ```sh
 codex plugin marketplace add hyprh/self-starter
 codex plugin add self-starter@self-starter
 ```
 
-Then restart the Codex app. This repository is a Codex plugin marketplace with one plugin. The first time Codex starts it, the plugin installs the runtime of its version (the background service, the MCP server and Deno) into `~/.self-starter/runtime/<version>`, which takes about a minute, sets up the background service (a launchd agent on macOS, a systemd user unit on Linux) and writes `~/.self-starter/bin/self-starter`, the command for what you do in a terminal. Later starts need no network. To update, run `codex plugin marketplace upgrade self-starter` and `codex plugin add self-starter@self-starter` again; the next start of the new version installs its runtime and replaces the older background service.
+Then restart the Codex app. For [Claude Code](#claude-code), use the installation commands below and start a new session. Each published plugin installs its matching runtime (the background service, the MCP server and Deno) into `~/.self-starter/runtime/<version>` on first start. Allow a minute or two. It sets up a launchd agent on macOS or a systemd user service on Linux and writes the terminal command `~/.self-starter/bin/self-starter`. Later starts need no network. To update the Codex plugin, run `codex plugin marketplace upgrade self-starter` and `codex plugin add self-starter@self-starter` again; the next start installs its runtime and replaces the older service.
 
 From a clone of this repository, for development:
 
@@ -49,13 +51,14 @@ The ZCode integration uses dedicated CLI result sessions. It shares the probe en
 
 ## Claude Code
 
-Self-Starter also works as a Claude Code plugin, with the same triggers, service and command line. Inside a session:
+Self-Starter also works as a Claude Code plugin, with the same triggers, service and command line. Use Claude Code 2.1.224 or newer for delivery into open sessions. Inside a session:
 
 ```
-/plugin install self-starter --marketplace hyprh/self-starter
+/plugin marketplace add hyprh/self-starter
+/plugin install self-starter@self-starter
 ```
 
-or in a terminal, `claude plugin install self-starter --marketplace hyprh/self-starter`; then start a new session. The plugin's first start installs the runtime as above, while you work: if that takes longer than Claude Code waits for a plugin's server (30 seconds), the plugin answers anyway, and its tools appear as soon as it is ready. From a clone, `self-starter install` sets the plugin up in every agent it finds, Codex and Claude Code.
+Or run `claude plugin marketplace add hyprh/self-starter` followed by `claude plugin install self-starter@self-starter` in a terminal. Start a new session afterward. The plugin's first start installs the runtime as above, while you work: if that takes longer than Claude Code waits for a plugin's server (30 seconds), the plugin answers anyway, and its tools appear as soon as it is ready. From a clone, `self-starter install` sets up the supported agents it finds; see the [ZCode guide](../zcode-plugin/README.md) before using the source preview.
 
 Claude Code asks before the tools that create, change, pause or delete a trigger, as it does for any tool. The plugin lets its own tools that report a fire, make a trigger quieter or only read run without asking, so that a fire can report back while you are away; deny rules you set still apply.
 

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Self-Starter — Ask once. Act when it happens.</title>
+  <desc id="description">Local event triggers for Codex, Claude Code and ZCode. ZCode is a source preview. No model calls during scheduled checks.</desc>
+  <rect width="1200" height="630" fill="#f7f8fa"/>
+  <g transform="translate(64 54)">
+    <svg width="58" height="58" viewBox="0 0 512 512">
+      <rect width="512" height="512" rx="88" fill="#142724"/>
+      <path d="M297.83 140.08A134 134 0 1 0 373.45 209.37" fill="none" stroke="#b6efd4" stroke-width="50" stroke-linecap="round"/>
+      <circle cx="396" cy="119" r="32" fill="#b6efd4"/>
+    </svg>
+  </g>
+  <g font-family="Noto Sans, sans-serif">
+    <text x="140" y="94" font-size="30" font-weight="700" letter-spacing="-0.8" fill="#17202a">Self-Starter</text>
+    <text x="1136" y="82" text-anchor="end" font-size="21" fill="#606b77">Codex · Claude Code · ZCode</text>
+    <text x="1136" y="111" text-anchor="end" font-size="16" fill="#606b77">ZCode: source preview</text>
+    <text x="64" y="248" font-size="86" font-weight="700" letter-spacing="-3.3" fill="#17202a">Ask once.</text>
+    <text x="64" y="347" font-size="78" font-weight="700" letter-spacing="-3.3" fill="#a34b08">Act when it happens.</text>
+    <text x="64" y="420" font-size="26" fill="#606b77">Tell your agent what to watch and what to do next.</text>
+    <text x="64" y="460" font-size="26" fill="#606b77">Local code checks files, jobs, services and APIs.</text>
+    <line x1="64" y1="540" x2="1136" y2="540" stroke="#dfe5eb"/>
+    <circle cx="70" cy="582" r="5" fill="#e8870e"/>
+    <text x="88" y="588" font-size="18" fill="#606b77">No model calls during scheduled checks.</text>
+    <text x="1136" y="588" text-anchor="end" font-size="18" fill="#606b77">hyprh.github.io/self-starter</text>
+  </g>
+</svg>
