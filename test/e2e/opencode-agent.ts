@@ -260,7 +260,13 @@ try {
     const completed = await waitFor(`OpenCode receipt ${n}`, async () => {
       const fire = daemon.fires.get(fireId);
       return fire?.receipt ? fire : undefined;
-    }, { timeoutMs: 60_000, explain: async () => JSON.stringify({ observations, modelErrors }) + "\n" + readFileSync(join(paths.logs, "daemon.log"), "utf8") });
+    }, {
+      // The retry becomes due 30s after native validation fails. The engine
+      // checks delivery on its next tick (up to another 30s), then the real
+      // CLI still has to seed the replacement and handle the waiting fire.
+      timeoutMs: n === 3 ? 90_000 : 60_000,
+      explain: async () => JSON.stringify({ observations, modelErrors }) + "\n" + readFileSync(join(paths.logs, "daemon.log"), "utf8"),
+    });
     assert.equal(completed.receipt?.source, "tool");
     assert.equal(completed.receipt?.summary, `OpenCode handled ${fireId}`);
     if (n === 3) {
