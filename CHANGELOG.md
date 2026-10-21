@@ -2,6 +2,7 @@
 
 ## 0.0.4 (unreleased)
 
+- **OpenCode custom events.** A native plugin uses the shared trigger tools and engine. Events run in dedicated CLI result sessions, reused for later events even while the UI is closed. Source installation, diagnostics and removal preserve existing OpenCode configuration. Original-conversation delivery is not supported.
 - **ZCode custom events.** A local plugin connects ZCode to the shared trigger engine. Probes wait without calling a model; agent actions run in dedicated CLI sessions that are reused for subsequent events. The original desktop conversation is not resumed.
 - **Install and inspect ZCode.** `self-starter install --zcode /absolute/path/to/zcode` registers the native plugin and configures the background service. `doctor` checks its installation, and `history` shows results and session resume commands.
 - **Explicit background permissions.** Actions select ZCode's `plan`, `edit` or `yolo` tool policy. These policies do not provide operating-system isolation. Background turns cannot create new triggers or expand existing ones.

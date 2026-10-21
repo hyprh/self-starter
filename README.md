@@ -1,7 +1,7 @@
 <h1 align="center">Self-Starter</h1>
 
 <p align="center"><b>Let your agent act when something happens.</b><br>
-Custom event triggers for Codex, Claude Code and ZCode.<br>
+Custom event triggers for Codex, Claude Code, ZCode and OpenCode.<br>
 Describe what to watch and what to do. A small local probe checks the condition;<br>
 your agent picks up the task when it fires. No model calls while the probe waits.</p>
 
@@ -24,13 +24,14 @@ When a training run finishes, ask your agent to compare the results. When CI fai
 
 ## Install
 
-Choose the integration for your agent. All three share the same local trigger engine; their installation and result destinations differ.
+Choose the integration for your agent. All four share the same local trigger engine; their installation and result destinations differ.
 
 | Agent | Installation | Where the agent answers |
 |---|---|---|
 | **[Codex](#codex)** | GitHub plugin marketplace | The original conversation or a dedicated thread |
 | **[Claude Code](#claude-code)** | GitHub plugin marketplace | The original session or a dedicated session |
 | **[ZCode](#zcode)** | Local source installation; unreleased | A dedicated CLI result session; no delivery into the original desktop conversation |
+| **[OpenCode](#opencode)** | Local source installation; unreleased | A dedicated CLI result session, reused for later events |
 
 You need **macOS or Linux**, [Node.js](https://nodejs.org) **20+** and your chosen agent configured with working model access. For the current ZCode CLI, use **Node.js 24.14.0+**.
 
@@ -71,6 +72,19 @@ node dist/src/cli/main.js doctor
 
 Replace the placeholder with the absolute path to an authenticated ZCode CLI executable, not the desktop launcher. Keep the checkout available and start a new ZCode session. The installer registers a local marketplace and the background service. See the [ZCode guide](zcode-plugin/README.md) for setup, model access and permission modes.
 
+### OpenCode
+
+OpenCode support is **unreleased** and requires a local checkout. From the repository root:
+
+```sh
+npm ci
+npm run build
+node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
+node dist/src/cli/main.js doctor
+```
+
+Use **OpenCode 1.x, version 1.19.3 or newer**, with working model access. Keep the checkout available and start a new OpenCode session after installation. The installer adds a native plugin loader without changing your OpenCode configuration. Each watch uses a dedicated result session; later events resume that session through the CLI, including when the UI is closed. Delivery into the conversation where you created the watch is not supported. See the [OpenCode guide](opencode-plugin/README.md).
+
 <a id="try-it-in-two-minutes"></a>
 
 ## Quick start
@@ -87,7 +101,7 @@ Try a local file first: no API key or external service needed. Use a filename th
    mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done
    ```
 
-3. Codex and Claude Code can answer in the conversation where you asked. ZCode runs the task in a dedicated CLI result session. Ask your agent for the watch's history to see the event, receipt and result destination.
+3. Codex and Claude Code can answer in the conversation where you asked. ZCode and OpenCode run the task in a dedicated CLI result session. Ask your agent for the watch's history to see the event, receipt and result destination.
 
 You can also inspect history in a terminal: `~/.self-starter/bin/self-starter history` after marketplace installation, or `node dist/src/cli/main.js history` from a source checkout. Then ask your agent to delete the demo watch.
 
@@ -125,13 +139,13 @@ These examples need access to their data sources. Network access and credentials
 
 1. **Describe the event.** Your agent writes a TypeScript probe or uses a ready-made recipe, tests it, and sets the action and destination.
 2. **Code does the waiting.** A local background service runs the probe on a schedule. The engine handles minimum duration, cooldown, deduplication, expiry and delivery retries without calling a model for each check.
-3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background. You can choose a notification without an agent task instead.
+3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background; ZCode and OpenCode resume their dedicated result sessions. You can choose a notification without an agent task instead.
 4. **Check the result.** History records the event and the agent's receipt. Desktop notifications are supported; email is optional and configured in the [guide](docs/guide.md#email).
 
 ## Running locally
 
 - **Keep the machine awake.** Checks run locally, including when the agent app is closed. External data sources also need connectivity.
-- **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. ZCode's permission modes do not provide OS isolation. See the [security policy](codex-plugin/SECURITY.md) and [ZCode permissions](zcode-plugin/README.md#permissions).
+- **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. ZCode and OpenCode use native tool permissions rather than OS isolation. See the [security policy](SECURITY.md), [ZCode permissions](zcode-plugin/README.md#permissions) and [OpenCode guide](opencode-plugin/README.md).
 - **Verify delivery once.** Run the quick start on your own setup. Desktop notifications need a working notification service; on macOS, `terminal-notifier` enables clicks that open a Codex thread. Use the [Codex app checklist](docs/codex-app-checklist.md) to check foreground and background behavior.
 - **Keep secrets in the terminal.** API keys and email app passwords are configured with the CLI, never in chat or probe source. What a probe saw is passed to the agent as untrusted data.
 
@@ -139,6 +153,7 @@ These examples need access to their data sources. Network access and credentials
 
 - [Guide](docs/guide.md): triggers, result destinations, secrets, email and CLI commands
 - [ZCode guide](zcode-plugin/README.md): local installation and dedicated result sessions
+- [OpenCode guide](opencode-plugin/README.md): native plugin installation and background result sessions
 - [Design](docs/design.md): architecture, execution boundaries and verification
 - [Changelog](CHANGELOG.md)
 - Development: from a clone, `npm install && npm link && self-starter install` installs the plugin for supported agents it finds. `npm test` runs unit and integration tests. CI checks installation on macOS and Linux, agent delivery with real CLIs and a stand-in model, and email delivery.

@@ -1,11 +1,19 @@
 // Conversation references keep each host's ids separate: bare Codex thread ids,
-// "cc:" for Claude Code sessions and "zc:" for ZCode sessions.
+// "cc:" for Claude Code, "zc:" for ZCode and "oc:" for OpenCode sessions.
 
 import type { TriggerDefinition } from "./definition.js";
 
 const SESSION_PREFIX = "cc:";
 
-export type Host = "codex" | "claude-code" | "zcode";
+export type Host = "codex" | "claude-code" | "zcode" | "opencode";
+
+export function opencodeRef(sessionId: string): string {
+  return `oc:${sessionId}`;
+}
+
+export function opencodeSessionIdOf(ref: string | null | undefined): string | undefined {
+  return ref?.startsWith("oc:") ? ref.slice(3) : undefined;
+}
 
 export function zcodeRef(sessionId: string): string {
   return `zc:${sessionId}`;
@@ -25,6 +33,7 @@ export function sessionIdOf(ref: string | null | undefined): string | undefined 
 }
 
 export function hostOf(ref: string | null | undefined): Host {
+  if (opencodeSessionIdOf(ref) !== undefined) return "opencode";
   if (zcodeSessionIdOf(ref) !== undefined) return "zcode";
   return sessionIdOf(ref) === undefined ? "codex" : "claude-code";
 }
@@ -42,11 +51,13 @@ export function conversationNoun(host: Host): "thread" | "session" {
 
 /** The agent's name, as the user knows it. */
 export function agentName(host: Host): string {
-  return { codex: "Codex", "claude-code": "Claude", zcode: "ZCode" }[host];
+  return { codex: "Codex", "claude-code": "Claude", zcode: "ZCode", opencode: "OpenCode" }[host];
 }
 
 /** How to get back to a conversation: a command for a terminal, and a link where the app has one. */
 export function reopen(ref: string): { command: string; url?: string } {
+  const opencode = opencodeSessionIdOf(ref);
+  if (opencode !== undefined) return { command: `opencode --session ${opencode}` };
   const zcode = zcodeSessionIdOf(ref);
   if (zcode !== undefined) return { command: `zcode --resume ${zcode}` };
   const sessionId = sessionIdOf(ref);

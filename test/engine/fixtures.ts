@@ -114,7 +114,7 @@ export class FakeClaude implements SessionRunner {
   }
 }
 
-/** Dedicated ZCode sessions: seed runs allocate an id, subsequent runs resume it. */
+/** Dedicated CLI sessions: seed runs allocate an id, subsequent runs resume it. */
 export class FakeZCode implements ZCodeRunner {
   runs: ZCodeRunOptions[] = [];
   answer = "Looked into it: the price moved on earnings.";
@@ -123,10 +123,12 @@ export class FakeZCode implements ZCodeRunner {
   during: ((options: ZCodeRunOptions) => Promise<void> | void) | undefined;
   private sessions = 0;
 
+  constructor(private readonly idPrefix = "sess") {}
+
   async run(options: ZCodeRunOptions): Promise<TurnResult & { sessionId?: string; busy?: boolean }> {
     this.runs.push(options);
     if (this.busy) return { ok: false, busy: true };
-    const sessionId = options.sessionId ?? `sess_${++this.sessions}`;
+    const sessionId = options.sessionId ?? `${this.idPrefix}_${++this.sessions}`;
     options.onStart?.();
     await this.during?.(options);
     return this.error ? { ok: false, error: this.error } : { ok: true, sessionId, lastMessage: this.answer };

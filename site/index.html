@@ -3,30 +3,30 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Self-Starter — Event triggers for Codex, Claude Code and ZCode</title>
+<title>Self-Starter — Event triggers for Codex, Claude Code, ZCode and OpenCode</title>
 <link rel="icon" type="image/svg+xml" href="./icon-trigger.svg">
-<meta name="description" content="Watch files, jobs, services and APIs with local code. Self-Starter hands the next task to Codex, Claude Code or ZCode when your condition is met.">
+<meta name="description" content="Watch files, jobs, services and APIs with local code. Self-Starter hands the next task to Codex, Claude Code, ZCode or OpenCode when your condition is met.">
 <link rel="canonical" href="https://hyprh.github.io/self-starter/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Self-Starter">
-<meta property="og:title" content="Self-Starter — Custom event triggers for Codex, Claude Code and ZCode">
+<meta property="og:title" content="Self-Starter — Custom event triggers for Codex, Claude Code, ZCode and OpenCode">
 <meta property="og:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
 <meta property="og:url" content="https://hyprh.github.io/self-starter/">
 <meta property="og:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Self-Starter: custom event triggers for Codex, Claude Code and ZCode, using files, logs, commands and APIs.">
+<meta property="og:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Self-Starter — Custom event triggers for Codex, Claude Code and ZCode">
+<meta name="twitter:title" content="Self-Starter — Custom event triggers for Codex, Claude Code, ZCode and OpenCode">
 <meta name="twitter:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
 <meta name="twitter:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
-<meta name="twitter:image:alt" content="Self-Starter: custom event triggers for Codex, Claude Code and ZCode, using files, logs, commands and APIs.">
+<meta name="twitter:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <script>
 try {
-  const hashes = { "#codex": "codex", "#claude-code": "claude", "#zcode": "zcode" };
+  const hashes = { "#codex": "codex", "#claude-code": "claude", "#zcode": "zcode", "#opencode": "opencode" };
   const agent = hashes[location.hash] || localStorage.getItem("agent");
-  if (["codex", "claude", "zcode"].includes(agent)) document.documentElement.dataset.agent = agent;
+  if (["codex", "claude", "zcode", "opencode"].includes(agent)) document.documentElement.dataset.agent = agent;
 } catch {}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -393,7 +393,8 @@ section {
 }
 
 .tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4,minmax(0,1fr));
   gap: 4px;
   padding: 9px;
   border-bottom: 1px solid var(--line);
@@ -401,8 +402,8 @@ section {
 }
 
 .tabs button {
-  flex: 1;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -435,7 +436,7 @@ section {
   display: none
 }
 
-html:not([data-agent]) [data-panel=codex],html[data-agent=codex] [data-panel=codex],html[data-agent=claude] [data-panel=claude],html[data-agent=zcode] [data-panel=zcode] {
+html:not([data-agent]) [data-panel=codex],html[data-agent=codex] [data-panel=codex],html[data-agent=claude] [data-panel=claude],html[data-agent=zcode] [data-panel=zcode],html[data-agent=opencode] [data-panel=opencode] {
   display: block
 }
 
@@ -840,9 +841,12 @@ footer>.wrap {
     gap: 12px
   }
 
+  .tabs {
+    grid-template-columns: repeat(2,minmax(0,1fr))
+  }
+
   .tabs button {
     font-size: .83rem;
-    flex-wrap: wrap;
     gap: 3px
   }
 
@@ -908,7 +912,7 @@ footer>.wrap {
       <p class="eyebrow">Custom events for coding agents</p>
       <h1>Ask once.<br>Act when it happens.</h1>
       <p class="lede">Tell your agent what to watch and what to do next. Local code checks files, jobs, services and APIs. When your condition is met, your agent picks up the task.</p>
-      <p class="platform-line"><b>Codex</b> &nbsp;·&nbsp; <b>Claude Code</b> &nbsp;·&nbsp; <b>ZCode</b> <small>source preview</small></p>
+      <p class="platform-line"><b>Codex</b> &nbsp;·&nbsp; <b>Claude Code</b> &nbsp;·&nbsp; <b>ZCode</b> <small>source preview</small> &nbsp;·&nbsp; <b>OpenCode</b> <small>source preview</small></p>
       <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#examples">See what it can watch →</a></div>
       <p class="promise">Local probes. No model calls while waiting. macOS and Linux.</p>
     </div>
@@ -942,6 +946,7 @@ footer>.wrap {
             <button id="codex" type="button" role="tab" data-pick="codex" aria-controls="panel-codex" aria-selected="true">Codex</button>
             <button id="claude-code" type="button" role="tab" data-pick="claude" aria-controls="panel-claude" aria-selected="false" tabindex="-1">Claude Code</button>
             <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source preview</span></button>
+            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source preview</span></button>
           </div>
           <div class="install-panel" id="panel-codex" data-panel="codex" role="tabpanel" aria-labelledby="codex" tabindex="0">
             <h3>Install for Codex</h3><p class="fine">macOS or Linux · Node.js 20+ · Codex app or CLI</p>
@@ -968,13 +973,24 @@ node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" 
             <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>ZCode support is on main and is not included in the published v0.0.3 runtime. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
             <div class="delivery"><b>Results in dedicated CLI sessions</b>Each agent watch uses a dedicated result session. Read results with Self-Starter history or the trigger tools. The original ZCode desktop conversation is not resumed.</div>
           </div>
+          <div class="install-panel" id="panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="opencode" tabindex="0">
+            <h3>Install the OpenCode source preview</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
+            <div class="command"><pre id="install-opencode"><code>git clone https://github.com/hyprh/self-starter.git
+cd self-starter
+npm ci
+npm run build
+node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
+node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-opencode" aria-label="Copy OpenCode source install commands">Copy</button></div>
+            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>This integration is unreleased. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
+            <div class="delivery"><b>Results in a dedicated session</b>Each watch reuses its result session, including when the UI is closed. Use Self-Starter history to find it. Events do not run in the conversation where you created the watch.</div>
+          </div>
         </div>
         <aside class="install-aside" aria-label="Your first watch">
           <h3>Try a watch you can trigger yourself</h3>
           <ol><li>Install your integration, then start a new agent session.</li><li>Ask it to watch for a new file and confirm the first scheduled check found nothing.</li><li>Create the file. Check the response and Self-Starter history.</li></ol>
           <div class="request"><b>Ask your agent</b>“Tell me once when <code>/tmp/self-starter-demo/done</code> appears, and what it says. Check every 10 seconds and stop after an hour.”</div>
           <p class="fine">Use a filename that does not exist yet. <a href="https://github.com/hyprh/self-starter/blob/main/README.md#quick-start">Follow the full quick start →</a></p>
-          <noscript><p class="fine">JavaScript is needed to switch install tabs. <a href="https://github.com/hyprh/self-starter#install">All three installation options are in the README.</a></p></noscript>
+          <noscript><p class="fine">JavaScript is needed to switch install tabs. <a href="https://github.com/hyprh/self-starter#install">All four installation options are in the README.</a></p></noscript>
         </aside>
       </div>
     </div>
@@ -1020,7 +1036,7 @@ counts as seen; the next report fires</pre>
             <img id="notification-demo" src="assets/futu-notification.gif" width="1280" height="720" loading="lazy" decoding="async" alt="Illustrated Codex and Futu watch: an AMD move triggers an investigation and a desktop notification.">
             <div class="demo-still" id="notification-demo-still" hidden><div class="demo-toast"><p class="label">SELF-STARTER / DESKTOP NOTIFICATION</p><strong>AMD down 4.31%.</strong><p>Investigation ready in Codex.</p></div></div>
           </div>
-          <figcaption><p>Edited replay of a real Codex + Futu watch. The interface and notification are illustrated; quotes are historical. This is a Codex example, not a recording of all three plugins.</p><div class="demo-actions"><button id="demo-toggle" type="button" aria-controls="notification-demo-frame" hidden>Pause demo</button><a href="assets/futu-notification.gif" download="self-starter-demo.gif">Download GIF</a></div></figcaption>
+          <figcaption><p>Edited replay of a real Codex + Futu watch. The interface and notification are illustrated; quotes are historical. This demo shows the Codex integration.</p><div class="demo-actions"><button id="demo-toggle" type="button" aria-controls="notification-demo-frame" hidden>Pause demo</button><a href="assets/futu-notification.gif" download="self-starter-demo.gif">Download GIF</a></div></figcaption>
         </figure>
       </details>
     </div>
@@ -1038,6 +1054,7 @@ counts as seen; the next report fires</pre>
       <div><div class="section-head"><h2>Go a little deeper</h2></div><div class="resources">
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">User guide →</a><span>Results, permissions, notifications, recipes and commands.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode source preview →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode source preview →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/design.md">Design and verification notes →</a><span>How delivery works, CLI test coverage and remaining desktop checks.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/issues">Questions or feedback →</a><span>Share your setup, what you watched and what happened.</span></div>
       </div></div>
@@ -1137,8 +1154,8 @@ const redraw = () => {
 redraw();
 if ("ResizeObserver" in window) new ResizeObserver(redraw).observe(plot);
 
-const AGENTS = ["codex", "claude", "zcode"];
-const HASHES = { codex: "#codex", claude: "#claude-code", zcode: "#zcode" };
+const AGENTS = ["codex", "claude", "zcode", "opencode"];
+const HASHES = { codex: "#codex", claude: "#claude-code", zcode: "#zcode", opencode: "#opencode" };
 const tabs = [...document.querySelectorAll("[data-pick]")];
 function pick(agent, updateUrl = false) {
   if (!AGENTS.includes(agent)) agent = "codex";

@@ -59,7 +59,7 @@ export class ZCodeCli implements ZCodeRunner {
       // The wrapper owns the deadline even after a daemon crash, and a resumed
       // turn also owns a lease until the CLI finishes.
       const child = spawn(process.execPath, [
-        fileURLToPath(new URL("./zcode-process.js", import.meta.url)),
+        fileURLToPath(new URL("./session-process.js", import.meta.url)),
         this.sessionsDir, options.sessionId ?? "", String(options.timeoutMs), this.command, ...this.prefix, ...args,
       ], {
         cwd: options.cwd,

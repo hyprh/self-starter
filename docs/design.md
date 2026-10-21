@@ -305,6 +305,16 @@ A trigger made in Claude Code (its origin is a session: `cc:<session id>`) hands
 - **Fire turns cannot change triggers.** `UserPromptSubmit` runs for typed prompts, for inbox messages and for `-p` prompts alike; the hook records whether a Self-Starter message started the turn (and keeps only that message's first line, with the fire id), so a turn started by a fire is refused trigger changes, except `trigger_tune` for that fire's trigger, as Codex turns are by their turn metadata.
 - **Not used:** channels (an MCP server pushing `notifications/claude/channel`) need `--dangerously-load-development-channels` for a plugin outside Anthropic's allowlist; plugin monitors only run in interactive sessions and not when telemetry is off.
 
+### 6.2.2 OpenCode result sessions
+
+OpenCode versions >=1.19.3 and <2 use a native plugin (`opencode-plugin/`) with the shared trigger tools. The host supplies the session, message and working directory; tool arguments cannot choose the caller's identity. Conversation references use `oc:<session id>` so they cannot be confused with another agent's ids.
+
+The integration supports dedicated result sessions only. The daemon creates one through `opencode run --format json` and resumes its exact id for later fires with `--session <id>`, with the message on stdin. This works without a running UI or HTTP server. Origin delivery is rejected because independent OpenCode processes do not share a session execution lock. A result session should remain reserved for its watch while the watch is active.
+
+A per-session lease serializes background turns, and the deadline remains enforced if the daemon exits. A fire keeps the session occupied until its CLI turn ends, even if it reported earlier. The executor rechecks the action before starting a queued turn. OpenCode's `action.sandbox` mapping uses a dedicated agent with native tool permission rules, not OS isolation: `read-only` allows file reading, search, skills and Self-Starter tools; `workspace-write` adds edits but denies shell commands; `danger-full-access` permits commands. Interactive questions remain disabled. Model selection follows the global and project configuration, and probe access is configured separately. The headless process marks the entire turn as trigger-started, so reporting a fire does not permit later tool calls in that turn to create or expand triggers.
+
+The source installer adds a managed loader to OpenCode's native plugin directory and keeps user configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for installation and requirements.
+
 ### 6.3 The message delivered to the agent
 
 The engine assembles the message in a fixed format:
@@ -346,15 +356,15 @@ When you are done, call the trigger_report tool with fire_id="fire_01J9...", a o
 ### 7.1 Components
 
 ```
-Codex app / CLI
+Agent app / CLI
  └─ Self-Starter plugin
      ├─ skill triggers: how to turn requests into probes and definitions, and how to handle fire messages
-     └─ MCP server (`self-starter mcp`): no state; forwards each tool call to the daemon with the caller from _meta
+     └─ MCP server (`self-starter mcp`) or OpenCode native tools: forwards calls with host-supplied caller identity
 
 the daemon (`self-starter daemon`, kept alive by launchd or a systemd user unit)
  ├─ Engine: schedules and runs probes, applies the firing rules, records fires
- ├─ Executor: takes pending fires, delivers them to Codex or notifies, collects receipts
- └─ Control API: newline-delimited JSON on a Unix socket (mode 0600), used by the MCP server and the self-starter CLI
+ ├─ Executor: takes pending fires, delivers them to the trigger's agent or notifies, collects receipts
+ └─ Control API: newline-delimited JSON on a Unix socket (mode 0600), used by plugin tools and the self-starter CLI
 ```
 
 - The Engine and the Executor only hand over work through fire records. They live in one process; later the Engine could move to an always-on machine and the Executor would pick up the backlog when the laptop wakes.
@@ -376,7 +386,7 @@ Plain files, written only by the daemon (no database, no native dependencies, ea
   runs.jsonl                   every probe run (rotated at 5 MB)
   secrets.json                 probe secrets, optionally limited to hosts for sandboxed probes (0600)
   channel-secrets.json         the SMTP password for email notifications (0600, never given to probes)
-  config.json                  codex and deno paths, budget, timeouts
+  config.json                  agent and deno paths, budget, timeouts
   marketplace/                 the local plugin marketplace registered with Codex
   logs/daemon.log, daemon.sock, daemon.pid
 ```
@@ -399,6 +409,8 @@ JSON files are written through a temporary file and a rename; the fire log toler
 | Future official channel | MCP events (`events/list`, `events/stream`) and the app server's `mcpServer/event/stream/*` | Watching |
 
 ### 7.4 MCP tools
+
+OpenCode exposes the same operations through native plugin tools. The approval column below describes Codex.
 
 | Tool | Purpose | Codex asks before running it |
 |---|---|---|
@@ -503,6 +515,6 @@ Validated without the app (section 7.3): plugin installation, MCP tools and `_me
 ## 14. Repository and development
 
 - `src/`: `core` (definitions, firing rules, messages), `engine` (scheduler, executor, storage, Codex and Deno), `daemon`, `mcp`, `cli`, `service` (launchd and systemd)
-- `codex-plugin/`, `cc-plugin/`, `zcode-plugin/`: the agent plugins; `recipes/`: ready-made probes; `site/`: the landing page
+- `codex-plugin/`, `cc-plugin/`, `zcode-plugin/`, `opencode-plugin/`: the agent plugins; `recipes/`: ready-made probes; `site/`: the landing page
 - `test/`: unit and integration tests (`npm test`: real Deno probes, the daemon, the MCP protocol), and end-to-end checks in `test/e2e/`: `install.ts` (a real install with the Codex CLI and launchd or systemd, a trigger, a crash, a reinstall, an uninstall), `agent.ts` (fires through the real Codex CLI with a stand-in model: an open thread, then a thread closed in the middle of a turn, and a thread of the trigger's own) and `email.ts` (real email through a throwaway Ethereal mailbox, read back over IMAP)
 - `.github/workflows/`: `ci.yml` runs the tests on Linux (Node 20, 22, 24) and macOS and the install and agent checks on both; `email.yml` runs the email check when the email code changes, or on demand; `pages.yml` publishes `site/` to GitHub Pages (Settings > Pages > Source: GitHub Actions)

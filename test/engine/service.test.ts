@@ -15,7 +15,7 @@ const deno = bundledDeno();
 const ORIGIN = "thread-origin";
 const fromThread = (extra: Partial<Caller> = {}): Caller => ({ via: "mcp", threadId: ORIGIN, turnId: "turn-1", ...extra });
 
-function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeInstalled = true) {
+function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeInstalled = true, opencodeInstalled = true) {
   const home = tempHome();
   const { paths } = home;
   const store = new Store(paths);
@@ -32,6 +32,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
   // Claude Code: sessions that a process shows take fires into their inbox; the others run headless.
   const claude = new FakeClaude();
   const zcode = new FakeZCode();
+  const opencode = new FakeZCode("ses");
   const openSessions = new Set<string>();
   const inboxes: Array<{ sessionId: string; text: string }> = [];
   const deliverToSession = async (sessionId: string, text: string) => {
@@ -39,7 +40,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
     inboxes.push({ sessionId, text });
     return "relayed" as const;
   };
-  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, claude: () => claude, zcode: () => zcodeInstalled ? zcode : undefined, deliverToSession, log, now, uptime: () => clock.uptime ?? clock.at });
+  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, claude: () => claude, zcode: () => zcodeInstalled ? zcode : undefined, opencode: () => opencodeInstalled ? opencode : undefined, deliverToSession, log, now, uptime: () => clock.uptime ?? clock.at });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
   const recipesDir = join(paths.home, "recipes");
   const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codexBin: () => "/fake/codex", log, now });
@@ -60,7 +61,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
     return { view, trigger: service.activateDraft({ draftId: view.draftId }, caller) };
   };
 
-  return { home, paths, store, fires, secrets, notifier, codex, claude, zcode, openSessions, inboxes, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
+  return { home, paths, store, fires, secrets, notifier, codex, claude, zcode, opencode, openSessions, inboxes, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
 }
 
 describe("triggers end to end", { skip: deno ? false : "the deno npm package is not installed" }, () => {
@@ -971,10 +972,13 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
   });
 });
 
-describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package is not installed" }, () => {
+for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
+  { host: "zcode", name: "ZCode", refPrefix: "zc:", idPrefix: "sess", otherHost: "opencode", otherPrefix: "oc:" },
+  { host: "opencode", name: "OpenCode", refPrefix: "oc:", idPrefix: "ses", otherHost: "zcode", otherPrefix: "zc:" },
+] as const) describe(`triggers made in ${name}`, { skip: deno ? false : "the deno npm package is not installed" }, () => {
   let server: TestServer;
   let t: ReturnType<typeof setup>;
-  const fromZCode = (extra: Partial<Caller> = {}): Caller => ({ via: "mcp", threadId: "zc:sess_origin", turnId: "turn-1", cwd: t.paths.home, ...extra });
+  const fromHost = (extra: Partial<Caller> = {}): Caller => ({ via: "mcp", threadId: `${refPrefix}${idPrefix}_origin`, turnId: "turn-1", cwd: t.paths.home, ...extra });
   const ownSession = (id = "price-alert") => eventually(() => t.store.loadTrigger(id).definition.target.thread_id || undefined);
   const fire = async (id = "price-alert") => {
     server.price = 200;
@@ -983,8 +987,9 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     return result.fireId;
   };
   const noOtherHostRuns = () => {
-    assert.equal(t.codex.started.length + t.codex.queued.length + t.codex.wakes.length, 0, "ZCode never falls back to Codex");
-    assert.equal(t.claude.runs.length + t.inboxes.length, 0, "ZCode does not use Claude sessions");
+    assert.equal(t.codex.started.length + t.codex.queued.length + t.codex.wakes.length, 0, "CLI never falls back to Codex");
+    assert.equal(t.claude.runs.length + t.inboxes.length, 0, "CLI does not use Claude sessions");
+    assert.equal(t[otherHost].runs.length, 0, "the other CLI host remains unused");
   };
   const replaceWithClaude = async () => {
     const caller = fromThread({ threadId: "cc:replacement" });
@@ -1004,61 +1009,63 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
   });
 
   it("defaults even one-shot triggers to a dedicated session in the caller's folder, and receives each fire once", async () => {
-    const { trigger } = await t.activate({ policy: { max_fires: 1 } }, STATE_PROBE, fromZCode({ cwd: t.paths.logs }));
+    const { trigger } = await t.activate({ policy: { max_fires: 1 } }, STATE_PROBE, fromHost({ cwd: t.paths.logs }));
     assert.equal(trigger.target, "dedicated");
-    assert.equal(trigger.host, "zcode");
+    assert.equal(trigger.host, host);
     const ref = await ownSession();
-    assert.equal(ref, "zc:sess_1");
+    assert.equal(ref, `${refPrefix}${idPrefix}_1`);
     const definition = t.store.loadTrigger("price-alert").definition;
-    assert.equal(definition.meta.origin_thread_id, "zc:sess_origin");
+    assert.equal(definition.meta.origin_thread_id, `${refPrefix}${idPrefix}_origin`);
     assert.equal(definition.target.cwd, t.paths.logs);
-    const seed = t.zcode.runs[0]!;
+    const seed = t[host].runs[0]!;
     assert.equal(seed.sessionId, undefined, "the runner creates the session and returns its id");
     assert.equal(seed.cwd, t.paths.logs);
     assert.match(seed.message, /^\[self-starter\] This session belongs to the trigger "Price above 150"/);
 
-    t.zcode.answer = "Earnings beat; volume rose.\nThe detailed investigation follows.";
+    t[host].answer = "Earnings beat; volume rose.\nThe detailed investigation follows.";
     const fireId = await fire();
     const done = await eventually(() => t.fires.get(fireId)?.receipt ? t.fires.get(fireId) : undefined);
     assert.deepEqual(done.target, { kind: "dedicated", threadId: ref, via: "headless" });
     assert.equal(done.receipt?.source, "final-answer");
     assert.equal(done.receipt?.summary, "Earnings beat; volume rose.");
-    const resumed = t.zcode.runs[1]!;
-    assert.deepEqual({ sessionId: resumed.sessionId, cwd: resumed.cwd, sandbox: resumed.sandbox, timeoutMs: resumed.timeoutMs }, { sessionId: "sess_1", cwd: t.paths.logs, sandbox: "workspace-write", timeoutMs: 20 * 60_000 });
+    const resumed = t[host].runs[1]!;
+    assert.deepEqual({ sessionId: resumed.sessionId, cwd: resumed.cwd, sandbox: resumed.sandbox, timeoutMs: resumed.timeoutMs }, { sessionId: `${idPrefix}_1`, cwd: t.paths.logs, sandbox: "workspace-write", timeoutMs: 20 * 60_000 });
     assert.match(resumed.message, /Find out why the price moved\./);
     assert.match(resumed.message, /<trigger-data trust="untrusted">[\s\S]*"price": 200/);
     const notification = await eventually(() => t.notifier.sent[0]);
     assert.equal(notification.threadId, ref);
     assert.equal(notification.body, "Earnings beat; volume rose.");
     for (let n = 0; n < 3; n++) await t.executor.tick();
-    assert.equal(t.zcode.runs.length, 2, "one seed and one fire, even after later ticks");
+    assert.equal(t[host].runs.length, 2, "one seed and one fire, even after later ticks");
     assert.equal(t.notifier.sent.length, 1);
     noOtherHostRuns();
   });
 
-  it("rejects an origin target both when drafting and when updating an existing ZCode trigger", async () => {
-    await assert.rejects(t.service.createDraft({ definition: t.definition({ target: { kind: "origin" } }), code: STATE_PROBE }, fromZCode()), /ZCode currently supports dedicated result sessions/);
+  it("rejects an origin target both when drafting and when updating an existing CLI trigger", async () => {
+    await assert.rejects(t.service.createDraft({ definition: t.definition({ target: { kind: "origin" } }), code: STATE_PROBE }, fromHost()), new RegExp(`${name} currently supports dedicated result sessions`));
     assert.equal(t.store.hasTrigger("price-alert"), false);
-    await t.activate({}, STATE_PROBE, fromZCode());
+    await t.activate({}, STATE_PROBE, fromHost());
     const ref = await ownSession();
-    assert.throws(() => t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { kind: "origin" } } }, fromZCode()), /ZCode currently supports dedicated result sessions/);
+    assert.throws(() => t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { kind: "origin" } } }, fromHost()), new RegExp(`${name} currently supports dedicated result sessions`));
     assert.deepEqual(t.store.loadTrigger("price-alert").definition.target, { kind: "dedicated", cwd: t.paths.home, thread_id: ref });
     noOtherHostRuns();
   });
 
   it("does not conflate identical session and turn ids from different hosts", async () => {
-    await t.activate({}, STATE_PROBE, fromZCode());
+    await t.activate({}, STATE_PROBE, fromHost());
     const ref = await ownSession();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    t.zcode.during = (options) => options.sessionId ? gate : undefined;
+    t[host].during = (options) => options.sessionId ? gate : undefined;
     try {
       const fireId = await fire();
-      await eventually(() => t.zcode.runs.length === 2);
+      await eventually(() => t[host].runs.length === 2);
       const sameTurn = "shared-turn-id";
-      t.service.report({ fireId, summary: "Handled", notify: false }, fromZCode({ threadId: ref, turnId: sameTurn }));
-      await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "zc-refused" }), code: STATE_PROBE }, fromZCode({ threadId: ref, turnId: sameTurn })), (error: ServiceError) => error.code === "refused");
-      for (const threadId of ["sess_1", "cc:sess_1", "zc:sess_other"]) {
+      assert.throws(() => t.service.report({ fireId, summary: "Wrong host", notify: false }, fromHost({ threadId: `${otherPrefix}${idPrefix}_1`, turnId: sameTurn })), /delivered to a different thread/);
+      assert.equal(t.fires.get(fireId)?.receipt, undefined, "another host cannot report this session's fire");
+      t.service.report({ fireId, summary: "Handled", notify: false }, fromHost({ threadId: ref, turnId: sameTurn }));
+      await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "refused" }), code: STATE_PROBE }, fromHost({ threadId: ref, turnId: sameTurn })), (error: ServiceError) => error.code === "refused");
+      for (const threadId of [`${idPrefix}_1`, `cc:${idPrefix}_1`, `${otherPrefix}${idPrefix}_1`, `${refPrefix}${idPrefix}_other`]) {
         const draft = await t.service.createDraft({ definition: t.definition({ id: `from-${threadId.replace(/[:_]/g, "-")}` }), code: STATE_PROBE }, fromThread({ threadId, turnId: sameTurn }));
         assert.ok(draft.draftId, `an unrelated conversation ${threadId} remains free`);
       }
@@ -1070,18 +1077,18 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
   });
 
   it("keeps trusted trigger turns guarded after a receipt and a new turn id, while allowing only their trigger to become quieter", async () => {
-    await t.activate({}, STATE_PROBE, fromZCode());
-    await t.activate({ id: "other", name: "Other" }, STATE_PROBE, fromZCode());
+    await t.activate({}, STATE_PROBE, fromHost());
+    await t.activate({ id: "other", name: "Other" }, STATE_PROBE, fromHost());
     const ref = await ownSession();
     const other = await ownSession("other");
     assert.notEqual(ref, other, "each dedicated trigger owns a separate session");
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    t.zcode.during = (options) => options.sessionId ? gate : undefined;
+    t[host].during = (options) => options.sessionId ? gate : undefined;
     try {
       const fireId = await fire();
-      await eventually(() => t.zcode.runs.some((run) => run.sessionId));
-      const caller = fromZCode({ threadId: ref, turnId: "fire-turn", turnTrigger: "self-starter" });
+      await eventually(() => t[host].runs.some((run) => run.sessionId));
+      const caller = fromHost({ threadId: ref, turnId: "fire-turn", turnTrigger: "self-starter" });
       t.service.report({ fireId, summary: "Handled", notify: false }, caller);
       const later = { ...caller, turnId: "another-tool-turn" };
       await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "injected" }), code: STATE_PROBE }, later), /this turn was started by Self-Starter/);
@@ -1089,7 +1096,7 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
       await assert.rejects(t.service.tuneTrigger({ triggerId: "other", reason: "Too noisy", cooldown: "1h" }, later), (error: ServiceError) => error.code === "refused");
       const tuned = await t.service.tuneTrigger({ triggerId: "price-alert", reason: "Only report substantial changes", cooldown: "1h" }, later);
       assert.deepEqual(tuned.changes, ["waits 1h after a fire (was no wait)"]);
-      await eventually(() => t.notifier.sent.find((notice) => notice.title === "Price above 150: ZCode made it quieter"));
+      await eventually(() => t.notifier.sent.find((notice) => notice.title === `Price above 150: ${name} made it quieter`));
     } finally {
       release();
       await eventually(() => t.executor.status().activeAgentRuns === 0);
@@ -1099,7 +1106,7 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
   it("shares concurrency and daily budgets with the other hosts", async () => {
     t.cleanup();
     t = setup(server, { budget: { maxAgentRunsPerDay: 2, maxConcurrentAgentRuns: 1 } });
-    await t.activate({}, STATE_PROBE, fromZCode());
+    await t.activate({}, STATE_PROBE, fromHost());
     await ownSession();
     await t.activate({ id: "claude-watch", target: { kind: "origin" } }, STATE_PROBE, fromThread({ threadId: "cc:shared" }));
     await t.activate({ id: "codex-watch", target: { kind: "origin" } });
@@ -1109,37 +1116,37 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     try {
       const claudeFire = await fire("claude-watch");
       await eventually(() => t.claude.runs.length === 1);
-      const zcodeFire = await fire();
-      await eventually(() => t.fires.get(zcodeFire)?.status === "delivered");
+      const cliFire = await fire();
+      await eventually(() => t.fires.get(cliFire)?.status === "delivered");
       await t.executor.tick();
-      assert.equal(t.zcode.runs.length, 1, "the ZCode fire waits for the shared run slot");
+      assert.equal(t[host].runs.length, 1, "the CLI fire waits for the shared run slot");
       const overBudget = await fire("codex-watch");
       await eventually(() => t.fires.get(overBudget)?.status === "skipped");
       assert.equal(t.codex.queued.length, 0, "other hosts share the two-run daily limit");
       await eventually(() => t.notifier.sent.find((notice) => /daily limit of 2 runs is used up/.test(notice.body)));
       release();
-      await eventually(() => t.fires.get(claudeFire)?.status === "done" && t.fires.get(zcodeFire)?.status === "done");
-      assert.equal(t.zcode.runs.length, 2);
+      await eventually(() => t.fires.get(claudeFire)?.status === "done" && t.fires.get(cliFire)?.status === "done");
+      assert.equal(t[host].runs.length, 2);
     } finally {
       release();
       await eventually(() => t.executor.status().activeAgentRuns === 0);
     }
   });
 
-  it("waits for a ZCode turn to exit after its tool receipt before resuming the same session for another event", async () => {
+  it("waits for a CLI turn to exit after its tool receipt before resuming the same session for another event", async () => {
     t.cleanup();
     t = setup(server, { budget: { ...DEFAULT_CONFIG.budget, maxConcurrentAgentRuns: 2 } });
-    await t.activate({ mode: "event", policy: { concurrency: "queue" } }, EVENT_PROBE, fromZCode());
+    await t.activate({ mode: "event", policy: { concurrency: "queue" } }, EVENT_PROBE, fromHost());
     const ref = await ownSession();
     await t.engine.runNow("price-alert"); // The empty feed is the baseline.
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
-    t.zcode.during = (options) => options.sessionId && t.zcode.runs.length === 2 ? gate : undefined;
+    t[host].during = (options) => options.sessionId && t[host].runs.length === 2 ? gate : undefined;
     try {
       server.events.push({ id: "first", title: "First event" });
       const first = (await t.engine.runNow("price-alert"))!.fireId!;
-      await eventually(() => t.zcode.runs.length === 2);
-      t.service.report({ fireId: first, summary: "First event handled", notify: false }, fromZCode({ threadId: ref, turnId: "first-fire" }));
+      await eventually(() => t[host].runs.length === 2);
+      t.service.report({ fireId: first, summary: "First event handled", notify: false }, fromHost({ threadId: ref, turnId: "first-fire" }));
       assert.equal(t.fires.get(first)?.status, "done");
       assert.equal(t.executor.status().activeAgentRuns, 1, "the reported turn still owns its session");
 
@@ -1148,13 +1155,13 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
       assert.ok(second);
       await eventually(() => t.fires.get(second)?.status === "delivered");
       for (let n = 0; n < 3; n++) await t.executor.tick();
-      assert.equal(t.zcode.runs.length, 2, "a free global run slot cannot overlap turns in the same session");
+      assert.equal(t[host].runs.length, 2, "a free global run slot cannot overlap turns in the same session");
       assert.equal(t.fires.get(second)?.target?.via, undefined, "the second event has not started its turn");
 
       release();
       await eventually(() => t.fires.get(second)?.status === "done");
-      assert.equal(t.zcode.runs.length, 3);
-      assert.equal(t.zcode.runs[2]!.sessionId, t.zcode.runs[1]!.sessionId);
+      assert.equal(t[host].runs.length, 3);
+      assert.equal(t[host].runs[2]!.sessionId, t[host].runs[1]!.sessionId);
       assert.equal(t.fires.get(first)?.receipt?.source, "tool", "finishing the old turn preserves its tool receipt");
       assert.equal(t.fires.get(second)?.receipt?.source, "final-answer");
     } finally {
@@ -1164,27 +1171,27 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     noOtherHostRuns();
   });
 
-  for (const host of ["codex", "claude-code"] as const) {
-    it(`starts the replacement ${host} conversation independently of a pending ZCode seed`, async () => {
+  for (const replacementHost of ["codex", "claude-code"] as const) {
+    it(`starts the replacement ${replacementHost} conversation independently of a pending CLI seed`, async () => {
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
-      t.zcode.during = () => gate;
+      t[host].during = () => gate;
       try {
-        await t.activate({}, STATE_PROBE, fromZCode());
-        await eventually(() => t.zcode.runs.length === 1);
+        await t.activate({}, STATE_PROBE, fromHost());
+        await eventually(() => t[host].runs.length === 1);
         assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, null);
-        const caller = fromThread({ threadId: host === "codex" ? ORIGIN : "cc:replacement" });
+        const caller = fromThread({ threadId: replacementHost === "codex" ? ORIGIN : "cc:replacement" });
         const draft = await t.service.createDraft({ definition: t.definition({ name: "Replacement", target: { kind: "dedicated", cwd: t.paths.home } }), code: STATE_PROBE, replace: true }, caller);
         t.service.activateDraft({ draftId: draft.draftId }, caller);
         const replacement = await ownSession();
-        if (host === "codex") assert.equal(replacement, "thread-dedicated-1");
+        if (replacementHost === "codex") assert.equal(replacement, "thread-dedicated-1");
         else assert.match(replacement, /^cc:/);
-        assert.equal(t.service.get({ triggerId: "price-alert" }).host, host);
+        assert.equal(t.service.get({ triggerId: "price-alert" }).host, replacementHost);
 
         release();
         await eventually(() => t.logs.some((line) => line.includes("the trigger changed while its result session was being created")));
-        assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, replacement, "the stale ZCode result cannot bind to the replacement");
-        assert.equal(t.zcode.runs.length, 1);
+        assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, replacement, "the stale CLI result cannot bind to the replacement");
+        assert.equal(t[host].runs.length, 1);
       } finally {
         release();
         await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1193,33 +1200,33 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
   }
 
   for (const change of ["revision update", "deletion and recreation"] as const) {
-    it(`discards a ZCode seed that completes after a ${change}, while a fresh seed is still pending`, async () => {
+    it(`discards a CLI seed that completes after a ${change}, while a fresh seed is still pending`, async () => {
       let releaseOld!: () => void;
       let releaseCurrent!: () => void;
       const oldGate = new Promise<void>((resolve) => { releaseOld = resolve; });
       const currentGate = new Promise<void>((resolve) => { releaseCurrent = resolve; });
-      t.zcode.during = () => t.zcode.runs.length === 1 ? oldGate : currentGate;
+      t[host].during = () => t[host].runs.length === 1 ? oldGate : currentGate;
       try {
-        await t.activate({}, STATE_PROBE, fromZCode());
-        await eventually(() => t.zcode.runs.length === 1);
+        await t.activate({}, STATE_PROBE, fromHost());
+        await eventually(() => t[host].runs.length === 1);
         const before = t.store.loadTrigger("price-alert").definition;
         if (change === "revision update") {
-          t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { cwd: t.paths.logs } } }, fromZCode());
+          t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { cwd: t.paths.logs } } }, fromHost());
           assert.equal(t.store.loadTrigger("price-alert").definition.meta.revision, before.meta.revision + 1);
         } else {
           t.service.delete({ triggerId: "price-alert" }, { via: "cli" });
           t.clock.at += 1;
-          await t.activate({ target: { cwd: t.paths.logs } }, STATE_PROBE, fromZCode());
+          await t.activate({ target: { cwd: t.paths.logs } }, STATE_PROBE, fromHost());
           assert.notEqual(t.store.loadTrigger("price-alert").definition.meta.created_at, before.meta.created_at);
         }
-        await eventually(() => t.zcode.runs.length === 2);
-        assert.equal(t.zcode.runs[1]!.cwd, t.paths.logs, "the replacement starts its own seed using the new definition");
+        await eventually(() => t[host].runs.length === 2);
+        assert.equal(t[host].runs[1]!.cwd, t.paths.logs, "the replacement starts its own seed using the new definition");
 
         releaseOld();
         await eventually(() => t.logs.some((line) => line.includes("the trigger changed while its result session was being created")));
         assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, null, "the old session cannot bind while the current seed waits");
         releaseCurrent();
-        assert.equal(await ownSession(), "zc:sess_2");
+        assert.equal(await ownSession(), `${refPrefix}${idPrefix}_2`);
         noOtherHostRuns();
       } finally {
         releaseOld();
@@ -1229,14 +1236,14 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     });
   }
 
-  it("keeps a busy ZCode session queued without starting its receipt clock or retrying rapidly", async () => {
-    await t.activate({}, STATE_PROBE, fromZCode());
+  it("keeps a busy CLI session queued without starting its receipt clock or retrying rapidly", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
     const ref = await ownSession();
     t.clock.uptime = t.clock.at;
-    t.zcode.busy = true;
+    t[host].busy = true;
     let attempts = 0;
-    const run = t.zcode.run.bind(t.zcode);
-    t.zcode.run = async (options) => {
+    const run = t[host].run.bind(t[host]);
+    t[host].run = async (options) => {
       attempts += 1;
       return run(options);
     };
@@ -1254,8 +1261,8 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     assert.equal(t.fires.get(fireId)?.wokenAt, undefined);
     assert.equal(t.fires.get(fireId)?.receipt, undefined, "the receipt deadline starts only after the prompt starts");
 
-    t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { interval: { default: "2m" } } } }, fromZCode());
-    t.zcode.busy = false;
+    t.service.updateTrigger({ triggerId: "price-alert", changes: { probe: { interval: { default: "2m" } } } }, fromHost());
+    t[host].busy = false;
     t.clock.uptime += 59_999;
     await t.executor.tick();
     assert.equal(attempts, 1);
@@ -1273,22 +1280,22 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
   });
 
   for (const change of ["another host", "notification only"] as const) {
-    it(`discards a queued ZCode fire when its watch changes to ${change}`, async () => {
-      await t.activate({}, STATE_PROBE, fromZCode());
+    it(`discards a queued CLI fire when its watch changes to ${change}`, async () => {
+      await t.activate({}, STATE_PROBE, fromHost());
       await ownSession();
-      t.zcode.busy = true;
+      t[host].busy = true;
       const fireId = await fire();
-      await eventually(() => t.zcode.runs.length === 2 && t.executor.status().activeAgentRuns === 0);
+      await eventually(() => t[host].runs.length === 2 && t.executor.status().activeAgentRuns === 0);
       assert.equal(t.fires.get(fireId)?.target?.via, undefined);
       if (change === "another host") await replaceWithClaude();
-      else t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromZCode());
+      else t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromHost());
 
-      t.zcode.busy = false;
+      t[host].busy = false;
       t.clock.at += 60_000;
       await t.executor.tick();
       assert.equal(t.fires.get(fireId)?.status, "skipped");
       assert.match(t.fires.get(fireId)?.skippedBecause ?? "", /action or result session changed/);
-      assert.equal(t.zcode.runs.length, 2, "the old session never runs the changed action");
+      assert.equal(t[host].runs.length, 2, "the old session never runs the changed action");
       assert.equal(t.fires.get(fireId)?.wokenAt, undefined);
       noOtherHostRuns();
     });
@@ -1296,27 +1303,27 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
 
   for (const [change, update] of [
     ["another host", replaceWithClaude],
-    ["notification only", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromZCode())],
+    ["notification only", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { type: "notify" } } }, fromHost())],
     ["deletion", () => t.service.delete({ triggerId: "price-alert" }, { via: "cli" })],
-    ["read-only permissions", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { sandbox: "read-only" } } }, fromZCode())],
-    ["a new task", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { prompt: "Report without changing anything" } } }, fromZCode())],
-    ["a different folder", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { cwd: t.paths.logs } } }, fromZCode())],
+    ["read-only permissions", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { sandbox: "read-only" } } }, fromHost())],
+    ["a new task", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { prompt: "Report without changing anything" } } }, fromHost())],
+    ["a different folder", () => t.service.updateTrigger({ triggerId: "price-alert", changes: { target: { cwd: t.paths.logs } } }, fromHost())],
   ] as const) {
-    it(`cancels a ZCode action before CLI authorization after ${change}`, async () => {
-      await t.activate({}, STATE_PROBE, fromZCode());
+    it(`cancels a CLI action before CLI authorization after ${change}`, async () => {
+      await t.activate({}, STATE_PROBE, fromHost());
       await ownSession();
       let entered = false;
       let ran = false;
       let release!: () => void;
       const gate = new Promise<void>((resolve) => { release = resolve; });
-      const run = t.zcode.run.bind(t.zcode);
-      t.zcode.run = async (options) => {
+      const run = t[host].run.bind(t[host]);
+      t[host].run = async (options) => {
         entered = true;
         await gate; // The session owner has not called onStart or launched the CLI yet.
         try { return await run(options); }
         catch (error) { return { ok: false, error: (error as Error).message }; }
       };
-      t.zcode.during = () => { ran = true; };
+      t[host].during = () => { ran = true; };
       try {
         const fireId = await fire();
         await eventually(() => entered);
@@ -1341,34 +1348,34 @@ describe("triggers made in ZCode", { skip: deno ? false : "the deno npm package 
     });
   }
 
-  it("records a missing ZCode runner as a retryable delivery failure without choosing another host", async () => {
+  it("records a missing CLI runner as a retryable delivery failure without choosing another host", async () => {
     t.cleanup();
-    t = setup(server, {}, false);
-    await t.activate({}, STATE_PROBE, fromZCode());
+    t = setup(server, {}, host !== "zcode", host !== "opencode");
+    await t.activate({}, STATE_PROBE, fromHost());
     const fireId = await fire();
     const failed = await eventually(() => t.fires.get(fireId)!.failures >= 1 ? t.fires.get(fireId) : undefined);
     assert.equal(failed.status, "pending");
-    assert.match(failed.error ?? "", /the zcode CLI was not found/);
+    assert.match(failed.error ?? "", new RegExp(`the ${host} CLI was not found`));
     assert.equal(failed.target, undefined);
     assert.equal(failed.receipt, undefined);
-    assert.equal(t.zcode.runs.length, 0);
+    assert.equal(t[host].runs.length, 0);
     noOtherHostRuns();
   });
 
-  it("does not turn a failed ZCode run into a successful receipt or duplicate it on later ticks", async () => {
-    await t.activate({}, STATE_PROBE, fromZCode());
+  it("does not turn a failed CLI run into a successful receipt or duplicate it on later ticks", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
     await ownSession();
-    t.zcode.error = "zcode --prompt: authentication failed";
+    t[host].error = `${host}: authentication failed`;
     const fireId = await fire();
     await eventually(() => t.logs.find((line) => line.includes("authentication failed")));
     assert.equal(t.fires.get(fireId)?.receipt, undefined);
     assert.equal(t.fires.get(fireId)?.target?.via, "headless");
     for (let n = 0; n < 3; n++) await t.executor.tick();
-    assert.equal(t.zcode.runs.length, 2, "a failed task is not silently executed again");
+    assert.equal(t[host].runs.length, 2, "a failed task is not silently executed again");
     t.clock.at += 31 * 60_000;
     await t.executor.tick();
     assert.equal(t.fires.get(fireId)?.receipt?.source, "timeout");
-    assert.match((await eventually(() => t.notifier.sent[0])).body, /no reply from ZCode/);
+    assert.match((await eventually(() => t.notifier.sent[0])).body, new RegExp(`no reply from ${name}`));
     noOtherHostRuns();
   });
 });

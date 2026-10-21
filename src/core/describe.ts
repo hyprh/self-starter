@@ -50,6 +50,11 @@ const SANDBOX_TEXT = {
     "workspace-write": "edit mode: permits workspace edits; other tools may need approval; no OS sandbox",
     "danger-full-access": "yolo mode: skips ordinary tool approvals; no OS sandbox",
   },
+  opencode: {
+    "read-only": "read tools only; no OS sandbox",
+    "workspace-write": "can edit workspace files; commands are not approved automatically; no OS sandbox",
+    "danger-full-access": "no ordinary tool permission checks; no OS sandbox",
+  },
 } as const;
 
 export function describeAction(def: TriggerDefinition): string {

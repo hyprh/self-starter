@@ -1,10 +1,10 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, the ZCode source preview, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, the ZCode and OpenCode source previews, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and an authenticated Codex or Claude Code installation. Deno is installed for you. The [ZCode source preview](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer and has a separate installation path.
+Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. The [ZCode source preview](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. ZCode and [OpenCode](#opencode) currently require a local source installation.
 
 For Codex:
 
@@ -20,11 +20,11 @@ From a clone of this repository, for development:
 ```sh
 npm install            # also builds
 npm link               # puts `self-starter` on your PATH (or use: node dist/src/cli/main.js)
-self-starter install   # installs the Codex plugin and the background service
+self-starter install   # installs for supported agents it finds and starts the service
 self-starter doctor    # checks everything
 ```
 
-`self-starter install` registers a local plugin marketplace with Codex whose plugin runs this checkout, installs the plugin, and starts the background service. If `codex` is not on your PATH, pass `--codex /path/to/codex`. Run it again after pulling changes; your triggers are kept. `--no-service` runs the daemon without the service, and the plugin then leaves it that way.
+`self-starter install` installs integrations for the supported agents it finds and starts the background service. Codex, Claude Code and ZCode use a local plugin marketplace; OpenCode uses a native plugin loader. These integrations run this checkout. If an agent is not on your PATH, pass its executable with `--codex`, `--claude`, `--zcode` or `--opencode`, followed by its absolute path. Run it again after pulling changes; your triggers are kept. `--no-service` runs the daemon without the service, and the plugin then leaves it that way.
 
 For notifications that open the right conversation when clicked on macOS, install `terminal-notifier` (`brew install terminal-notifier`). On Linux, notifications use `notify-send`.
 
@@ -48,6 +48,22 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 ## ZCode
 
 The ZCode integration uses dedicated CLI result sessions. It shares the probe engine and event rules, but does not resume the desktop conversation where a watch was created. See the [ZCode installation and permissions guide](../zcode-plugin/README.md).
+
+## OpenCode
+
+The OpenCode integration is an unreleased native plugin for **OpenCode >=1.19.3 and <2**. Install it from a checkout with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
+
+Each watch uses a dedicated result session in the watch's working directory. Self-Starter resumes the same session for subsequent events with `opencode run --session <id> --format json`, so the UI can be closed while it works. The machine must remain awake and the CLI must have model access. `target.kind: origin` is rejected; the conversation where you created the watch is not used for event execution. Avoid running another task in the result session while the watch is active.
+
+Use `self-starter history` to find the result session and its resume command. The background CLI uses your global and project model configuration, preserves custom configuration directories, and accepts inline JSONC. Its dedicated agent applies these native tool rules from `action.sandbox`:
+
+| Setting | Allowed tools |
+|---|---|
+| `read-only` | File reading and search, skills, and Self-Starter tools |
+| `workspace-write` | The above, plus file edits; shell commands remain denied |
+| `danger-full-access` | Command execution and other tools; interactive questions remain disabled |
+
+These rules do not provide operating-system isolation. Probe permissions are separate.
 
 ## Claude Code
 
