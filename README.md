@@ -7,9 +7,9 @@ Works with Codex, Claude Code, ZCode and OpenCode.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
+  <a href="#demo">Demo</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#demo">Demo</a> ·
   <a href="#what-to-watch">Use cases</a> ·
   <a href="docs/guide.md">Guide</a>
 </p>
@@ -19,6 +19,16 @@ Works with Codex, Claude Code, ZCode and OpenCode.</p>
   <a href="https://github.com/hyprh/self-starter/releases"><img src="https://img.shields.io/github/v/release/hyprh/self-starter" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
+
+## Demo
+
+**Keep working. Get the result when it is ready.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
+
+<p align="center">
+  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
+</p>
+
+*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
 
 ## What this plugin solves
 
@@ -122,16 +132,6 @@ Try a local file first: no API key or external service needed. Use a filename th
 You can also inspect history in a terminal: `~/.self-starter/bin/self-starter history` after marketplace installation, or `node dist/src/cli/main.js history` from a source checkout. Then ask your agent to delete the demo watch.
 
 For a development workflow, try [watching a CI failure](docs/ci-watch.md).
-
-## Demo
-
-**Keep working. Get the result when it is ready.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
-
-<p align="center">
-  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
-</p>
-
-*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
 
 ## What to watch
 
