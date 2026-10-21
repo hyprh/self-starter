@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
   <title id="title">Self-Starter — Ask once. Act when it happens.</title>
-  <desc id="description">Local event triggers for Codex, Claude Code and ZCode. ZCode is a source preview. No model calls during scheduled checks.</desc>
+  <desc id="description">Local event triggers for Codex, Claude Code, ZCode and OpenCode. ZCode and OpenCode use source installations. No model calls during scheduled checks.</desc>
   <rect width="1200" height="630" fill="#f7f8fa"/>
   <g transform="translate(64 54)">
     <svg width="58" height="58" viewBox="0 0 512 512">
@@ -11,8 +11,8 @@
   </g>
   <g font-family="Noto Sans, sans-serif">
     <text x="140" y="94" font-size="30" font-weight="700" letter-spacing="-0.8" fill="#17202a">Self-Starter</text>
-    <text x="1136" y="82" text-anchor="end" font-size="21" fill="#606b77">Codex · Claude Code · ZCode</text>
-    <text x="1136" y="111" text-anchor="end" font-size="16" fill="#606b77">ZCode: source preview</text>
+    <text x="1136" y="82" text-anchor="end" font-size="21" fill="#606b77">Codex · Claude Code · ZCode · OpenCode</text>
+    <text x="1136" y="111" text-anchor="end" font-size="16" fill="#606b77">ZCode + OpenCode: source install</text>
     <text x="64" y="248" font-size="86" font-weight="700" letter-spacing="-3.3" fill="#17202a">Ask once.</text>
     <text x="64" y="347" font-size="78" font-weight="700" letter-spacing="-3.3" fill="#a34b08">Act when it happens.</text>
     <text x="64" y="420" font-size="26" fill="#606b77">Tell your agent what to watch and what to do next.</text>

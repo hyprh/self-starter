@@ -227,8 +227,7 @@ export function servicePath(agentBins: Array<string | undefined>): string {
 }
 
 export function serviceSpec(paths: Paths, agentBins: Array<string | undefined>): ServiceSpec {
-  const env: Record<string, string> = { PATH: servicePath(agentBins) };
-  if (process.env.SELF_STARTER_HOME) env.SELF_STARTER_HOME = paths.home;
+  const env: Record<string, string> = { PATH: servicePath(agentBins), SELF_STARTER_HOME: paths.home };
   if (process.env.CODEX_HOME) env.CODEX_HOME = process.env.CODEX_HOME;
   // Preserve config and storage locations, not inline configuration or credentials.
   for (const key of ["OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "XDG_CACHE_HOME"]) {
@@ -291,9 +290,10 @@ const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
 export function writeCommand(paths: Paths): string {
   const file = join(paths.home, "bin", "self-starter");
   const command = ["exec", shellQuote(process.execPath), shellQuote(CLI_SCRIPT), '"$@"'].join(" ");
-  const lines = ["#!/bin/sh", "# Runs the Self-Starter installation that the background service runs."];
-  if (process.env.SELF_STARTER_HOME) lines.push(`export SELF_STARTER_HOME=${shellQuote(paths.home)}`);
-  lines.push(command, "");
+  const lines = [
+    "#!/bin/sh", "# Runs the Self-Starter installation that the background service runs.",
+    `export SELF_STARTER_HOME=${shellQuote(paths.home)}`, command, "",
+  ];
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   writeFileSync(file, lines.join("\n"), { mode: 0o755 });
   return file;

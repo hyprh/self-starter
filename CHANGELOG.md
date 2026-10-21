@@ -1,7 +1,9 @@
 # Changelog
 
-## 0.0.4 (unreleased)
+## 0.0.4 (2026-10-21)
 
+- **Keep custom state directories.** Rebuilt services and generated CLI commands retain the resolved state directory even when the next agent launch no longer carries `SELF_STARTER_HOME`.
+- **Recover missing result sessions.** Confirmed missing OpenCode and ZCode sessions are replaced through bounded delivery retries. Ordinary model, tool and network errors leave the session binding intact, and a late failure cannot replace a newer binding or replay a completed fire.
 - **Recover timed-out background turns.** OpenCode and ZCode reclaim detached tools that still hold output pipes after their CLI exits, releasing the session lease and background execution slot after cleanup.
 - **Bootstrap on npm 12.** Launchers authorize only the selected runtime's Git or tarball source for that install. Bundled Deno also works when npm blocks its postinstall script, without changing the user's npm policy.
 - **OpenCode custom events.** A native plugin uses the shared trigger tools and engine. Events run in dedicated CLI result sessions, reused for later events even while the UI is closed. Source installation, diagnostics and removal preserve existing OpenCode configuration. Original-conversation delivery is not supported.

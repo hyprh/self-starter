@@ -2,7 +2,7 @@
 // model. No account or paid API is used. Run after npm run build:
 // OPENCODE_BIN=/absolute/path/to/opencode node dist/test/e2e/opencode-agent.js
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -52,7 +52,7 @@ let readOnlyRequests = 0;
 const definition = {
   id: triggerId, name: "OpenCode local events", intent: "Report each local completion event",
   mode: "event", probe: { params: { file: eventsFile }, interval: { min: "10s", default: "1m" } },
-  policy: { max_fires: 2 },
+  policy: { max_fires: 4 },
   action: { type: "agent", prompt: "Report this completion, then exercise the post-report mutation guard.", sandbox: "read-only" },
   target: { kind: "dedicated", cwd: project }, notify: { when: "never" },
 };
@@ -243,9 +243,16 @@ try {
   { timeoutMs: 60_000, explain: async () => readFileSync(join(paths.logs, "daemon.log"), "utf8") });
   assert.match(dedicated, /^oc:ses_[A-Za-z0-9]+$/);
   assert.notEqual(dedicated, `oc:${sessionId}`);
+  let resultSession = dedicated;
 
   await daemon.engine.runNow(triggerId);
-  for (const n of [1, 2]) {
+  for (const n of [1, 2, 3, 4]) {
+    if (n === 3) {
+      const deleted = spawnSync(command.command, [...command.prefix, "session", "delete", dedicated.slice(3)], {
+        cwd: project, env: process.env, encoding: "utf8", timeout: 20_000,
+      });
+      assert.equal(deleted.status, 0, `the native CLI deletes the result session: ${deleted.stderr || deleted.stdout}`);
+    }
     writeFileSync(eventsFile, JSON.stringify(Array.from({ length: n }, (_, i) => ({ key: `finished-${i + 1}`, summary: `Local task ${i + 1} finished` }))));
     const fired = await daemon.engine.runNow(triggerId);
     assert.ok(fired?.fireId, `custom completion event ${n} produces a fire`);
@@ -253,30 +260,42 @@ try {
     const completed = await waitFor(`OpenCode receipt ${n}`, async () => {
       const fire = daemon.fires.get(fireId);
       return fire?.receipt ? fire : undefined;
-    }, { timeoutMs: 60_000, explain: async () => JSON.stringify({ observations, modelErrors }) + "\n" + readFileSync(join(paths.logs, "daemon.log"), "utf8") });
+    }, {
+      // The retry becomes due 30s after native validation fails. The engine
+      // checks delivery on its next tick (up to another 30s), then the real
+      // CLI still has to seed the replacement and handle the waiting fire.
+      timeoutMs: n === 3 ? 90_000 : 60_000,
+      explain: async () => JSON.stringify({ observations, modelErrors }) + "\n" + readFileSync(join(paths.logs, "daemon.log"), "utf8"),
+    });
     assert.equal(completed.receipt?.source, "tool");
     assert.equal(completed.receipt?.summary, `OpenCode handled ${fireId}`);
-    assert.equal(completed.target?.threadId, dedicated, "successive fires resume the same dedicated session");
+    if (n === 3) {
+      assert.notEqual(completed.target?.threadId, dedicated, "a deleted session is replaced before retrying the same fire");
+      assert.match(completed.target?.threadId ?? "", /^oc:ses_[A-Za-z0-9]+$/);
+      assert.equal(completed.failures, 1, "native resume validation produces one bounded retry");
+      resultSession = completed.target!.threadId!;
+      assert.equal(daemon.store.loadTrigger(triggerId).definition.target.thread_id, resultSession);
+    } else assert.equal(completed.target?.threadId, resultSession, "successive fires resume the same dedicated session");
     assert.equal(completed.target?.via, "headless");
     await waitFor("the post-report guard and background CLI exit", async () =>
       observations.filter((entry) => entry.name === "trigger_pause").length >= n && daemon.executor.status().activeAgentRuns === 0 ? true : undefined,
     { timeoutMs: 60_000, explain: async () => JSON.stringify({ observations, modelErrors }) + "\n" + readFileSync(join(paths.logs, "daemon.log"), "utf8") });
   }
   const reports = observations.filter((entry) => entry.name === "trigger_report");
-  assert.equal(reports.length, 2);
+  assert.equal(reports.length, 4);
   for (const report of reports) assert.match(report.output, /Receipt recorded/);
   const guards = observations.filter((entry) => entry.name === "trigger_pause");
-  assert.equal(guards.length, 2);
+  assert.equal(guards.length, 4);
   for (const guard of guards) assert.match(guard.output, /Cannot pause a trigger now: this turn was started by Self-Starter/);
   const reads = observations.filter((entry) => entry.name === "read");
-  assert.equal(reads.length, 2, "each fire executes the real read tool before reporting");
+  assert.equal(reads.length, 4, "each fire executes the real read tool before reporting");
   for (const read of reads) assert.ok(read.output.includes(protectedContent.trim()), read.output);
-  assert.ok(readOnlyRequests >= 8, "read-only permissions stay in force through each complete background turn");
+  assert.ok(readOnlyRequests >= 16, "read-only permissions stay in force through each complete background turn");
   assert.equal(readFileSync(protectedFile, "utf8"), protectedContent);
   daemon.engine.stop();
   daemon.executor.close();
   timedRun = new OpenCodeCli(bin, paths.sessions, configDir).run({
-    cwd: project, sessionId: dedicated.slice(3), message: "SELF_STARTER_TIMEOUT: run the heartbeat command until the deadline.",
+    cwd: project, sessionId: resultSession.slice(3), message: "SELF_STARTER_TIMEOUT: run the heartbeat command until the deadline.",
     sandbox: "danger-full-access", timeoutMs: 15_000,
   });
   await waitFor("the real OpenCode shell tool", async () => existsSync(toolPidFile) && existsSync(heartbeatFile) ? true : undefined,
@@ -287,11 +306,11 @@ try {
   const heartbeat = readFileSync(heartbeatFile, "utf8");
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.equal(readFileSync(heartbeatFile, "utf8"), heartbeat, "the native detached shell tool stops at the action deadline");
-  assert.equal(existsSync(join(paths.sessions, `${dedicated.slice(3)}.opencode.lock`)), false,
+  assert.equal(existsSync(join(paths.sessions, `${resultSession.slice(3)}.opencode.lock`)), false,
     "the session lease is released after the real tool stops");
   assert.deepEqual(modelErrors, []);
   passed = true;
-  console.log("OpenCode: custom config, JSONC instructions, native plugin, event delivery, permissions, receipts, post-report guards, and detached shell timeout passed.");
+  console.log("OpenCode: custom config, JSONC instructions, native plugin, event delivery, deleted-session recovery, permissions, receipts, post-report guards, and detached shell timeout passed.");
 } finally {
   await timedRun;
   if (existsSync(toolPidFile)) {

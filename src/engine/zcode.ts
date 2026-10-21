@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
 import type { TurnResult } from "./codex.js";
@@ -33,7 +34,7 @@ export interface ZCodeRunOptions {
   onStart?: () => void;
 }
 
-export type ZCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean };
+export type ZCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean; sessionGone?: boolean };
 
 export interface ZCodeRunner {
   run(options: ZCodeRunOptions): Promise<ZCodeTurnResult>;
@@ -125,6 +126,14 @@ export class ZCodeCli implements ZCodeRunner {
       child.on("close", (code, signal) => {
         if (busy) return finish({ ok: false, busy: true, error: "zcode --prompt: session is already running" });
         if (stopped) return fail(stopped);
+        // Native resume validation fails before a turn has produced output.
+        // Include the requested id and only allow the CLI's optional trace id.
+        const diagnostic = stripVTControlCharacters(stderr).trim()
+          .replace(/ \(traceId: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\)$/i, "");
+        if (options.sessionId && code === 1 && !stdout.trim()
+          && diagnostic === `Error: Session not found: ${options.sessionId}`) {
+          return finish({ ok: false, sessionGone: true, error: `zcode --prompt: Session not found: ${options.sessionId}` });
+        }
         let result: unknown;
         try {
           result = JSON.parse(stdout);

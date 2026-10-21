@@ -479,6 +479,23 @@ export class Executor {
         }
         if (!result.ok) {
           if (fire.status !== "delivered") return;
+          if (result.sessionGone) {
+            // The CLI rejected the resume target before it ran the task. A
+            // late failure must not clear a newer revision's session binding.
+            const latest = this.deps.store.hasTrigger(definition.id) ? this.deps.store.loadTrigger(definition.id).definition : undefined;
+            if (!latest || this.creationKey(latest) !== this.creationKey(definition) || latest.target.thread_id !== ref) {
+              this.deps.fires.record({ type: "skipped", fireId: fire.fireId, why: "the trigger changed before its missing result session could be replaced", at: this.now().toISOString() });
+              this.outcome.delete(fire.fireId);
+              return;
+            }
+            // Native installations retain their host in the origin reference.
+            // An imported target-only definition must never fall back to a
+            // different host when its sole host reference is cleared.
+            if (hostOf(latest.meta.origin_thread_id) !== host) throw new Error("the missing result session has no matching host origin; recreate the trigger");
+            this.forgetDedicatedThread(definition.id, ref);
+            this.outcome.delete(fire.fireId);
+            return this.failAttempt(definition, fire, result.error ?? `${agentName(host)} session ${sessionId} no longer exists`);
+          }
           // A failed start is still a failed attempt, not a reason to retry on every tick.
           if (fire.target?.via === undefined) this.wentIn(fire, "headless");
           throw new Error(result.error ?? `${agentName(host)} did not complete the turn`);
@@ -792,7 +809,10 @@ export class Executor {
 
     const host = hostFor(definition);
     const limit = this.deps.config.budget.maxAgentRunsPerDay;
-    if (this.agentRunsToday() >= limit) {
+    // A missing session can put an already charged fire back into delivery.
+    // Its bounded retries consume the same fire's budget entry, not a new one.
+    const alreadyCounted = fire.target && fire.target.kind !== "none" && fire.deliveredAt && localDay(new Date(fire.deliveredAt)) === localDay(this.now());
+    if (this.agentRunsToday() - (alreadyCounted ? 1 : 0) >= limit) {
       this.deps.fires.record({ type: "skipped", fireId: fire.fireId, why: "the daily agent budget is used up", at: this.now().toISOString() });
       await this.sendNotification(definition, fire.fireId, {
         title: definition.name,

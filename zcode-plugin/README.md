@@ -6,9 +6,9 @@ For example: “When this training log says the run finished, compare its result
 
 This first integration supports **dedicated CLI result sessions**. It does not resume or wake the original ZCode desktop conversation. Write each action as a complete task, including the working directory and the context it needs. Results and receipts are available through `self-starter history` and the trigger tools.
 
-## Development install
+## Source installation
 
-Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user. This integration is unreleased; the published `v0.0.3` runtime does not include it. Install from a checkout containing these changes until a supporting release is available.
+Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user. This integration is included in Self-Starter v0.0.4. Use a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4).
 
 From the repository root:
 
@@ -19,9 +19,9 @@ node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
 node dist/src/cli/main.js doctor
 ```
 
-The installer copies the plugin into a local marketplace, points its MCP server at this checkout, and configures the background service to use your ZCode executable. Keep the checkout available. Start a new ZCode session after installation. This is a local development installation; the plugin has not been published in ZCode's official catalog.
+The installer copies the plugin into a local marketplace, points its MCP server at this checkout, and configures the background service to use your ZCode executable. Keep the checkout available. Start a new ZCode session after installation. This is a local source installation; the plugin has not been published in ZCode's official catalog.
 
-The installer registers the explicit `marketplace.json` file: adding this repository directory alone would select its Claude Code catalog instead. Do not install the development plugin from the Git marketplace or use its versioned download launcher until a release contains ZCode support.
+The installer registers the explicit `marketplace.json` file: adding this repository directory alone would select its Claude Code catalog instead. Use the source installer above to register the ZCode integration.
 
 Use a file that does not exist yet, then ask: “Notify me once when `/tmp/self-starter-zcode-done` appears. Check every minute and stop after an hour. After activation, confirm the first scheduled check found no file.” Once that check is confirmed, create the file in a terminal and inspect `node dist/src/cli/main.js history`. Use a dedicated agent action next when you want ZCode to analyze or change something.
 

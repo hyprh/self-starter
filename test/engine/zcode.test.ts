@@ -112,6 +112,22 @@ describe("ZCode's dedicated CLI sessions", () => {
     assert.match(invalid.error!, /no valid JSON result/);
   });
 
+  it("identifies only a native pre-turn missing target matching the requested session", async () => {
+    const native = "console.error('Error: Session not found: sess_deleted (traceId: 67abf4a0-fe12-4143-85aa-1ba720772689)'); process.exitCode=1;";
+    assert.equal((await run(fakeZCode(native), { sessionId: "sess_deleted" })).sessionGone, true);
+    for (const body of [
+      native,
+      "console.error('Error: Session not found: sess_other'); process.exitCode=1;",
+      "console.error('Error: provider not found'); process.exitCode=1;",
+      "console.error('Error: Session not found: sess_deleted in provider response'); process.exitCode=1;",
+      "console.log(JSON.stringify({sessionId:'sess_deleted',response:'partial'})); console.error('Error: Session not found: sess_deleted'); process.exitCode=1;",
+      "console.log(JSON.stringify({error:{code:'session_not_found',message:'Session not found: sess_deleted'}})); process.exitCode=1;",
+    ]) {
+      const result = await run(fakeZCode(body), body === native ? {} : { sessionId: "sess_deleted" });
+      assert.equal(result.sessionGone, undefined, body);
+    }
+  });
+
   it("rejects malformed session ids before they can be saved or used to resume a turn", async () => {
     for (const sessionId of ["", " ", "sess_1\n", "sess_a b", "sess_1;touch-unexpected", "sess_$(id)", "sess_../outside", "sess_\u0000x"]) {
       const bin = fakeZCode(`

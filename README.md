@@ -30,8 +30,8 @@ Choose the integration for your agent. All four share the same local trigger eng
 |---|---|---|
 | **[Codex](#codex)** | GitHub plugin marketplace | The original conversation or a dedicated thread |
 | **[Claude Code](#claude-code)** | GitHub plugin marketplace | The original session or a dedicated session |
-| **[ZCode](#zcode)** | Local source installation; unreleased | A dedicated CLI result session; no delivery into the original desktop conversation |
-| **[OpenCode](#opencode)** | Local source installation; unreleased | A dedicated CLI result session, reused for later events |
+| **[ZCode](#zcode)** | Local source installation from v0.0.4 | A dedicated CLI result session; no delivery into the original desktop conversation |
+| **[OpenCode](#opencode)** | Local source installation from v0.0.4 | A dedicated CLI result session, reused for later events |
 
 You need **macOS or Linux**, [Node.js](https://nodejs.org) **20+** and your chosen agent configured with working model access. For the current ZCode CLI, use **Node.js 24.14.0+**.
 
@@ -61,7 +61,7 @@ On their first start, the Codex and Claude Code plugins download the matching ru
 
 ### ZCode
 
-ZCode support is **unreleased** and requires a local checkout containing the integration. The published `v0.0.3` runtime does not include it. From the repository root:
+ZCode support is included in **v0.0.4** and uses a local source installation. From a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4):
 
 ```sh
 npm ci
@@ -74,7 +74,7 @@ Replace the placeholder with the absolute path to an authenticated ZCode CLI exe
 
 ### OpenCode
 
-OpenCode support is **unreleased** and requires a local checkout. From the repository root:
+OpenCode support is included in **v0.0.4** and uses a local source installation. From a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4):
 
 ```sh
 npm ci

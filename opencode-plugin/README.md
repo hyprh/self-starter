@@ -6,9 +6,9 @@ For example: “When this training log finishes, compare the results with the pr
 
 This integration uses **dedicated result sessions**. It does not inject events into your original conversation. Each trigger's agent action gets its own session, and later events resume that same session through `opencode run`, including when the UI is closed. Write the action as a complete task with the context and working directory it needs. Pause a trigger before manually continuing its result session.
 
-## Development install
+## Source installation
 
-Requires macOS or Linux, Node.js 20 or newer, and an OpenCode CLI already configured and authenticated by the user. Supported versions are **1.19.3 or newer within 1.x**; the developing v2 plugin API is not supported. Install from a checkout containing these changes until a supporting release is available.
+Requires macOS or Linux, Node.js 20 or newer, and an OpenCode CLI already configured and authenticated by the user. Supported versions are **1.19.3 or newer within 1.x**; the developing v2 plugin API is not supported. This integration is included in Self-Starter v0.0.4. Use a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4).
 
 From the repository root:
 

@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
@@ -28,7 +29,7 @@ export interface OpenCodeRunOptions {
   onStart?: () => void;
 }
 
-export type OpenCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean };
+export type OpenCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean; sessionGone?: boolean };
 
 export interface OpenCodeRunner {
   run(options: OpenCodeRunOptions): Promise<OpenCodeTurnResult>;
@@ -169,6 +170,12 @@ export class OpenCodeCli implements OpenCodeRunner {
       child.on("close", (code, signal) => {
         if (busy) return finish({ ok: false, busy: true, error: "opencode run: session is already running" });
         if (stopped) return fail(stopped);
+        // OpenCode 1.x rejects a missing resume target before emitting any
+        // model events. Never infer this from a provider or tool's error text.
+        if (options.sessionId && code === 1 && !stdout.trim()
+          && stripVTControlCharacters(stderr).trim() === "Error: Session not found") {
+          return finish({ ok: false, sessionGone: true, error: "opencode run: Session not found" });
+        }
         const result = resultFrom(stdout, options.sessionId);
         if (code !== 0) return fail(!result.ok && result.error !== "no valid JSON event stream" ? result.error! : stderr || `exit code ${code}${signal ? ` (${signal})` : ""}`);
         if (!result.ok) return fail(result.error!);
