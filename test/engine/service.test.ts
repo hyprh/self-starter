@@ -1051,6 +1051,185 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
     noOtherHostRuns();
   });
 
+  it("replaces a missing result session, recovers the same fire, and reuses its replacement", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
+    const oldRef = await ownSession();
+    const oldId = oldRef.slice(3);
+    const run = t[host].run.bind(t[host]);
+    t[host].run = async (options) => {
+      const result = await run(options);
+      return options.sessionId === oldId ? { ok: false, sessionGone: true, error: "native resume target is missing" } : result;
+    };
+    const fireId = await fire();
+    await eventually(() => t.fires.get(fireId)?.failures === 1 && t.executor.status().activeAgentRuns === 0);
+    assert.equal(t.fires.get(fireId)?.status, "pending");
+    assert.equal(t.fires.get(fireId)?.receipt, undefined);
+    assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, null);
+    for (let n = 0; n < 3; n++) await t.executor.tick();
+    assert.equal(t[host].runs.length, 2, "a missing target uses the bounded retry delay");
+    t.clock.at += 30_000;
+    await t.executor.tick();
+    const done = await eventually(() => t.fires.get(fireId)?.status === "done" ? t.fires.get(fireId) : undefined);
+    const replacement = await ownSession();
+    assert.notEqual(replacement, oldRef);
+    assert.equal(done.target?.threadId, replacement);
+    assert.equal(done.receipt?.source, "final-answer");
+    assert.equal(t.fires.forTrigger("price-alert").length, 1, "recovery keeps the original fire id and budget entry");
+    assert.equal(t[host].runs.length, 4, "one failed resume, one seed, one successful retry");
+    server.price = 100;
+    await t.engine.runNow("price-alert");
+    const second = await fire();
+    await eventually(() => t.fires.get(second)?.status === "done");
+    assert.equal(t[host].runs.length, 5);
+    assert.equal(t[host].runs.at(-1)?.sessionId, replacement.slice(3));
+    assert.equal(t.notifier.sent.length, 2, "each completed event sends one result notification");
+    noOtherHostRuns();
+  });
+
+  it("recovers an already charged fire at the daily budget limit without admitting another fire", async () => {
+    t.cleanup();
+    t = setup(server, { budget: { ...DEFAULT_CONFIG.budget, maxAgentRunsPerDay: 1 } });
+    await t.activate({}, STATE_PROBE, fromHost());
+    const oldId = (await ownSession()).slice(3);
+    const run = t[host].run.bind(t[host]);
+    t[host].run = async (options) => {
+      const result = await run(options);
+      return options.sessionId === oldId ? { ok: false, sessionGone: true, error: "native resume target is missing" } : result;
+    };
+    const fireId = await fire();
+    await eventually(() => t.fires.get(fireId)?.failures === 1);
+    t.clock.at += 30_000;
+    await t.executor.tick();
+    await eventually(() => t.fires.get(fireId)?.status === "done");
+    server.price = 100;
+    await t.engine.runNow("price-alert");
+    const second = await fire();
+    await eventually(() => t.fires.get(second)?.status === "skipped");
+    assert.match(t.fires.get(second)?.skippedBecause ?? "", /daily agent budget/);
+    assert.equal(t[host].runs.length, 4, "budget recovery cannot start another event");
+  });
+
+  it("bounds recovery when every replacement session is also missing", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
+    await ownSession();
+    const run = t[host].run.bind(t[host]);
+    t[host].run = async (options) => {
+      const result = await run(options);
+      return options.sessionId ? { ok: false, sessionGone: true, error: "native resume target is missing" } : result;
+    };
+    const fireId = await fire();
+    await eventually(() => t.fires.get(fireId)?.failures === 1 && t.executor.status().activeAgentRuns === 0);
+    for (const [index, delay] of [30_000, 120_000, 600_000].entries()) {
+      t.clock.at += delay;
+      await t.executor.tick();
+      await eventually(() => (index === 2 ? t.fires.get(fireId)?.status === "failed" : t.fires.get(fireId)?.failures === index + 2)
+        && t.executor.status().activeAgentRuns === 0);
+    }
+    const count = t[host].runs.length;
+    t.clock.at += 24 * 60 * 60_000;
+    for (let n = 0; n < 3; n++) await t.executor.tick();
+    assert.equal(t.fires.get(fireId)?.status, "failed");
+    assert.equal(t.fires.get(fireId)?.receipt, undefined);
+    assert.equal(t[host].runs.filter((options) => options.sessionId).length, 4);
+    assert.equal(t[host].runs.length, count, "an exhausted fire cannot recreate sessions indefinitely");
+    assert.equal(t.notifier.sent.length, 1);
+  });
+
+  it("does not replay a missing-session result after the fire has already reported", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
+    const ref = await ownSession();
+    const run = t[host].run.bind(t[host]);
+    let fireId: string;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    t[host].run = async (options) => {
+      await run(options);
+      await gate;
+      t.service.report({ fireId, summary: "Already handled", notify: false }, fromHost({ threadId: ref }));
+      return { ok: false, sessionGone: true, error: "native resume target is missing" };
+    };
+    try {
+      fireId = await fire();
+      await eventually(() => t[host].runs.length === 2);
+      release();
+      await eventually(() => t.executor.status().activeAgentRuns === 0);
+      t.clock.at += 30_000;
+      await t.executor.tick();
+      assert.equal(t.fires.get(fireId)?.receipt?.source, "tool");
+      assert.equal(t.fires.get(fireId)?.failures, 0);
+      assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, ref);
+      assert.equal(t[host].runs.length, 2);
+    } finally {
+      release();
+      await eventually(() => t.executor.status().activeAgentRuns === 0);
+    }
+  });
+
+  it("does not switch hosts when an imported missing session has no matching origin", async () => {
+    await t.activate({}, STATE_PROBE, fromHost());
+    const ref = await ownSession();
+    const definition = t.store.loadTrigger("price-alert").definition;
+    definition.meta.origin_thread_id = null;
+    t.store.saveDefinition(definition);
+    const run = t[host].run.bind(t[host]);
+    t[host].run = async (options) => {
+      await run(options);
+      return { ok: false, sessionGone: true, error: "native resume target is missing" };
+    };
+    const fireId = await fire();
+    await eventually(() => t.executor.status().activeAgentRuns === 0 && t.logs.some((line) => /no matching host origin/.test(line)));
+    t.clock.at += 30_000;
+    await t.executor.tick();
+    assert.equal(t.fires.get(fireId)?.failures, 0);
+    assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, ref);
+    assert.equal(t[host].runs.length, 2);
+    noOtherHostRuns();
+  });
+
+  for (const change of ["revision", "host", "binding", "deletion and recreation"] as const) {
+    it(`does not replace a newer result session after an old missing-session failure and ${change}`, async () => {
+      await t.activate({}, STATE_PROBE, fromHost());
+      const oldRef = await ownSession();
+      const run = t[host].run.bind(t[host]);
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      t[host].run = async (options) => {
+        const result = await run(options);
+        if (!options.sessionId) return result;
+        await gate;
+        return { ok: false, sessionGone: true, error: "native resume target is missing" };
+      };
+      try {
+        const fireId = await fire();
+        await eventually(() => t[host].runs.length === 2);
+        if (change === "revision") t.service.updateTrigger({ triggerId: "price-alert", changes: { action: { prompt: "A newer task" } } }, fromHost());
+        else if (change === "host") await replaceWithClaude();
+        else if (change === "binding") {
+          const definition = t.store.loadTrigger("price-alert").definition;
+          definition.target.thread_id = `${refPrefix}${idPrefix}_replacement`;
+          t.store.saveDefinition(definition);
+        } else {
+          t.service.delete({ triggerId: "price-alert" }, { via: "cli" });
+          t.clock.at += 1;
+          await t.activate({}, STATE_PROBE, fromHost());
+        }
+        const expected = change === "host" ? t.store.loadTrigger("price-alert").definition.target.thread_id : await ownSession();
+        release();
+        await eventually(() => t.executor.status().activeAgentRuns === 0);
+        assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, expected);
+        if (change !== "revision") assert.notEqual(expected, oldRef);
+        assert.equal(t.fires.get(fireId)?.failures, 0);
+        assert.equal(t.fires.get(fireId)?.status, change === "deletion and recreation" ? "done" : "skipped");
+        t.clock.at += 30_000;
+        await t.executor.tick();
+        assert.equal(t.store.loadTrigger("price-alert").definition.target.thread_id, expected);
+      } finally {
+        release();
+        await eventually(() => t.executor.status().activeAgentRuns === 0);
+      }
+    });
+  }
+
   it("does not conflate identical session and turn ids from different hosts", async () => {
     await t.activate({}, STATE_PROBE, fromHost());
     const ref = await ownSession();

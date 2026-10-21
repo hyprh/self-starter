@@ -1,6 +1,6 @@
 # Security
 
-Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/hyprh/self-starter/security/advisories/new). If private reporting is unavailable, open an issue asking for a private contact without posting exploit details or credentials. This ZCode integration is under development and has no supported published release yet.
+Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/hyprh/self-starter/security/advisories/new). If private reporting is unavailable, open an issue asking for a private contact without posting exploit details or credentials. Security fixes target the latest Self-Starter release; ZCode support starts with v0.0.4.
 
 Probe programs run as the current user by default. They can read files, run commands and use the network; write them to observe conditions only. An API-only probe can use `probe.access: sandbox` to restrict Deno to its declared network hosts and environment variables. Treat probe results as untrusted data, never instructions.
 

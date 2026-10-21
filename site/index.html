@@ -912,7 +912,7 @@ footer>.wrap {
       <p class="eyebrow">Custom events for coding agents</p>
       <h1>Ask once.<br>Act when it happens.</h1>
       <p class="lede">Tell your agent what to watch and what to do next. Local code checks files, jobs, services and APIs. When your condition is met, your agent picks up the task.</p>
-      <p class="platform-line"><b>Codex</b> &nbsp;·&nbsp; <b>Claude Code</b> &nbsp;·&nbsp; <b>ZCode</b> <small>source preview</small> &nbsp;·&nbsp; <b>OpenCode</b> <small>source preview</small></p>
+      <p class="platform-line"><b>Codex</b> &nbsp;·&nbsp; <b>Claude Code</b> &nbsp;·&nbsp; <b>ZCode</b> <small>source install</small> &nbsp;·&nbsp; <b>OpenCode</b> <small>source install</small></p>
       <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#examples">See what it can watch →</a></div>
       <p class="promise">Local probes. No model calls while waiting. macOS and Linux.</p>
     </div>
@@ -945,8 +945,8 @@ footer>.wrap {
           <div class="tabs" role="tablist" aria-label="Choose your agent">
             <button id="codex" type="button" role="tab" data-pick="codex" aria-controls="panel-codex" aria-selected="true">Codex</button>
             <button id="claude-code" type="button" role="tab" data-pick="claude" aria-controls="panel-claude" aria-selected="false" tabindex="-1">Claude Code</button>
-            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source preview</span></button>
-            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source preview</span></button>
+            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source install</span></button>
+            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source install</span></button>
           </div>
           <div class="install-panel" id="panel-codex" data-panel="codex" role="tabpanel" aria-labelledby="codex" tabindex="0">
             <h3>Install for Codex</h3><p class="fine">macOS or Linux · Node.js 20+ · Codex app or CLI</p>
@@ -963,25 +963,25 @@ claude plugin install self-starter@self-starter</code></pre><button class="copy"
             <div class="delivery"><b>Results in your session</b>A fire waits until the current turn finishes. When the session is closed, Self-Starter can resume it in the background. <a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md#claude-code">Delivery details →</a></div>
           </div>
           <div class="install-panel" id="panel-zcode" data-panel="zcode" role="tabpanel" aria-labelledby="zcode" tabindex="0">
-            <h3>Install the ZCode source preview</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
+            <h3>Install ZCode from source</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
             <div class="command"><pre id="install-zcode"><code>git clone https://github.com/hyprh/self-starter.git
 cd self-starter
 npm ci
 npm run build
 node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
 node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-zcode" aria-label="Copy ZCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>ZCode support is on main and is not included in the published v0.0.3 runtime. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
+            <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>Included in v0.0.4. Use a checkout of that release tag. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
             <div class="delivery"><b>Results in dedicated CLI sessions</b>Each agent watch uses a dedicated result session. Read results with Self-Starter history or the trigger tools. The original ZCode desktop conversation is not resumed.</div>
           </div>
           <div class="install-panel" id="panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="opencode" tabindex="0">
-            <h3>Install the OpenCode source preview</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
+            <h3>Install OpenCode from source</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
             <div class="command"><pre id="install-opencode"><code>git clone https://github.com/hyprh/self-starter.git
 cd self-starter
 npm ci
 npm run build
 node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
 node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-opencode" aria-label="Copy OpenCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>This integration is unreleased. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
+            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>Included in v0.0.4. Use a checkout of that release tag. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
             <div class="delivery"><b>Results in a dedicated session</b>Each watch reuses its result session, including when the UI is closed. Use Self-Starter history to find it. Events do not run in the conversation where you created the watch.</div>
           </div>
         </div>
@@ -1053,8 +1053,8 @@ counts as seen; the next report fires</pre>
       </ul></div>
       <div><div class="section-head"><h2>Go a little deeper</h2></div><div class="resources">
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">User guide →</a><span>Results, permissions, notifications, recipes and commands.</span></div>
-        <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode source preview →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
-        <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode source preview →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode source installation →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode source installation →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/design.md">Design and verification notes →</a><span>How delivery works, CLI test coverage and remaining desktop checks.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/issues">Questions or feedback →</a><span>Share your setup, what you watched and what happened.</span></div>
       </div></div>

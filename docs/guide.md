@@ -1,10 +1,10 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, the ZCode and OpenCode source previews, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, ZCode and OpenCode source installations, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. The [ZCode source preview](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. ZCode and [OpenCode](#opencode) currently require a local source installation.
+Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. [ZCode](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. ZCode and [OpenCode](#opencode) require a local source installation of v0.0.4 or newer.
 
 For Codex:
 
@@ -51,7 +51,7 @@ The ZCode integration uses dedicated CLI result sessions. It shares the probe en
 
 ## OpenCode
 
-The OpenCode integration is an unreleased native plugin for **OpenCode >=1.19.3 and <2**. Install it from a checkout with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
+The OpenCode integration is included in v0.0.4 for **OpenCode >=1.19.3 and <2**. Install it from a checkout with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
 
 Each watch uses a dedicated result session in the watch's working directory. Self-Starter resumes the same session for subsequent events with `opencode run --session <id> --format json`, so the UI can be closed while it works. The machine must remain awake and the CLI must have model access. `target.kind: origin` is rejected; the conversation where you created the watch is not used for event execution. Avoid running another task in the result session while the watch is active.
 
@@ -74,7 +74,7 @@ Self-Starter also works as a Claude Code plugin, with the same triggers, service
 /plugin install self-starter@self-starter
 ```
 
-Or run `claude plugin marketplace add hyprh/self-starter` followed by `claude plugin install self-starter@self-starter` in a terminal. Start a new session afterward. The plugin's first start installs the runtime as above, while you work: if that takes longer than Claude Code waits for a plugin's server (30 seconds), the plugin answers anyway, and its tools appear as soon as it is ready. From a clone, `self-starter install` sets up the supported agents it finds; see the [ZCode guide](../zcode-plugin/README.md) before using the source preview.
+Or run `claude plugin marketplace add hyprh/self-starter` followed by `claude plugin install self-starter@self-starter` in a terminal. Start a new session afterward. The plugin's first start installs the runtime as above, while you work: if that takes longer than Claude Code waits for a plugin's server (30 seconds), the plugin answers anyway, and its tools appear as soon as it is ready. From a clone, `self-starter install` sets up the supported agents it finds; see the [ZCode guide](../zcode-plugin/README.md) before installing it.
 
 Claude Code asks before the tools that create, change, pause or delete a trigger, as it does for any tool. The plugin lets its own tools that report a fire, make a trigger quieter or only read run without asking, so that a fire can report back while you are away; deny rules you set still apply.
 

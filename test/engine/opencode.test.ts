@@ -162,6 +162,21 @@ describe("OpenCode's dedicated CLI sessions", () => {
     assert.equal(existsSync(join(scratch, "invoked")), false);
   });
 
+  it("identifies only a native pre-turn missing resume target", async () => {
+    const native = "console.error('\\u001b[91m\\u001b[1mError: \\u001b[0mSession not found'); process.exitCode=1;";
+    assert.equal((await run(fakeOpenCode(native), { sessionId: "ses_deleted" })).sessionGone, true);
+    for (const body of [
+      native, // Without an explicit resume target this cannot justify recreating a session.
+      "console.error('Error: provider not found'); process.exitCode=1;",
+      "console.error('Error: Session not found in provider response'); process.exitCode=1;",
+      "done(); console.error('Error: Session not found'); process.exitCode=1;",
+      "console.log(JSON.stringify({type:'error',sessionID:sessionId,error:{name:'APIError',data:{message:'Session not found'}}})); process.exitCode=1;",
+    ]) {
+      const result = await run(fakeOpenCode(body), body === native ? {} : { sessionId: "ses_deleted" });
+      assert.equal(result.sessionGone, undefined, body);
+    }
+  });
+
   it("bounds CLI output and flushes responses larger than a pipe buffer", async () => {
     const large = await run(fakeOpenCode("done('x'.repeat(128 * 1024));"));
     assert.equal(large.ok, true);
