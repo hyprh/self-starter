@@ -118,6 +118,50 @@ describe("OpenCode native plugin installation", () => {
     }
   });
 
+  for (const version of ["1.18.0", "2.0.0"]) {
+    it(`skips automatically discovered OpenCode ${version} while installing another agent`, async () => {
+      const f = fixture();
+      try {
+        writeFileSync(f.versionFile, version);
+        const binDir = join(f.scratch, "bin");
+        mkdirSync(binDir);
+        writeFileSync(join(binDir, "opencode"), readFileSync(f.bin), { mode: 0o755 });
+        process.env.PATH = binDir;
+        process.env.OPENCODE_BIN = "";
+        saveConfig(f.paths, { ...loadConfig(f.paths), denoBin: f.bin });
+        const messages: string[] = [];
+        await install(f.paths, { codex: f.bin, service: false, log: (line) => messages.push(line) });
+        const config = loadConfig(f.paths);
+        assert.equal(config.codexBin, f.bin);
+        assert.equal(config.opencodeBin, undefined);
+        assert.ok(existsSync(f.paths.marketplace), "supported integrations are installed");
+        assert.equal(existsSync(openCodePluginPath()), false);
+        assert.ok(messages.some((line) => /Skipping OpenCode:.*requires OpenCode/.test(line)));
+        const checks = await doctor(f.paths);
+        assert.equal(checks.find((entry) => entry.label === "opencode")?.ok, false);
+        assert.equal(checks.find((entry) => entry.label === "opencode plugin")?.ok, false);
+      } finally {
+        await stopRunningDaemon(f.paths);
+        f.cleanup();
+      }
+    });
+  }
+
+  it("reports no supported agent when the only discovered CLI is incompatible OpenCode", async () => {
+    const f = fixture();
+    try {
+      for (const key of ["CODEX_BIN", "CLAUDE_BIN", "ZCODE_BIN"]) process.env[key] = "";
+      writeFileSync(f.versionFile, "1.18.0");
+      const messages: string[] = [];
+      await assert.rejects(install(f.paths, { service: false, log: (line) => messages.push(line) }), /No supported agent was found/);
+      assert.ok(messages.some((line) => /Skipping OpenCode/.test(line)));
+      assert.equal(existsSync(openCodePluginPath()), false);
+      assert.equal(existsSync(f.paths.marketplace), false);
+    } finally {
+      f.cleanup();
+    }
+  });
+
   it("registers a supported CLI and keeps its loader when installing again", async () => {
     const f = fixture();
     try {

@@ -5,7 +5,8 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
 import type { TurnResult } from "./codex.js";
@@ -46,11 +47,17 @@ export function openCodePermission(sandbox: Sandbox): Record<string, string> {
   return { ...permissions, question: "deny", plan_enter: "deny", plan_exit: "deny" };
 }
 
-function configuration(sandbox: Sandbox, agent: string): string {
-  const original: unknown = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || "{}");
+function configuration(sandbox: Sandbox, agent: string, configDir: string | undefined): string {
+  const errors: ParseError[] = [];
+  const original: unknown = parseJsonc(process.env.OPENCODE_CONFIG_CONTENT || "{}", errors, { allowTrailingComma: true });
+  if (errors[0]) throw new Error(`invalid OPENCODE_CONFIG_CONTENT: ${printParseErrorCode(errors[0].error)} at offset ${errors[0].offset}`);
   if (!isRecord(original)) throw new Error("OPENCODE_CONFIG_CONTENT must be an object");
+  const plugins = original.plugin ?? [];
+  if (!Array.isArray(plugins)) throw new Error("OPENCODE_CONFIG_CONTENT.plugin must be an array");
   return JSON.stringify({
     ...original,
+    // Load our managed file explicitly without replacing the user's config directory.
+    ...(configDir ? { plugin: [...plugins, pathToFileURL(join(configDir, "plugins", "self-starter.js")).href] } : {}),
     agent: {
       ...(isRecord(original.agent) ? original.agent : {}),
       [agent]: { description: "Handle an authorized Self-Starter event", mode: "primary", permission: openCodePermission(sandbox) },
@@ -103,7 +110,7 @@ export class OpenCodeCli implements OpenCodeRunner {
     // permissions when OpenCode deep-merges its configuration.
     const agent = `self-starter-${randomUUID()}`;
     let config: string;
-    try { config = configuration(options.sandbox, agent); }
+    try { config = configuration(options.sandbox, agent, this.configDir); }
     catch (error) { return Promise.resolve({ ok: false, error: `opencode run: ${error instanceof Error ? error.message : String(error)}` }); }
     const args = ["run", "--dir", options.cwd, "--format", "json", "--agent", agent];
     if (options.sessionId) args.push("--session", options.sessionId);
@@ -113,7 +120,7 @@ export class OpenCodeCli implements OpenCodeRunner {
         this.sessionsDir, options.sessionId ?? "", String(options.timeoutMs), this.command, ...this.prefix, ...args,
       ], {
         cwd: options.cwd,
-        env: { ...process.env, ...(this.configDir ? { OPENCODE_CONFIG_DIR: this.configDir } : {}), OPENCODE_CONFIG_CONTENT: config, SELF_STARTER_HOST: "opencode", SELF_STARTER_TRIGGER_TURN: "1" },
+        env: { ...process.env, OPENCODE_CONFIG_CONTENT: config, SELF_STARTER_HOST: "opencode", SELF_STARTER_TRIGGER_TURN: "1" },
         stdio: ["ignore", "pipe", "pipe", "ipc"],
         detached: true,
       });

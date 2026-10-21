@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { findOpenCode, OpenCodeCli, type OpenCodeRunOptions } from "../../src/engine/opencode.js";
 
@@ -107,7 +108,8 @@ describe("OpenCode's dedicated CLI sessions", () => {
         previous = agent;
         assert.equal(value.config.provider.local.options.baseURL, "http://127.0.0.1:1234");
         assert.deepEqual(value.config.agent.user, { permission: { "*": "allow" } });
-        assert.equal(value.dir, join(scratch, "global"));
+        assert.equal(value.dir, process.env.OPENCODE_CONFIG_DIR);
+        assert.ok(value.config.plugin.includes(pathToFileURL(join(scratch, "global", "plugins", "self-starter.js")).href));
         assert.equal(permission["*"], sandbox === "danger-full-access" ? "allow" : "deny");
         assert.equal(permission.edit, sandbox === "workspace-write" ? "allow" : undefined);
         assert.equal(permission.bash, undefined, "workspace-write does not grant arbitrary shell commands");
@@ -212,9 +214,18 @@ describe("OpenCode's dedicated CLI sessions", () => {
     assert.equal(existsSync(join(scratch, "invoked")), false);
   });
 
-  it("retains the lease and deadline after daemon death, then stops the CLI and its tools", async () => {
+  it("retains the lease after daemon death and stops detached tools and their stubborn descendants at the deadline", async () => {
+    writeFileSync(join(scratch, "leaf.mjs"), `
+      import { appendFileSync, writeFileSync } from 'node:fs';
+      writeFileSync('leaf.pid', String(process.pid));
+      process.on('SIGTERM', () => {});
+      setInterval(() => appendFileSync('leaf-heartbeat','x'),10);
+    `);
     writeFileSync(join(scratch, "tool.mjs"), `
-      import { appendFileSync } from 'node:fs';
+      import { spawn } from 'node:child_process';
+      import { appendFileSync, writeFileSync } from 'node:fs';
+      writeFileSync('tool.pid', String(process.pid));
+      spawn(process.execPath, ['leaf.mjs'], {detached:true,stdio:['ignore',process.stdout,process.stderr]});
       process.on('SIGTERM', () => {});
       setInterval(() => appendFileSync('heartbeat','x'),10);
     `);
@@ -222,7 +233,8 @@ describe("OpenCode's dedicated CLI sessions", () => {
       import { spawn } from 'node:child_process';
       import { writeFileSync } from 'node:fs';
       writeFileSync('cli.pid', String(process.pid));
-      spawn(process.execPath, ['tool.mjs'], {stdio:['ignore',process.stdout,process.stderr]});
+      spawn(process.execPath, ['tool.mjs'], {detached:true,stdio:['ignore',process.stdout,process.stderr]});
+      process.on('SIGTERM', () => {});
       setInterval(() => { process.stdout.write('still working\\n'); }, 20);
     `);
     const parent = spawnParent(bin, "ses_deadline", 1400);
@@ -230,7 +242,7 @@ describe("OpenCode's dedicated CLI sessions", () => {
     const lock = join(scratch, "sessions", "ses_deadline.opencode.lock");
     let owner: number | undefined;
     try {
-      await waitFor(() => existsSync(join(scratch, "heartbeat")));
+      await waitFor(() => existsSync(join(scratch, "heartbeat")) && existsSync(join(scratch, "leaf-heartbeat")));
       owner = JSON.parse(readFileSync(lock, "utf8")).pid;
       parent.kill("SIGKILL");
       await parentExit;
@@ -238,8 +250,10 @@ describe("OpenCode's dedicated CLI sessions", () => {
       assert.equal((await run(bin, { sessionId: "ses_deadline" })).busy, true);
       await waitFor(() => !existsSync(lock));
       const heartbeat = readFileSync(join(scratch, "heartbeat"), "utf8");
+      const leafHeartbeat = readFileSync(join(scratch, "leaf-heartbeat"), "utf8");
       await new Promise((resolve) => setTimeout(resolve, 80));
       assert.equal(readFileSync(join(scratch, "heartbeat"), "utf8"), heartbeat);
+      assert.equal(readFileSync(join(scratch, "leaf-heartbeat"), "utf8"), leafHeartbeat);
       const cliPid = Number(readFileSync(join(scratch, "cli.pid"), "utf8"));
       assert.throws(() => process.kill(cliPid, 0), { code: "ESRCH" });
       assert.equal((await run(fakeOpenCode("done();"), { sessionId: "ses_deadline" })).ok, true);
@@ -249,6 +263,38 @@ describe("OpenCode's dedicated CLI sessions", () => {
       if (owner && existsSync(lock)) {
         try { process.kill(owner, "SIGTERM"); } catch { /* already closed */ }
         await waitFor(() => !existsSync(lock));
+      }
+      for (const file of ["tool.pid", "leaf.pid"]) {
+        if (!existsSync(join(scratch, file))) continue;
+        try { process.kill(Number(readFileSync(join(scratch, file), "utf8")), "SIGKILL"); } catch { /* already stopped */ }
+      }
+    }
+  });
+
+  it("stops detached tools before resolving an ordinary timeout and releasing the session", async () => {
+    writeFileSync(join(scratch, "tool.mjs"), `
+      import { appendFileSync, writeFileSync } from 'node:fs';
+      writeFileSync('tool.pid', String(process.pid));
+      process.on('SIGTERM', () => {});
+      setInterval(() => appendFileSync('heartbeat','x'),10);
+    `);
+    const bin = fakeOpenCode(`
+      import { spawn } from 'node:child_process';
+      spawn(process.execPath, ['tool.mjs'], {detached:true,stdio:'ignore'});
+      setInterval(() => {}, 1000);
+    `);
+    try {
+      const result = await run(bin, { sessionId: "ses_timeout", timeoutMs: 600 });
+      assert.match(result.error!, /timed out/);
+      assert.equal(existsSync(join(scratch, "sessions", "ses_timeout.opencode.lock")), false);
+      const heartbeat = readFileSync(join(scratch, "heartbeat"), "utf8");
+      assert.ok(heartbeat.length > 0);
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      assert.equal(readFileSync(join(scratch, "heartbeat"), "utf8"), heartbeat);
+      assert.equal((await run(fakeOpenCode("done();"), { sessionId: "ses_timeout" })).ok, true);
+    } finally {
+      if (existsSync(join(scratch, "tool.pid"))) {
+        try { process.kill(Number(readFileSync(join(scratch, "tool.pid"), "utf8")), "SIGKILL"); } catch { /* already stopped */ }
       }
     }
   });

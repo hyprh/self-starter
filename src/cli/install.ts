@@ -348,13 +348,21 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
     if (bin && !isExecutable(bin)) throw new Error(`--${name} ${bin} is not an executable`);
   }
   const config = loadConfig(paths);
-  const agents = agentsFound(options);
+  const agents = agentsFound(options).filter((agent) => {
+    try {
+      agent.validate?.();
+      return true;
+    } catch (error) {
+      if (agent.configKey !== "opencodeBin" || options.opencode) throw error;
+      log(`Skipping OpenCode: ${(error as Error).message}`);
+      return false;
+    }
+  });
   if (agents.length === 0) {
     throw new Error(
       "No supported agent was found. Install the Codex CLI (npm install -g @openai/codex), Claude Code, ZCode or OpenCode, or pass --codex <path>, --claude <path>, --zcode <path> or --opencode <path> (the Codex app on macOS ships codex inside its bundle).",
     );
   }
-  for (const agent of agents) agent.validate?.();
   for (const agent of agents) {
     config[agent.configKey] = agent.bin;
     log(`${agent.name}: ${agent.bin}`);

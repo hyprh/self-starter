@@ -55,7 +55,7 @@ The OpenCode integration is an unreleased native plugin for **OpenCode >=1.19.3 
 
 Each watch uses a dedicated result session in the watch's working directory. Self-Starter resumes the same session for subsequent events with `opencode run --session <id> --format json`, so the UI can be closed while it works. The machine must remain awake and the CLI must have model access. `target.kind: origin` is rejected; the conversation where you created the watch is not used for event execution. Avoid running another task in the result session while the watch is active.
 
-Use `self-starter history` to find the result session and its resume command. The background CLI uses your global and project model configuration. Its dedicated agent applies these native tool rules from `action.sandbox`:
+Use `self-starter history` to find the result session and its resume command. The background CLI uses your global and project model configuration, preserves custom configuration directories, and accepts inline JSONC. Its dedicated agent applies these native tool rules from `action.sandbox`:
 
 | Setting | Allowed tools |
 |---|---|

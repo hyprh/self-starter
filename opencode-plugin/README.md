@@ -25,7 +25,7 @@ Do not also register this plugin in a project's configuration: OpenCode can load
 
 Try a notification first: “Notify me once when `/tmp/self-starter-opencode-done` appears. Check every minute and stop after an hour.” Confirm the first scheduled check found no file, then create the file in a terminal. Inspect the result with `node dist/src/cli/main.js history` or `trigger_history`. Use an agent action next when OpenCode should investigate or change something.
 
-Agent watches initialize a dedicated result session when activated; this calls a model. Scheduled probe checks do not call a model. Model configuration and credentials must be available to the background service; environment variables set only in an interactive shell may not reach it.
+Agent watches initialize a dedicated result session when activated; this calls a model. Scheduled probe checks do not call a model. The service preserves OpenCode configuration and XDG storage paths. Model credentials must be available to the service; inline configuration and credentials from an interactive shell are not saved into service files.
 
 ## Permissions
 

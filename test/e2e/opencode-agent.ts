@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { installOpenCodePlugin, openCodePluginPath } from "../../src/cli/install.js";
 import { startDaemon } from "../../src/daemon/daemon.js";
 import { cliCommand, DEFAULT_CONFIG, saveConfig } from "../../src/engine/config.js";
-import { findOpenCode } from "../../src/engine/opencode.js";
+import { findOpenCode, OpenCodeCli } from "../../src/engine/opencode.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { waitFor } from "./harness.js";
 
@@ -23,13 +23,24 @@ const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ss-opencode-e2e-")));
 const project = join(scratch, "project");
 const user = join(scratch, "user");
 const config = join(scratch, "config");
+const customConfig = join(scratch, "custom-config");
 const paths = resolvePaths(join(scratch, "self-starter"));
-for (const dir of [project, user, config]) mkdirSync(dir);
+for (const dir of [project, user, config, customConfig]) mkdirSync(dir);
 const eventsFile = join(project, "events.json");
 writeFileSync(eventsFile, "[]\n");
 const protectedFile = join(project, "protected.txt");
 const protectedContent = "The read-only background turn must leave this file unchanged.\n";
 writeFileSync(protectedFile, protectedContent);
+const instructionsFile = join(project, "inline-instructions.md");
+const instructionsMarker = "SELF_STARTER_JSONC_INSTRUCTIONS_APPLIED";
+writeFileSync(instructionsFile, instructionsMarker);
+const heartbeatFile = join(project, "heartbeat");
+const toolPidFile = join(project, "heartbeat.pid");
+const heartbeatScript = join(project, "heartbeat.mjs");
+writeFileSync(heartbeatScript, `import { appendFileSync, writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(toolPidFile)}, String(process.pid));
+setInterval(() => appendFileSync(${JSON.stringify(heartbeatFile)}, 'x'), 50);
+`);
 const response = "SELF_STARTER_OPENCODE_SMOKE_OK";
 const triggerId = "opencode-local-event";
 const observations: Array<{ name: string; output: string }> = [];
@@ -79,10 +90,20 @@ const model = createServer(async (request, result) => {
     const previousOutput = contentText(last?.content);
     if (last?.role === "tool" && previousName) observations.push({ name: previousName, output: previousOutput });
     const text = contentText([...messages].reverse().find((message) => message.role === "user")?.content);
+    if (input.tools?.length) {
+      assert.ok(messages.some((message) => contentText(message.content).includes(instructionsMarker)),
+        "the real CLI and background runner both preserve the inline JSONC instructions");
+    }
     const fireId = /fire_id="(fire_[a-z0-9]+)"/.exec(text)?.[1];
     let name: string | undefined;
     let args: Json = {};
-    if (input.tools?.length && fireId) {
+    if (input.tools?.length && text.includes("SELF_STARTER_TIMEOUT")) {
+      if (last?.role !== "tool") {
+        name = "bash";
+        const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+        args = { command: `${quote(process.execPath)} ${quote(heartbeatScript)}`, description: "Write heartbeats until the action deadline", timeout: 120_000 };
+      }
+    } else if (input.tools?.length && fireId) {
       const advertised = new Set(input.tools.map((entry: Json) => entry.function?.name));
       assert.ok(advertised.has("read"), "the read-only fire can use the real OpenCode read tool");
       for (const forbidden of ["edit", "write", "apply_patch", "bash", "task"]) {
@@ -157,10 +178,17 @@ Object.assign(process.env, {
   OPENCODE_DISABLE_DEFAULT_PLUGINS: "1", OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: "1",
   NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost",
   npm_config_cache: join(scratch, "npm-cache"),
+  OPENCODE_CONFIG_DIR: customConfig,
+  OPENCODE_CONFIG_CONTENT: `{
+    // OpenCode accepts JSONC here, including the trailing comma.
+    "instructions": [${JSON.stringify(instructionsFile)}],
+  }`,
 });
 const configDir = join(config, "opencode");
 mkdirSync(configDir);
-writeFileSync(join(configDir, "opencode.json"), JSON.stringify({
+// The global directory only contains our managed loader. Losing the user's
+// additional directory therefore removes the only model/provider configuration.
+writeFileSync(join(customConfig, "opencode.json"), JSON.stringify({
   model: "local/local-smoke", small_model: "local/local-smoke", enabled_providers: ["local"],
   provider: { local: {
     npm: "@ai-sdk/openai-compatible", name: "Local smoke test",
@@ -196,6 +224,7 @@ installOpenCodePlugin(paths);
 assert.ok(existsSync(openCodePluginPath()), "the installer creates the globally discovered .js loader");
 const daemon = await startDaemon({ paths });
 let passed = false;
+let timedRun: ReturnType<OpenCodeCli["run"]> | undefined;
 try {
   const first = await opencode("SELF_STARTER_USER_SETUP: use service_status, draft the local event trigger, and activate its draft.");
   const sessionId: string = first[0]?.sessionID;
@@ -244,10 +273,31 @@ try {
   for (const read of reads) assert.ok(read.output.includes(protectedContent.trim()), read.output);
   assert.ok(readOnlyRequests >= 8, "read-only permissions stay in force through each complete background turn");
   assert.equal(readFileSync(protectedFile, "utf8"), protectedContent);
+  daemon.engine.stop();
+  daemon.executor.close();
+  timedRun = new OpenCodeCli(bin, paths.sessions, configDir).run({
+    cwd: project, sessionId: dedicated.slice(3), message: "SELF_STARTER_TIMEOUT: run the heartbeat command until the deadline.",
+    sandbox: "danger-full-access", timeoutMs: 15_000,
+  });
+  await waitFor("the real OpenCode shell tool", async () => existsSync(toolPidFile) && existsSync(heartbeatFile) ? true : undefined,
+    { timeoutMs: 12_000, explain: async () => JSON.stringify({ observations, modelErrors }) });
+  const timedOut = await timedRun;
+  assert.equal(timedOut.ok, false);
+  assert.match(timedOut.error!, /timed out/);
+  const heartbeat = readFileSync(heartbeatFile, "utf8");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(readFileSync(heartbeatFile, "utf8"), heartbeat, "the native detached shell tool stops at the action deadline");
+  assert.equal(existsSync(join(paths.sessions, `${dedicated.slice(3)}.opencode.lock`)), false,
+    "the session lease is released after the real tool stops");
   assert.deepEqual(modelErrors, []);
   passed = true;
-  console.log("OpenCode: native global plugin, host session binding, draft/activate, CLI resume, event fires, read-only tool permissions, dedicated receipts, and post-report guards passed.");
+  console.log("OpenCode: custom config, JSONC instructions, native plugin, event delivery, permissions, receipts, post-report guards, and detached shell timeout passed.");
 } finally {
+  await timedRun;
+  if (existsSync(toolPidFile)) {
+    try { process.kill(Number(readFileSync(toolPidFile, "utf8")), "SIGKILL"); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+  }
   await daemon.stop();
   await new Promise<void>((resolve) => model.close(() => resolve()));
   if (passed) rmSync(scratch, { recursive: true, force: true });
