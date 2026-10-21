@@ -1,9 +1,9 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Let your agent act when something happens.</b><br>
-Custom event triggers for Codex, Claude Code, ZCode and OpenCode.<br>
-Describe what to watch and what to do. A small local probe checks the condition;<br>
-your agent picks up the task when it fires. No model calls while the probe waits.</p>
+<p align="center"><b>Stop checking. Let Codex follow up.</b><br>
+CI failed? New PR comments? A training run finished?<br>
+Self-Starter watches for the event and starts the task you asked for.<br>
+Works with Codex, Claude Code, ZCode and OpenCode.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
@@ -20,7 +20,21 @@ your agent picks up the task when it fires. No model calls while the probe waits
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
-When a training run finishes, ask your agent to compare the results. When CI fails, have it investigate. Keep working while Self-Starter watches files, commands, services or APIs on your machine.
+## What this plugin solves
+
+You should not have to keep refreshing CI or PRs, then return to Codex with another prompt.
+
+**Ask once: "When this happens, do that."** Self-Starter watches in the background and hands the follow-up to Codex when your condition matches.
+
+| When this happens… | Codex picks up the next task |
+|---|---|
+| A new CI run fails on your commit | Read the logs and suggest a fix |
+| Your PR gets new review comments | Investigate the feedback and propose changes |
+| A new issue is labelled bug | Read the report and identify relevant code |
+| Your training run finishes | Compare its results with the previous run |
+| Your brokerage account report updates | Explain new trades or cash movements |
+
+Codex writes a custom probe for files, logs, commands or APIs, so you can define the event in your own terms. **Code does the waiting. Codex does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
 
 ## Install
 
@@ -125,6 +139,8 @@ Anything a small program can check. Your agent writes the probe, tries it once, 
 |---|---|---|
 | **Long jobs** | "When the training run finishes, compare it with the last one." | A log or output file |
 | **GPU availability** | "When the GPU is idle for ten minutes, start the next experiment." | `nvidia-smi` |
+| **PR reviews** | "When my PR gets new review comments, investigate them and propose changes." | GitHub pull requests |
+| **Issues** | "When a new issue is labelled bug, read the report and suggest where to investigate." | GitHub Issues |
 | **CI** | "When CI fails on main, investigate and suggest a fix." | GitHub Actions ([guide](docs/ci-watch.md)) |
 | **Releases** | "When a new version of zod is out, try it on a branch." | The npm registry |
 | **Services** | "If the dev server is down for two minutes, find out why." | A health endpoint |
