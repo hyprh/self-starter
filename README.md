@@ -1,9 +1,9 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Make Codex react to the changes you care about.</b><br>
-Watch PRs, issues, CI, local jobs or your brokerage account.<br>
-Local code watches. Codex acts when your condition is met.<br>
-Also works with Claude Code, ZCode and OpenCode.</p>
+<p align="center"><b>Stop checking. Let Codex follow up.</b><br>
+CI failed? New PR comments? A training run finished?<br>
+Self-Starter watches for the event and starts the task you asked for.<br>
+Works with Codex, Claude Code, ZCode and OpenCode.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
@@ -22,18 +22,19 @@ Also works with Claude Code, ZCode and OpenCode.</p>
 
 ## What this plugin solves
 
-Your PR gets reviewed, a bug report arrives, CI fails, or your brokerage account changes while you are busy elsewhere. **Self-Starter lets Codex notice the change and automatically start the follow-up you asked for**, without you repeatedly checking and sending another prompt.
+You should not have to keep refreshing CI or PRs, then return to Codex with another prompt.
 
-Describe **what to watch and what to do next** in plain language. Codex writes and tests a small TypeScript probe that checks files, logs, commands or APIs. Your condition can be a new event, a threshold crossed, or a condition that stays true. The schedule controls how often the probe checks; your condition determines when Codex acts.
+**Ask once: "When this happens, do that."** Self-Starter watches in the background and hands the follow-up to Codex when your condition matches.
 
-**Routine probe checks make no model calls.** Local code does the waiting, so you do not need to keep a model in a "check again" loop. Setup, result-session initialization and agent actions can still use model tokens.
+| When this happens… | Codex picks up the next task |
+|---|---|
+| A new CI run fails on your commit | Read the logs and suggest a fix |
+| Your PR gets new review comments | Investigate the feedback and propose changes |
+| A new issue is labelled bug | Read the report and identify relevant code |
+| Your training run finishes | Compare its results with the previous run |
+| Your brokerage account report updates | Explain new trades or cash movements |
 
-- **PRs:** "When my PR gets new review comments, investigate them and propose changes."
-- **Issues:** "When a new issue is labelled bug, read the report and suggest where to investigate."
-- **CI:** "When a new run fails on my current commit, inspect its logs and suggest a fix."
-- **Markets and accounts:** "When my IBKR account report shows a new execution or withdrawal, explain what changed."
-
-Keep working while Self-Starter watches. When the condition matches, your agent picks up the next task.
+Codex writes a custom probe for files, logs, commands or APIs, so you can define the event in your own terms. **Code does the waiting. Codex does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
 
 ## Install
 
