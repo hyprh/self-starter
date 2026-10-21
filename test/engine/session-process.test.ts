@@ -8,7 +8,7 @@ import { callDaemon, waitForDaemon } from "../../src/client/client.js";
 import { DEFAULT_CONFIG, saveConfig } from "../../src/engine/config.js";
 import { OpenCodeCli } from "../../src/engine/opencode.js";
 import { resolvePaths } from "../../src/engine/paths.js";
-import { markedPsProcesses, markedSessionProcesses, sessionProcesses, SHARED_DAEMON_RUN_TOKEN } from "../../src/engine/session-processes.js";
+import { markedPsProcesses, markedSessionProcesses, sessionProcesses, SHARED_DAEMON_SCOPE } from "../../src/engine/session-processes.js";
 import { ZCodeCli } from "../../src/engine/zcode.js";
 import type { DraftView } from "../../src/engine/service.js";
 import { stopRunningDaemon } from "../../src/service/manager.js";
@@ -144,7 +144,8 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
         sessionId:${JSON.stringify(sessionId)},cwd:${JSON.stringify(scratch)},message:'continue',sandbox:'workspace-write',timeoutMs:1200,
       });
     `);
-    const parent = spawn(process.execPath, [parentScript], { cwd: scratch, stdio: "ignore" });
+    const parentArgs = [parentScript];
+    const parent = spawn(process.execPath, parentArgs, { cwd: scratch, stdio: "ignore" });
     const exited = new Promise((resolve) => parent.once("close", resolve));
     try {
       await until(() => existsSync(join(scratch, "cli-exiting")));
@@ -254,9 +255,9 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
         })}));`,
       });
       assert.equal(view.trial?.ok, true, view.trial?.error ?? "the environment probe failed");
-      assert.deepEqual(JSON.parse(view.trial!.summary!), { token: SHARED_DAEMON_RUN_TOKEN, kept: "kept", home: shared.home, scoped: true },
+      assert.deepEqual(JSON.parse(view.trial!.summary!), { token: SHARED_DAEMON_SCOPE, kept: "kept", home: shared.home, scoped: true },
         "the independent daemon's probe children keep its environment without the caller's ownership marker");
-      assert.notEqual(readFileSync(join(scratch, "scoped.token"), "utf8"), SHARED_DAEMON_RUN_TOKEN,
+      assert.notEqual(readFileSync(join(scratch, "scoped.token"), "utf8"), SHARED_DAEMON_SCOPE,
         "a new scoped run replaces its shared daemon's lifetime marker");
     } finally {
       await pending;

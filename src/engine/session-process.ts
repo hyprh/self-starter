@@ -6,7 +6,7 @@ import { linkSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isRecord } from "../core/patch.js";
 import { ensurePrivateDir } from "./fs-util.js";
-import { markedSessionProcesses, sessionProcesses, SHARED_DAEMON_RUN_TOKEN } from "./session-processes.js";
+import { markedSessionProcesses, sessionProcesses, SHARED_DAEMON_SCOPE } from "./session-processes.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
 const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : "zcode";
@@ -95,7 +95,7 @@ function killRun(): void {
   for (;;) {
     const table = sessionProcesses();
     const marked = markedSessionProcesses(table, runMarker);
-    const shared = markedSessionProcesses(table, `SELF_STARTER_RUN_TOKEN=${SHARED_DAEMON_RUN_TOKEN}`);
+    const shared = markedSessionProcesses(table, `SELF_STARTER_RUN_TOKEN=${SHARED_DAEMON_SCOPE}`);
     let added = false;
     for (const { pid, parent } of table) {
       if (shared.has(pid) || frozen.has(pid) || !marked.has(pid) && !frozen.has(parent)) continue;

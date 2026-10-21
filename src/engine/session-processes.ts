@@ -8,7 +8,7 @@ export interface SessionProcess {
 }
 
 /** An explicit lifetime boundary; a new scoped CLI always replaces this value. */
-export const SHARED_DAEMON_RUN_TOKEN = "shared-daemon";
+export const SHARED_DAEMON_SCOPE = "shared-daemon";
 
 function ps(args: string[]): string {
   const result = spawnSync("/bin/ps", args, { encoding: "utf8", timeout: 5000, maxBuffer: 16 * 1024 * 1024 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -43,14 +43,17 @@ const result = spawnSync(binary, ["eval", "console.log(JSON.stringify({fire:true
 if (result.status !== 0) throw new Error(result.stderr);
 console.log(JSON.stringify({ binary, probe: JSON.parse(result.stdout) }));
 `;
-    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+    const nodeArgs = ["--input-type=module", "-e", script];
+    const result = spawnSync(process.execPath, nodeArgs, {
       env: { ...process.env, DENO_SIMULATED_READONLY_FILE_SYSTEM: readOnly ? "1" : "0" }, encoding: "utf8", timeout: 20_000,
     });
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout) as { binary: string; probe: object };
     assert.deepEqual(output.probe, { fire: true, summary: "probe works" });
     assert.equal(existsSync(join(copiedDeno, binaryName)), !readOnly);
-    if (!readOnly) assert.equal(output.binary, join(copiedDeno, binaryName));
-    else assert.notEqual(output.binary, join(copiedDeno, binaryName), "read-only installs use the existing platform binary");
+    // require.resolve follows symlinks, including macOS's /var -> /private/var.
+    const expectedBinary = join(realpathSync(copiedDeno), binaryName);
+    if (!readOnly) assert.equal(output.binary, expectedBinary);
+    else assert.notEqual(output.binary, expectedBinary, "read-only installs use the existing platform binary");
   });
 }
