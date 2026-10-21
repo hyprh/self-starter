@@ -1,11 +1,12 @@
 // The CLI owner keeps its deadline after a daemon crash. Resumed turns also
 // hold a session lease until the CLI and its output streams close.
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { linkSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isRecord } from "../core/patch.js";
 import { ensurePrivateDir } from "./fs-util.js";
+import { markedSessionProcesses, sessionProcesses, SHARED_DAEMON_RUN_TOKEN } from "./session-processes.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
 const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : "zcode";
@@ -13,6 +14,8 @@ const name = host === "opencode" ? "OpenCode" : "ZCode";
 if (!sessionsDir || sessionId === undefined || !command || !process.send) throw new Error(`${name} wrapper requires a session argument and IPC parent`);
 const lock = join(sessionsDir, `${sessionId}.${host}.lock`);
 const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });
+const runToken = randomUUID();
+const runMarker = `SELF_STARTER_RUN_TOKEN=${runToken}`;
 let owned = false;
 let started = false;
 let cliPid: number | undefined;
@@ -75,33 +78,34 @@ function acquire(): boolean {
 
 process.on("exit", release);
 
-/** Freeze parents before inspecting their children, including detached tool groups. */
-function killTree(root: number): void {
+/**
+ * Freeze this run before killing it, including reparented detached tools.
+ * A shared daemon explicitly starts a separate lifetime; ordinary descendants
+ * remain owned even when a child command constructs a clean environment.
+ */
+function killRun(): void {
   const signal = (pid: number, value: NodeJS.Signals) => {
-    try { process.kill(pid, value); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
+    try { process.kill(pid, value); return true; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      return false;
+    }
   };
-  const frozen = new Set([root]);
-  const groups = new Set<number>();
-  signal(root, "SIGSTOP");
+  const frozen = new Set<number>();
   for (;;) {
-    const table = spawnSync("/bin/ps", ["-axo", "pid=,ppid=,pgid="], { encoding: "utf8", timeout: 5000 });
-    if (table.error || table.status !== 0) throw table.error ?? new Error(table.stderr || "could not inspect the process tree");
+    const table = sessionProcesses();
+    const marked = markedSessionProcesses(table, runMarker);
+    const shared = markedSessionProcesses(table, `SELF_STARTER_RUN_TOKEN=${SHARED_DAEMON_RUN_TOKEN}`);
     let added = false;
-    for (const line of table.stdout.trim().split("\n")) {
-      const [pid, parent, group] = line.trim().split(/\s+/).map(Number);
-      if (!pid || !parent || !group || (!frozen.has(parent) && group !== root)) continue;
-      groups.add(group);
-      if (frozen.has(pid)) continue;
-      signal(pid, "SIGSTOP");
+    for (const { pid, parent } of table) {
+      if (shared.has(pid) || frozen.has(pid) || !marked.has(pid) && !frozen.has(parent)) continue;
+      if (!signal(pid, "SIGSTOP")) continue;
       frozen.add(pid);
       added = true;
     }
     if (!added) break;
   }
-  for (const group of groups) if (group !== root && frozen.has(group)) signal(-group, "SIGKILL");
-  for (const pid of [...frozen].reverse()) if (pid !== root) signal(pid, "SIGKILL");
-  signal(-root, "SIGKILL");
+  for (const pid of [...frozen].reverse()) signal(pid, "SIGKILL");
 }
 
 function finish(): void {
@@ -117,7 +121,7 @@ function stop(): void {
   stopping = true;
   if (!cliPid) process.exit(1);
   const cleanup = () => {
-    try { killTree(cliPid!); }
+    try { killRun(); }
     catch (error) {
       process.stderr.write(`Could not stop ${name}'s tools; keeping its lease: ${String(error)}\n`);
       setTimeout(cleanup, 100);
@@ -143,7 +147,10 @@ process.on("message", (message: unknown) => {
   if (started || !isRecord(message) || message.type !== "go") return;
   started = true;
   const stdin = typeof message.stdin === "string" ? message.stdin : undefined;
-  const child = spawn(command!, args, { stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: true });
+  const child = spawn(command!, args, {
+    env: { ...process.env, SELF_STARTER_RUN_TOKEN: runToken },
+    stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"], detached: true,
+  });
   cliPid = child.pid;
   if (stdin !== undefined) {
     child.stdin!.on("error", () => {}); // A failed CLI may close stdin before reading it.
