@@ -44,6 +44,8 @@ try {
   --signal: #e8870e;
   --signal-soft: #fff0da;
   --green: #187758;
+  --up: #2e8b6b;
+  --down: #c8514a;
   --font: "IBM Plex Sans",system-ui,sans-serif;
   --display: "Schibsted Grotesk",system-ui,sans-serif;
   --mono: "IBM Plex Mono",ui-monospace,monospace;
@@ -62,6 +64,8 @@ try {
     --signal: #f0a244;
     --signal-soft: #342716;
     --green: #7bd8af;
+    --up: #4fb690;
+    --down: #e2695f;
     color-scheme: dark
   }
 
@@ -196,7 +200,7 @@ code:not(pre code) {
 
 .hero {
   display: grid;
-  grid-template-columns: 1.1fr 1fr;
+  grid-template-columns: minmax(0,1fr) minmax(0,1.1fr);
   align-items: center;
   gap: 64px;
   padding-block: 62px 68px
@@ -261,97 +265,105 @@ code:not(pre code) {
   color: var(--muted)
 }
 
-.workflow {
+.market-watch {
   border: 1px solid var(--line);
   border-radius: 15px;
   background: var(--surface);
   box-shadow: 0 16px 50px -35px #0f172a66;
-  overflow: hidden
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0
 }
 
-.workflow-title {
+.market-title {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
-  font-size: .75rem;
+  font: 500 .7rem var(--mono);
   color: var(--muted)
 }
 
-.workflow-title span:first-child {
-  font-family: var(--mono)
+.market-message {
+  max-width: 94%
 }
 
-.flow {
-  padding: 22px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 19px
+.market-message .who {
+  display: block;
+  margin-bottom: 5px;
+  font: .7rem var(--mono);
+  color: var(--muted)
 }
 
-.flow-step {
-  position: relative;
-  padding-left: 26px
+.market-message p {
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: var(--signal-soft);
+  font-size: .85rem;
+  line-height: 1.5
 }
 
-.flow-step:before {
-  content: "";
-  position: absolute;
-  top: 9px;
-  left: 0;
-  width: 8px;
-  height: 8px;
-  border: 2px solid var(--line);
-  border-radius: 50%;
+.market-message.you {
+  align-self: flex-end
+}
+
+.market-message.you p {
+  background: var(--soft)
+}
+
+.market-chart {
+  margin: 0;
+  min-width: 0
+}
+
+.market-chart .plot {
+  width: 100%;
+  min-height: 230px
+}
+
+.market-chart svg {
+  display: block;
+  width: 100%;
+  height: auto
+}
+
+.market-chart figcaption {
+  margin-top: 8px;
+  font-size: .7rem;
+  color: var(--muted)
+}
+
+.market-case {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(0,1.2fr);
+  gap: 28px;
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--surface)
 }
 
-.flow-step+.flow-step:after {
-  content: "";
-  position: absolute;
-  top: -22px;
-  left: 5px;
-  height: 24px;
-  width: 1px;
-  background: var(--line)
+.market-case h3 {
+  margin: 10px 0
 }
 
-.flow-step.done:before {
-  border-color: var(--signal);
-  background: var(--signal)
-}
-
-.flow-label {
-  font: 500 .7rem var(--mono);
-  text-transform: uppercase;
-  letter-spacing: .06em;
-  color: var(--muted);
-  margin-bottom: 5px
-}
-
-.flow-step p {
-  font-size: .92rem
-}
-
-.flow-step pre {
-  font-size: .74rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin: 9px 0 0;
-  background: var(--soft);
-  border-radius: 7px;
-  padding: 11px 13px
-}
-
-.flow-step.done p {
-  color: var(--accent)
-}
-
-.example-note {
-  padding: 0 24px 18px;
-  font-size: .74rem;
+.market-case p:not(.eyebrow) {
+  font-size: .87rem;
   color: var(--muted)
+}
+
+.market-log {
+  margin: 0 0 14px;
+  padding: 14px;
+  border-radius: 7px;
+  background: var(--soft);
+  font: .75rem/1.65 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere
 }
 
 section {
@@ -743,7 +755,7 @@ footer>.wrap {
 @media (max-width:850px) {
   .hero {
     gap: 32px;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr);
     padding-block: 42px
   }
 
@@ -815,15 +827,11 @@ footer>.wrap {
     font-size: .9rem
   }
 
-  .workflow {
-    max-width: 100%
-  }
-
   section {
     padding-block: 40px
   }
 
-  .steps,.examples,.details-grid {
+  .steps,.examples,.details-grid,.market-case {
     grid-template-columns: 1fr;
     gap: 24px
   }
@@ -875,12 +883,8 @@ footer>.wrap {
     padding: 20px
   }
 
-  .flow {
+  .market-case {
     padding: 20px
-  }
-
-  .workflow-title {
-    padding-inline: 18px
   }
 
 }
@@ -908,14 +912,24 @@ footer>.wrap {
       <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#examples">See what it can watch →</a></div>
       <p class="promise">Local probes. No model calls while waiting. macOS and Linux.</p>
     </div>
-    <div class="workflow" aria-label="Illustrative workflow for a completed training run">
-      <div class="workflow-title"><span>ONE REQUEST → ONE RESULT</span><span>Example workflow</span></div>
-      <div class="flow">
-        <div class="flow-step"><div class="flow-label">You ask</div><p>“When exp42 finishes, compare its results with exp41 and tell me what changed.”</p></div>
-        <div class="flow-step"><div class="flow-label">Local code waits</div><p>A small probe checks the training log. Your agent can get on with other work.</p><pre>running → running → finished</pre></div>
-        <div class="flow-step done"><div class="flow-label">Your agent takes over</div><p>Reads both result files, compares the metrics and runtime, and reports its findings.</p></div>
+    <div class="market-watch" aria-label="Illustrative stock watch with historical NVDA prices">
+      <div class="market-title"><span>NVDA / A WATCH IN ACTION</span><span>Example conversation</span></div>
+      <div class="market-message you">
+        <span class="who">You · Jul 13</span>
+        <p>Watch NVDA. If it moves 6% from the previous close or reaches $235, investigate and tell me what changed.</p>
       </div>
-      <p class="example-note">Codex and Claude Code can return to your conversation. ZCode uses a dedicated CLI result session.</p>
+      <figure class="market-chart">
+        <div class="plot" id="plot"></div>
+        <figcaption>Historical daily candles, Jul 13–Oct 9, 2026, from Yahoo Finance. The conversation and checks are illustrative; the markers show a large move and the first crossing of $235.</figcaption>
+      </figure>
+      <div class="market-message">
+        <span class="who">Your agent · Aug 27</span>
+        <p>NVDA opened 6.3% higher at $222.86. I'll investigate the move and report what changed.</p>
+      </div>
+      <div class="market-message">
+        <span class="who">Your agent · Oct 2</span>
+        <p>NVDA opened at $236.06, above your $235 line. I'll check the latest context and send you an update.</p>
+      </div>
     </div>
   </div>
 
@@ -986,7 +1000,20 @@ node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" 
         <article class="example"><h3>A new error appears</h3><p>“When a new error shows up in logs/app.log, trace it to the code.”</p><p class="fine">Read a log file, then hand the matching stack trace to your agent.</p><a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">Explore the guide →</a></article>
       </div>
       <p class="more-cases">Also watch releases, folders, service health or market data. Ready-made recipes include <a href="https://github.com/hyprh/self-starter/tree/main/recipes/futu-news">Futu news</a> and <a href="https://github.com/hyprh/self-starter/tree/main/recipes/ibkr-account">IBKR account activity</a>.</p>
-      <details class="demo" id="demo">
+      <article class="market-case" aria-labelledby="market-case-heading">
+        <div>
+          <p class="eyebrow">A recorded stock watch</p>
+          <h3 id="market-case-heading">When analysts change their view</h3>
+          <p>“Tell me when analysts change their rating or price target on Tencent or NVIDIA, and what the community thinks.”</p>
+        </div>
+        <div>
+          <pre class="market-log">12:21:47  1 item(s) from the last 48 h on Futu (Tencent 1, NVDA 0)
+“Morgan Stanley: Maintains "Overweight" rating on Tencent (00700) with a target price of HKD 550…”
+counts as seen; the next report fires</pre>
+          <p>Probe output recorded on October 13, 2026, UTC. This first check establishes the baseline. When a new report arrives, the agent can use Futu's research and community tools to summarize what changed. Start with the <a href="https://github.com/hyprh/self-starter/tree/main/recipes/futu-news">futu-news recipe</a>.</p>
+        </div>
+      </article>
+      <details class="demo" id="demo" open>
         <summary>Watch a Codex + Futu notification example</summary>
         <figure>
           <div class="demo-media" id="notification-demo-frame">
@@ -1020,6 +1047,96 @@ node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" 
 <footer><div class="wrap"><span>Open source · <a href="https://github.com/hyprh/self-starter/blob/main/LICENSE">MIT license</a> · <a href="https://github.com/hyprh/self-starter">GitHub</a></span><span>An independent project. Built for your coding agent.</span></div></footer>
 <p class="sr-only" id="copy-status" role="status" aria-live="polite"></p>
 <script>
+// NVDA daily candles [date, open, high, low, close], Jul 13 to Oct 9, 2026, from Yahoo Finance.
+const CANDLES = [["07-13",208.54,210.57,203,203.53],["07-14",208.2,212.55,203.8,211.8],["07-15",211.96,213.81,206.04,212.5],["07-16",210.17,211.08,205.85,207.4],["07-17",202.64,206.65,197.97,202.81],["07-20",205.87,207.74,202.28,203.28],["07-21",207.54,208.65,204.01,207.29],["07-22",205.81,214.39,204.95,212.06],["07-23",209.46,210.87,205.96,208.76],["07-24",207.45,211.91,204.81,206.84],["07-27",208.2,208.75,195.44,196.51],["07-28",195,198.7,192.74,197.01],["07-29",195.85,197.07,190.01,190.01],["07-30",193.45,197.25,191.52,195.04],["07-31",198.44,202,194.95,200.75],["08-03",197.69,208.74,196.85,206.64],["08-04",211.3,213.06,209.05,211.94],["08-05",216.86,222.22,216.4,219.22],["08-06",221.53,223.63,217,218.99],["08-07",221.54,224.76,220.66,223.96],["08-10",223.4,224.14,216.77,217.55],["08-11",222.17,222.2,216.2,217.5],["08-12",221.04,225.1,220.2,224.09],["08-13",225.06,227.23,223.71,225.3],["08-14",226.77,227.49,224.5,225.16],["08-17",225.98,227.92,224.86,225.01],["08-18",220.45,221.64,218.69,219.74],["08-19",221.67,222.87,216.76,217.56],["08-20",218.36,219.86,215.66,216.85],["08-21",218.42,218.74,214.5,214.72],["08-24",215.53,215.59,207.25,208.48],["08-25",211.03,214.73,210.11,213.05],["08-26",212.64,213.6,209.23,209.66],["08-27",222.86,230.47,220.9,227.98],["08-28",227.36,229.26,216.81,217.55],["08-31",218.87,221.3,216.21,220.78],["09-01",216.75,220.41,215.1,217.44],["09-02",218.79,227.95,218.48,224.41],["09-03",226.02,230.4,224.75,228.45],["09-04",231.09,234.76,229.63,230.36],["09-08",233.11,233.71,224.85,225.73],["09-09",225.28,226.18,223.46,223.67],["09-10",220.53,220.99,217.2,218.36],["09-11",221.24,222,218.15,218.29],["09-14",211.24,212.77,208.93,210.96],["09-15",213.38,213.94,211.16,212.17],["09-16",214.14,216.76,212.5,213.9],["09-17",218.38,219.91,217.15,219.34],["09-18",219.35,222.73,218.03,222.27],["09-21",222.94,228.5,221.56,227.38],["09-22",226.85,229.98,226.5,228.87],["09-23",228.03,228.95,224.02,225.51],["09-24",222.08,224.94,221.09,224.58],["09-25",225.13,226.94,223.13,225.07],["09-28",229.75,233.21,228.04,228.86],["09-29",230.97,232.82,227.03,227.21],["09-30",229.27,232.37,228.17,228.38],["10-01",229.98,232.29,228.16,230.86],["10-02",236.06,237.88,233.6,233.95],["10-05",236.09,240.1,235.15,238.9],["10-06",242.1,243.37,238.93,239.24],["10-07",237.69,239.08,236.38,237.47],["10-08",234.92,237.07,229.85,230.48],["10-09",233.84,233.92,229.11,229.28]];
+const LINE = 235;
+// What the probe reports, checking every 5 minutes: a price 6% or more away from the last close (on Aug 27 it opened 6.3%
+// higher), and the first price at or above the line (on Oct 2 it opened at 236.06).
+const MOVE = 0.06;
+const MOVED = CANDLES.findIndex(([, , high, low], i) => i > 0 && Math.max(high / CANDLES[i - 1][4] - 1, 1 - low / CANDLES[i - 1][4]) >= MOVE);
+const REACHED = CANDLES.findIndex(([, , high]) => high >= LINE);
+const MONTHS = { "07": "Jul", "08": "Aug", "09": "Sep", "10": "Oct" };
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(name, attrs, text) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function drawChart(box) {
+  const width = Math.max(280, Math.round(box.clientWidth));
+  const height = Math.round(Math.min(330, Math.max(230, width * 0.56)));
+  const pad = { left: 6, right: 40, top: 30, bottom: 50 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const low = 185, high = 250;
+  const y = (price) => pad.top + ((high - price) / (high - low)) * plotH;
+  const band = plotW / CANDLES.length;
+  const x = (i) => pad.left + band * (i + 0.5);
+  const body = Math.max(2, Math.min(9, band * 0.62));
+  const checksY = height - 28;
+  const mono = "var(--mono)";
+  const text = (x0, y0, value, extra = {}) => el("text", { x: x0, y: y0, "font-family": mono, "font-size": 11, fill: "var(--muted)", ...extra }, value);
+
+  const svg = el("svg", {
+    viewBox: `0 0 ${width} ${height}`,
+    width,
+    height,
+    role: "img",
+    "aria-label": "Illustrative NVDA watch using daily candles from July 13 to October 9, 2026. Markers show a large move on August 27 and an opening price above $235 on October 2.",
+  });
+
+  for (const price of [200, 220, 240]) {
+    svg.append(el("line", { x1: pad.left, x2: pad.left + plotW, y1: y(price), y2: y(price), stroke: "var(--line)", "stroke-width": 1 }));
+    svg.append(text(width - pad.right + 7, y(price) + 4, price));
+  }
+  CANDLES.forEach(([date], i) => {
+    const [month, day] = date.split("-");
+    if (i === 0 || CANDLES[i - 1][0].slice(0, 2) !== month) svg.append(text(x(i) - band / 2, height - 4, `${MONTHS[month]} ${Number(day)}`));
+  });
+
+  CANDLES.forEach(([, open, hi, lo, close], i) => {
+    const color = close >= open ? "var(--up)" : "var(--down)";
+    const top = y(Math.max(open, close));
+    svg.append(el("line", { x1: x(i), x2: x(i), y1: y(hi), y2: y(lo), stroke: color, "stroke-width": 1 }));
+    svg.append(el("rect", { x: x(i) - body / 2, y: top, width: body, height: Math.max(1, y(Math.min(open, close)) - top), fill: color, rx: 0.5 }));
+  });
+
+  svg.append(el("line", { x1: pad.left, x2: pad.left + plotW, y1: y(LINE), y2: y(LINE), stroke: "var(--signal)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
+  svg.append(text(width - pad.right + 7, y(LINE) + 4, LINE, { fill: "var(--signal)", "font-weight": 600 }));
+
+  // Every market day is checked; two of them fired.
+  CANDLES.forEach((_, i) => {
+    const fired = i === MOVED || i === REACHED;
+    svg.append(el("circle", { cx: x(i), cy: checksY, r: fired ? 4 : 1.6, fill: fired ? "var(--signal)" : "var(--muted)", opacity: fired ? 1 : 0.55 }));
+  });
+  svg.append(text(pad.left, checksY - 9, "scheduled checks, no model calls", { "font-size": 10.5 }));
+
+  // Each fire at the day's open, labeled with what it did in the free band above $240.
+  const labelY = y(244);
+  for (const [i, label, anchor] of [[MOVED, "big move", "middle"], [REACHED, "$235 hit", "end"]]) {
+    const open = CANDLES[i][1];
+    svg.append(el("line", { x1: x(i), x2: x(i), y1: labelY + 5, y2: checksY - 6, stroke: "var(--signal)", "stroke-width": 1, "stroke-dasharray": "2 3" }));
+    svg.append(el("circle", { cx: x(i), cy: y(open), r: 5.5, fill: "var(--surface)", stroke: "var(--signal)", "stroke-width": 2 }));
+    svg.append(text(anchor === "end" ? x(i) + 4 : x(i), labelY, label, { fill: "var(--accent)", "font-weight": 600, "text-anchor": anchor }));
+  }
+
+  box.replaceChildren(svg);
+}
+
+const plot = document.getElementById("plot");
+let drawnWidth = 0;
+const redraw = () => {
+  const width = Math.round(plot.clientWidth);
+  if (width === drawnWidth) return;
+  drawnWidth = width;
+  drawChart(plot);
+};
+redraw();
+if ("ResizeObserver" in window) new ResizeObserver(redraw).observe(plot);
+
 const AGENTS = ["codex", "claude", "zcode"];
 const HASHES = { codex: "#codex", claude: "#claude-code", zcode: "#zcode" };
 const tabs = [...document.querySelectorAll("[data-pick]")];
