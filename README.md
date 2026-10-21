@@ -1,9 +1,9 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Let your agent act when something happens.</b><br>
-Custom event triggers for Codex, Claude Code, ZCode and OpenCode.<br>
-Describe what to watch and what to do. A small local probe checks the condition;<br>
-your agent picks up the task when it fires. No model calls while the probe waits.</p>
+<p align="center"><b>Make Codex react to the changes you care about.</b><br>
+Watch PRs, issues, CI, local jobs or your brokerage account.<br>
+Local code watches. Codex acts when your condition is met.<br>
+Also works with Claude Code, ZCode and OpenCode.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
@@ -20,7 +20,20 @@ your agent picks up the task when it fires. No model calls while the probe waits
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
-When a training run finishes, ask your agent to compare the results. When CI fails, have it investigate. Keep working while Self-Starter watches files, commands, services or APIs on your machine.
+## What this plugin solves
+
+Your PR gets reviewed, a bug report arrives, CI fails, or your brokerage account changes while you are busy elsewhere. **Self-Starter lets Codex notice the change and automatically start the follow-up you asked for**, without you repeatedly checking and sending another prompt.
+
+Describe **what to watch and what to do next** in plain language. Codex writes and tests a small TypeScript probe that checks files, logs, commands or APIs. Your condition can be a new event, a threshold crossed, or a condition that stays true. The schedule controls how often the probe checks; your condition determines when Codex acts.
+
+**Routine probe checks make no model calls.** Local code does the waiting, so you do not need to keep a model in a "check again" loop. Setup, result-session initialization and agent actions can still use model tokens.
+
+- **PRs:** "When my PR gets new review comments, investigate them and propose changes."
+- **Issues:** "When a new issue is labelled bug, read the report and suggest where to investigate."
+- **CI:** "When a new run fails on my current commit, inspect its logs and suggest a fix."
+- **Markets and accounts:** "When my IBKR account report shows a new execution or withdrawal, explain what changed."
+
+Keep working while Self-Starter watches. When the condition matches, your agent picks up the next task.
 
 ## Install
 
@@ -125,6 +138,8 @@ Anything a small program can check. Your agent writes the probe, tries it once, 
 |---|---|---|
 | **Long jobs** | "When the training run finishes, compare it with the last one." | A log or output file |
 | **GPU availability** | "When the GPU is idle for ten minutes, start the next experiment." | `nvidia-smi` |
+| **PR reviews** | "When my PR gets new review comments, investigate them and propose changes." | GitHub pull requests |
+| **Issues** | "When a new issue is labelled bug, read the report and suggest where to investigate." | GitHub Issues |
 | **CI** | "When CI fails on main, investigate and suggest a fix." | GitHub Actions ([guide](docs/ci-watch.md)) |
 | **Releases** | "When a new version of zod is out, try it on a branch." | The npm registry |
 | **Services** | "If the dev server is down for two minutes, find out why." | A health endpoint |
