@@ -169,4 +169,24 @@ describe("probe runner", { skip: deno ? false : "the deno npm package is not ins
     assert.equal(slowResult.ok, false);
     assert.match(slowResult.ok ? "" : slowResult.error, /timed out/);
   });
+
+  it("decodes multi-byte UTF-8 output split mid-codepoint across chunks without corruption", async () => {
+    const { definition, dir } = probe(`
+      const payload = JSON.stringify({
+        fire: true,
+        summary: "Price alert 🚀 — café",
+        data: { detail: "multi-byte-utf8-🌍-é-λ—".repeat(500) },
+      }) + "\\n";
+      const bytes = new TextEncoder().encode(payload);
+      // Slice at prime-sized offsets so 2-, 3-, and 4-byte UTF-8 sequences are split across writes.
+      for (let i = 0; i < bytes.length; i += 7) {
+        Deno.stdout.writeSync(bytes.subarray(i, Math.min(i + 7, bytes.length)));
+      }
+    `, {}, "sandbox");
+    const result = await run(definition, dir);
+    assert.ok(result.ok, result.ok ? "" : result.error);
+    assert.equal(result.output.summary, "Price alert 🚀 — café");
+    assert.equal((result.output.data as { detail: string }).detail, "multi-byte-utf8-🌍-é-λ—".repeat(500));
+    assert.equal(JSON.stringify(result.output).includes("\uFFFD"), false);
+  });
 });

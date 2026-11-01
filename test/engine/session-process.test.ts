@@ -8,7 +8,7 @@ import { callDaemon, waitForDaemon } from "../../src/client/client.js";
 import { DEFAULT_CONFIG, saveConfig } from "../../src/engine/config.js";
 import { OpenCodeCli } from "../../src/engine/opencode.js";
 import { resolvePaths } from "../../src/engine/paths.js";
-import { markedPsProcesses, markedSessionProcesses, sessionProcesses, SHARED_DAEMON_SCOPE } from "../../src/engine/session-processes.js";
+import { killSessionProcesses, markedPsProcesses, markedSessionProcesses, sessionProcesses, SHARED_DAEMON_SCOPE } from "../../src/engine/session-processes.js";
 import { ZCodeCli } from "../../src/engine/zcode.js";
 import type { DraftView } from "../../src/engine/service.js";
 import { stopRunningDaemon } from "../../src/service/manager.js";
@@ -32,6 +32,45 @@ it("matches complete macOS ps environment markers without matching another run",
     ` 103 node other.js PREFIX_${marker}`,
     ` 104 node other.js ${marker}-suffix`,
   ].join("\n"), marker)], [101]);
+});
+
+it("kills frozen descendants even when a child rejects SIGSTOP with EPERM or ps fails mid-scan", () => {
+  const marker = "SELF_STARTER_RUN_TOKEN=run-1";
+  const signals: Array<[number, NodeJS.Signals]> = [];
+  const table = [
+    { pid: 10, parent: 1, uid: 501 },
+    { pid: 11, parent: 10, uid: 501 }, // e.g. restricted helper returning EPERM
+    { pid: 12, parent: 10, uid: 0 },   // root-owned child: skipped by uid check
+    { pid: 13, parent: 10, uid: 501 }, // normal child
+    { pid: 14, parent: 10, uid: 501 }, // shared daemon scope: preserved
+  ];
+  killSessionProcesses(marker, {
+    uid: 501,
+    list: () => table,
+    marked: (_procs, m) => m === marker ? new Set([10]) : new Set([14]),
+    kill: (pid, sig) => {
+      signals.push([pid, sig]);
+      if (pid === 11) throw Object.assign(new Error("EPERM"), { code: "EPERM" });
+    },
+  });
+  assert.deepEqual(signals.filter(([, sig]) => sig === "SIGKILL"), [
+    [13, "SIGKILL"],
+    [10, "SIGKILL"],
+  ]);
+  assert.equal(signals.some(([pid]) => pid === 12 || pid === 14), false);
+
+  const errorSignals: Array<[number, NodeJS.Signals]> = [];
+  let scans = 0;
+  assert.throws(() => killSessionProcesses(marker, {
+    uid: 501,
+    list: () => {
+      if (++scans > 1) throw new Error("ps failed");
+      return [{ pid: 20, parent: 1, uid: 501 }];
+    },
+    marked: (_procs, m) => m === marker ? new Set([20]) : new Set(),
+    kill: (pid, sig) => { errorSignals.push([pid, sig]); },
+  }), /ps failed/);
+  assert.deepEqual(errorSignals, [[20, "SIGSTOP"], [20, "SIGKILL"]], "already-frozen PIDs are never left stopped");
 });
 
 for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached tool ownership`, () => {

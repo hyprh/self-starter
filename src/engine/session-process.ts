@@ -6,7 +6,7 @@ import { linkSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isRecord } from "../core/patch.js";
 import { ensurePrivateDir } from "./fs-util.js";
-import { markedSessionProcesses, sessionProcesses, SHARED_DAEMON_SCOPE } from "./session-processes.js";
+import { killSessionProcesses } from "./session-processes.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
 const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : "zcode";
@@ -84,28 +84,7 @@ process.on("exit", release);
  * remain owned even when a child command constructs a clean environment.
  */
 function killRun(): void {
-  const signal = (pid: number, value: NodeJS.Signals) => {
-    try { process.kill(pid, value); return true; }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-      return false;
-    }
-  };
-  const frozen = new Set<number>();
-  for (;;) {
-    const table = sessionProcesses();
-    const marked = markedSessionProcesses(table, runMarker);
-    const shared = markedSessionProcesses(table, `SELF_STARTER_RUN_TOKEN=${SHARED_DAEMON_SCOPE}`);
-    let added = false;
-    for (const { pid, parent } of table) {
-      if (shared.has(pid) || frozen.has(pid) || !marked.has(pid) && !frozen.has(parent)) continue;
-      if (!signal(pid, "SIGSTOP")) continue;
-      frozen.add(pid);
-      added = true;
-    }
-    if (!added) break;
-  }
-  for (const pid of [...frozen].reverse()) signal(pid, "SIGKILL");
+  killSessionProcesses(runMarker);
 }
 
 function finish(): void {

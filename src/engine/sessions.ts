@@ -324,6 +324,7 @@ export class ClaudeCli implements SessionRunner {
     const args = ["-p", "--output-format", "json", "--permission-mode", PERMISSION_MODE[options.sandbox], "--allowedTools", PLUGIN_SERVER_RULE];
     args.push(...(options.start ? ["--session-id", options.sessionId, "--name", options.start.name] : ["--resume", options.sessionId]));
     const env = outsideSession(process.env);
+    env.SELF_STARTER_TRIGGER_TURN = "1";
     if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
     return new Promise((resolve) => {
       const child = spawn(this.command, [...this.prefix, ...args], { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
@@ -335,11 +336,13 @@ export class ClaudeCli implements SessionRunner {
         child.kill("SIGTERM");
         setTimeout(() => child.kill("SIGKILL"), 5000).unref();
       }, options.timeoutMs);
-      child.stdout.on("data", (chunk: Buffer) => {
-        stdout += chunk.toString("utf8");
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout += chunk;
       });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < 64 * 1024) stderr += chunk.toString("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        if (stderr.length < 64 * 1024) stderr += chunk.slice(0, 64 * 1024 - stderr.length);
       });
       child.stdin.on("error", () => undefined); // it exited before reading
       child.stdin.end(options.message);

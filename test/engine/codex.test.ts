@@ -228,5 +228,15 @@ describe("codex CLI wrapper", () => {
       const turnId = JSON.parse(readFileSync(process.env.FAKE_THREADS!, "utf8")).stuck.turns[0].id;
       assert.deepEqual(appServerCalls("turn/interrupt").at(-1)!.params, { threadId: "stuck", turnId }, "recorded as over, so it does not look busy later");
     });
+
+    it("times out a hung app-server request and kills the subprocess", async () => {
+      const hungScript = join(home.paths.home, "codex-hung.mjs");
+      writeFileSync(hungScript, `setInterval(() => {}, 1000);\n`);
+      const hung = new CodexCli(hungScript, 150);
+      await assert.rejects(hung.inspectThread("idle", "fire_1"), /timed out after .* waiting for initialize/);
+      const woken = await hung.wakeThread({ threadId: "idle", marker: "fire_1", sandbox: "read-only", timeoutMs: 5_000 });
+      assert.equal(woken.ok, false);
+      assert.match(woken.error ?? "", /timed out after .* waiting for initialize/);
+    });
   });
 });

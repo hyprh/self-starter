@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { PassThrough } from "node:stream";
 import { after, before, describe, it } from "node:test";
@@ -6,7 +8,7 @@ import { callDaemon, RemoteError } from "../../src/client/client.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../../src/daemon/daemon.js";
 import { bundledDeno } from "../../src/engine/config.js";
 import { callerFrom, runMcpServer, TOOLS } from "../../src/mcp/server.js";
-import { eventually, FakeCodex, FakeZCode, RecordingNotifier, STATE_PROBE, startServer, tempHome, type TestServer } from "../engine/fixtures.js";
+import { eventually, FakeClaude, FakeCodex, FakeZCode, RecordingNotifier, STATE_PROBE, startServer, tempHome, type TestServer } from "../engine/fixtures.js";
 
 const deno = bundledDeno();
 
@@ -64,6 +66,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   let home: ReturnType<typeof tempHome>;
   let daemon: Daemon;
   const codex = new FakeCodex();
+  const claude = new FakeClaude();
   const zcode = new FakeZCode();
   const notifier = new RecordingNotifier();
 
@@ -84,7 +87,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   before(async () => {
     server = await startServer();
     home = tempHome();
-    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => undefined, zcode: () => zcode, notifier });
+    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => claude, zcode: () => zcode, notifier });
   });
   after(async () => {
     await daemon.stop();
@@ -214,6 +217,49 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
       finish();
       zcode.during = undefined;
       await Promise.all([user.close(), background.close()]);
+    }
+  });
+
+  it("locks a headless Claude Code triggerTurn before and after trigger_report even without session hook files", async () => {
+    server.price = 100;
+    const user = new McpClient({ paths: home.paths, session: { sessionId: "s-cc-origin" }, ensureDaemon: async () => undefined });
+    const headless = new McpClient({ paths: home.paths, session: { sessionId: "s-cc-origin" }, triggerTurn: true, ensureDaemon: async () => undefined });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    claude.during = async () => { await gate; };
+    try {
+      const def = { ...definition("cc-watch"), policy: { max_fires: 2 }, target: { kind: "origin", cwd: home.paths.home } };
+      const draft = await user.tool("trigger_draft", { definition: def, code: STATE_PROBE }, {});
+      assert.equal(draft.isError, false, draft.text);
+      const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
+      const activated = await user.tool("trigger_activate", { draft_id: draftId }, {});
+      assert.equal(activated.isError, false, activated.text);
+      assert.equal(existsSync(join(home.paths.sessions, "s-cc-origin.json")), false, "no session hook file on disk");
+
+      server.price = 200;
+      const fire = await daemon.engine.runNow("cc-watch");
+      const fireId = fire?.fireId;
+      assert.ok(fireId);
+      await eventually(() => daemon.fires.get(fireId)?.status === "delivered");
+
+      const beforeReport = await headless.tool("trigger_draft", { definition: definition("cc-rogue"), code: STATE_PROBE }, {});
+      assert.equal(beforeReport.isError, true);
+      assert.match(beforeReport.text, /Cannot create a trigger now/);
+
+      const report = await headless.tool("trigger_report", { fire_id: fireId, summary: "Claude checked it", notify: false }, {});
+      assert.equal(report.isError, false, report.text);
+
+      // Even after trigger_report closes the fire and without any hook file, triggerTurn stays locked.
+      const afterReport = await headless.tool("trigger_draft", { definition: definition("cc-rogue"), code: STATE_PROBE }, {});
+      assert.equal(afterReport.isError, true);
+      assert.match(afterReport.text, /Cannot create a trigger now: this turn was started by Self-Starter/);
+      const pauseAttempt = await headless.tool("trigger_pause", { trigger_id: "cc-watch" }, {});
+      assert.equal(pauseAttempt.isError, true);
+      assert.match(pauseAttempt.text, /this turn was started by Self-Starter/);
+    } finally {
+      finish();
+      claude.during = undefined;
+      await Promise.all([user.close(), headless.close()]);
     }
   });
 });

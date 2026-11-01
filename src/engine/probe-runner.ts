@@ -124,11 +124,13 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
       }
     }, timeoutMs);
 
-    child.stdout.on("data", (chunk: Buffer) => {
-      if (stdout.length < STDOUT_LIMIT) stdout += chunk.toString("utf8");
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      if (stdout.length < STDOUT_LIMIT) stdout += chunk.slice(0, STDOUT_LIMIT - stdout.length);
     });
-    child.stderr.on("data", (chunk: Buffer) => {
-      if (stderr.length < STDERR_LIMIT) stderr += chunk.toString("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      if (stderr.length < STDERR_LIMIT) stderr += chunk.slice(0, STDERR_LIMIT - stderr.length);
     });
     child.on("error", (error) => {
       finish({ ok: false, error: `could not start deno: ${error.message}`, durationMs: Date.now() - started });

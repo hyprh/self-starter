@@ -384,13 +384,13 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
 
   /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
   const callerOf = (meta: unknown): Caller => {
-    if (host === "zcode") {
-      const caller = callerFrom(meta, host);
-      if (triggerTurn) caller.turnTrigger = "self-starter";
-      return caller;
-    }
-    if (!session) return callerFrom(meta);
-    return { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) };
+    const caller: Caller = host === "zcode"
+      ? callerFrom(meta, host)
+      : session
+        ? { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) }
+        : callerFrom(meta);
+    if (triggerTurn) caller.turnTrigger = "self-starter";
+    return caller;
   };
   const relayStarted = host === "claude-code" && session?.inbox
     ? startRelay(paths, session.inbox, session.token).catch((error: Error) => {

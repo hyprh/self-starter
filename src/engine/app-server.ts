@@ -57,6 +57,8 @@ export class Inbox {
   }
 }
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
 export class AppServerSession {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly replies = new Map<number, (message: RpcMessage) => void>();
@@ -65,7 +67,7 @@ export class AppServerSession {
   private stderr = "";
   private exitError: Error | undefined;
 
-  private constructor(command: string, args: string[], cwd: string | undefined) {
+  private constructor(command: string, args: string[], cwd: string | undefined, private readonly requestTimeoutMs: number) {
     this.child = spawn(command, [...args, "app-server"], { cwd, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdin.on("error", () => {});
     this.child.stderr.on("data", (chunk: Buffer) => {
@@ -77,8 +79,12 @@ export class AppServerSession {
   }
 
   /** Starts `codex app-server` and completes the initialize handshake; `experimental` opts into the API's experimental methods. */
-  static async open(command: string, args: string[], options: { cwd?: string; experimental?: boolean } = {}): Promise<AppServerSession> {
-    const session = new AppServerSession(command, args, options.cwd);
+  static async open(
+    command: string,
+    args: string[],
+    options: { cwd?: string; experimental?: boolean; requestTimeoutMs?: number } = {},
+  ): Promise<AppServerSession> {
+    const session = new AppServerSession(command, args, options.cwd, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
     try {
       const capabilities = options.experimental ? { capabilities: { experimentalApi: true } } : {};
       await session.request("initialize", { clientInfo: { name: "self-starter", version: "1" }, ...capabilities });
@@ -118,12 +124,23 @@ export class AppServerSession {
     for (const inbox of this.inboxes) inbox.fail(error);
   }
 
-  /** Sends a request and returns its result; a JSON-RPC error becomes an exception. */
-  request(method: string, params: Record<string, unknown>): Promise<Record<string, any>> {
+  /** Sends a request and returns its result; a JSON-RPC error or timeout becomes an exception. */
+  request(method: string, params: Record<string, unknown>, timeoutMs = this.requestTimeoutMs): Promise<Record<string, any>> {
     if (this.exitError) return Promise.reject(this.exitError);
     return new Promise((resolve, reject) => {
       const id = this.nextId++;
-      this.replies.set(id, (message) => (message.error ? reject(new Error(message.error.message ?? `${method} failed`)) : resolve(message.result ?? {})));
+      const timer = setTimeout(() => {
+        this.replies.delete(id);
+        const error = new Error(`timed out after ${Math.ceil(timeoutMs / 1000)}s waiting for ${method}`);
+        this.fail(error);
+        this.close();
+        reject(error);
+      }, timeoutMs);
+      this.replies.set(id, (message) => {
+        clearTimeout(timer);
+        if (message.error) reject(new Error(message.error.message ?? `${method} failed`));
+        else resolve(message.result ?? {});
+      });
       this.send({ id, method, params });
     });
   }

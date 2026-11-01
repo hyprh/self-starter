@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function write(path, value) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
@@ -40,7 +41,9 @@ try {
   const input = JSON.parse(readFileSync(0, "utf8"));
   const sessionId = input.session_id;
   if (typeof sessionId === "string" && /^[A-Za-z0-9-]{1,100}$/.test(sessionId)) {
-    const home = resolve(process.env.SELF_STARTER_HOME || join(homedir(), ".self-starter"));
+    const pluginRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+    const pinnedHome = read(join(pluginRoot, ".mcp.json"))?.mcpServers?.self_starter?.env?.SELF_STARTER_HOME;
+    const home = resolve(process.env.SELF_STARTER_HOME || pinnedHome || join(homedir(), ".self-starter"));
     const now = new Date().toISOString();
     const sessionFile = join(home, "sessions", `${sessionId}.json`);
     const inboxes = join(home, "inboxes");
