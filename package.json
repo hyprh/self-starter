@@ -39,7 +39,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.19.3",
+    "@opencode-ai/plugin": "1.19.4",
     "deno": "2.9.6",
     "jsonc-parser": "3.3.1",
     "nodemailer": "10.1.0",
