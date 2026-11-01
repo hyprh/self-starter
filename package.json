@@ -42,7 +42,7 @@
     "@opencode-ai/plugin": "1.19.4",
     "deno": "2.9.6",
     "jsonc-parser": "3.3.1",
-    "nodemailer": "10.1.0",
+    "nodemailer": "10.3.0",
     "yaml": "2.9.1"
   },
   "devDependencies": {
