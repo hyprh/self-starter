@@ -189,4 +189,71 @@ describe("probe runner", { skip: deno ? false : "the deno npm package is not ins
     assert.equal((result.output.data as { detail: string }).detail, "multi-byte-utf8-🌍-é-λ—".repeat(500));
     assert.equal(JSON.stringify(result.output).includes("\uFFFD"), false);
   });
+
+  it("rejects truncated output instead of treating an earlier true result as the final false result", async () => {
+    const { definition, dir } = probe(`
+      const first = (JSON.stringify({ fire: true, summary: "intermediate sample" }) + "\\n").padEnd(100, " ");
+      Deno.stdout.writeSync(new TextEncoder().encode(first));
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const final = " ".repeat(256 * 1024 - first.length) + "\\n"
+        + JSON.stringify({ fire: false, summary: "actual final result" }) + "\\n";
+      Deno.stdout.writeSync(new TextEncoder().encode(final));
+    `, {}, "sandbox");
+    const result = await run(definition, dir);
+    assert.equal(result.ok, false, "an incomplete final output must never fire from an old JSON line");
+    assert.match(result.ok ? "" : result.error, /stdout exceeded 262144 characters/);
+    assert.equal("output" in result, false);
+  });
+
+  it("accepts exactly the decoded character limit and rejects one extra character in a later chunk", async () => {
+    for (const extra of [false, true]) {
+      const { definition, dir } = probe(`
+        const json = JSON.stringify({ fire: false, summary: "Complete café 🚀" });
+        const output = " ".repeat(256 * 1024 - json.length) + json;
+        Deno.stdout.writeSync(new TextEncoder().encode(output));
+        ${extra ? 'await new Promise((resolve) => setTimeout(resolve, 80)); Deno.stdout.writeSync(new TextEncoder().encode(" "));' : ""}
+      `, {}, "sandbox");
+      const result = await run(definition, dir);
+      if (extra) {
+        assert.equal(result.ok, false);
+        assert.match(result.ok ? "" : result.error, /stdout exceeded 262144 characters/);
+      } else {
+        assert.ok(result.ok, result.ok ? "" : result.error);
+        assert.equal(result.output.summary, "Complete café 🚀");
+        assert.equal(result.output.mode === "state" && result.output.fire, false);
+      }
+    }
+  });
+
+  it("stops a probe and its commands when stdout overflows", async () => {
+    const { definition, dir } = probe(`
+      const child = new Deno.Command("sleep", { args: ["30"] }).spawn();
+      await Deno.writeTextFile("overflow-child.pid", String(child.pid));
+      Deno.stdout.writeSync(new TextEncoder().encode("x".repeat(256 * 1024 + 1)));
+      await child.status;
+    `);
+    const result = await run(definition, dir, { timeoutMs: 1500 });
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? "" : result.error, /stdout exceeded 262144 characters/);
+    assert.ok(result.durationMs < 1500, "overflow terminates the probe before its timeout");
+    const pid = Number(readFileSync(join(dir, "overflow-child.pid"), "utf8"));
+    await eventually(() => !running(pid));
+  });
+
+  it("decodes split UTF-8 stderr and bounds it without failing a valid stdout result", async () => {
+    const { definition, dir } = probe(`
+      const prefix = new TextEncoder().encode("Diagnostic café 🚀 λ\\n");
+      for (const byte of prefix) {
+        Deno.stderr.writeSync(Uint8Array.of(byte));
+      }
+      Deno.stderr.writeSync(new TextEncoder().encode("x".repeat(32 * 1024)));
+      console.log(JSON.stringify({ fire: false, summary: "Complete" }));
+    `, {}, "sandbox");
+    const result = await run(definition, dir);
+    assert.ok(result.ok, result.ok ? "" : result.error);
+    assert.equal(result.stderr.length, 16 * 1024);
+    assert.ok(result.stderr.startsWith("Diagnostic café 🚀 λ\n"));
+    assert.equal(result.stderr.includes("\uFFFD"), false);
+    assert.equal(result.output.summary, "Complete");
+  });
 });

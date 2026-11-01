@@ -270,6 +270,8 @@ export const PLUGIN_SERVER_RULE = "mcp__plugin_self-starter_self_starter";
 
 export interface SessionRunOptions {
   sessionId: string;
+  /** The fire assigned by the executor, for the headless MCP caller's mutation guard. */
+  fireId?: string;
   /** Start a new session with this id instead of resuming it. */
   start?: { name: string };
   cwd: string;
@@ -325,6 +327,8 @@ export class ClaudeCli implements SessionRunner {
     args.push(...(options.start ? ["--session-id", options.sessionId, "--name", options.start.name] : ["--resume", options.sessionId]));
     const env = outsideSession(process.env);
     env.SELF_STARTER_TRIGGER_TURN = "1";
+    delete env.SELF_STARTER_TRIGGER_FIRE_ID;
+    if (options.fireId) env.SELF_STARTER_TRIGGER_FIRE_ID = options.fireId;
     if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
     return new Promise((resolve) => {
       const child = spawn(this.command, [...this.prefix, ...args], { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });

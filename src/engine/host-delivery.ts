@@ -578,6 +578,7 @@ export class HostDelivery {
     const session = readSession(this.deps.paths, sessionId);
     const result = await claude.run({
       sessionId,
+      fireId: fire.fireId,
       // The trigger's own session follows target.cwd; a session of the user's keeps its folder.
       cwd: folderOrHome(fire.target?.kind === "dedicated" ? definition.target.cwd : session?.cwd),
       message,

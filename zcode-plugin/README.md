@@ -8,7 +8,7 @@ This first integration supports **dedicated CLI result sessions**. It does not r
 
 ## Source installation
 
-Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user. This integration is included in Self-Starter v0.0.4. Use a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4).
+Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user. This integration has been available since Self-Starter v0.0.4. Use a checkout of the [v0.0.5 tag](https://github.com/hyprh/self-starter/tree/v0.0.5).
 
 From the repository root:
 

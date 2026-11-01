@@ -42,6 +42,8 @@ export interface Caller {
   turnId?: string;
   /** "queue" for turns started by a queued message, such as a trigger fire. */
   turnTrigger?: string;
+  /** The fire bound by the trusted headless runner, never a tool argument or request metadata. */
+  triggerFireId?: string;
   /** The working directory supplied by the host, rather than a tool argument. */
   cwd?: string;
 }

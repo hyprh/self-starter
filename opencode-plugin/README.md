@@ -8,7 +8,7 @@ This integration uses **dedicated result sessions**. It does not inject events i
 
 ## Source installation
 
-Requires macOS or Linux, Node.js 20 or newer, and an OpenCode CLI already configured and authenticated by the user. Supported versions are **1.19.3 or newer within 1.x**; the developing v2 plugin API is not supported. This integration is included in Self-Starter v0.0.4. Use a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4).
+Requires macOS or Linux, Node.js 20 or newer, and an OpenCode CLI already configured and authenticated by the user. Supported versions are **1.19.3 or newer within 1.x**; the developing v2 plugin API is not supported. This integration has been available since Self-Starter v0.0.4. Use a checkout of the [v0.0.5 tag](https://github.com/hyprh/self-starter/tree/v0.0.5).
 
 From the repository root:
 

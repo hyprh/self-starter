@@ -785,7 +785,7 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
     await t.activate({ target: { kind: "origin" }, action: { type: "agent", prompt: "Find out why.", sandbox: "read-only" } }, STATE_PROBE, fromSession());
     const delivered = await fire();
     const run = await eventually(() => t.claude.runs[0]);
-    assert.deepEqual({ ...run, message: "" }, { sessionId: "s1", cwd: t.paths.logs, message: "", sandbox: "read-only", configDir: "/somewhere/claude", timeoutMs: 20 * 60_000 });
+    assert.deepEqual({ ...run, message: "" }, { sessionId: "s1", fireId: delivered.fireId, cwd: t.paths.logs, message: "", sandbox: "read-only", configDir: "/somewhere/claude", timeoutMs: 20 * 60_000 });
     assert.match(run.message, /^\[self-starter\] Price above 150 \(price-alert · fire #1 · fire_/);
     const done = await eventually(() => (t.fires.get(delivered.fireId)?.receipt ? t.fires.get(delivered.fireId) : undefined));
     assert.deepEqual(done.target, { kind: "origin", threadId: "cc:s1", via: "headless" });
@@ -989,12 +989,18 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
   });
 
   it("does not let a turn that a fire started create or change triggers, except to make that one quieter", async () => {
-    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
+    await t.activate({ id: "older-watch", target: { kind: "origin" } }, STATE_PROBE, fromSession());
     t.openSessions.add("s1");
+    const older = await fire("older-watch");
+    t.service.report({ fireId: older.fireId, summary: "Older watch finished", notify: false }, fromSession());
+    turn("s1", false); // Its hook ended B's posted turn before A starts.
+    server.price = 100;
+    await t.activate({ target: { kind: "origin" } }, STATE_PROBE, fromSession());
     const delivered = await fire();
     // The hook saw the fire start the session's turn; then the turn reported.
     record("s1", { turn: { at: new Date().toISOString(), trigger: true, line: `[self-starter] Price above 150 (price-alert · fire #1 · ${delivered.fireId})` } });
     t.service.report({ fireId: delivered.fireId, summary: "Reported", notify: false }, fromSession());
+    await assert.rejects(t.service.tuneTrigger({ triggerId: "older-watch", reason: "A different watch", pause: true }, fromSession()), /only the trigger that fired/);
     await assert.rejects(t.service.createDraft({ definition: t.definition({ id: "more" }), code: STATE_PROBE }, fromSession()), /this turn was started by a Self-Starter message/);
     const tuned = await t.service.tuneTrigger({ triggerId: "price-alert", reason: "Fired on every check.", cooldown: "1h" }, fromSession());
     assert.deepEqual(tuned.changes, ["waits 1h after a fire (was no wait)"]);

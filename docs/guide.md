@@ -51,7 +51,7 @@ The ZCode integration uses dedicated CLI result sessions. It shares the probe en
 
 ## OpenCode
 
-The OpenCode integration is included in v0.0.4 for **OpenCode >=1.19.3 and <2**. Install it from a checkout with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
+The OpenCode integration has been available since v0.0.4 for **OpenCode >=1.19.3 and <2**. Install it from the [v0.0.5 release checkout](https://github.com/hyprh/self-starter/tree/v0.0.5) with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
 
 Each watch uses a dedicated result session in the watch's working directory. Self-Starter resumes the same session for subsequent events with `opencode run --session <id> --format json`, so the UI can be closed while it works. The machine must remain awake and the CLI must have model access. `target.kind: origin` is rejected; the conversation where you created the watch is not used for event execution. Avoid running another task in the result session while the watch is active.
 

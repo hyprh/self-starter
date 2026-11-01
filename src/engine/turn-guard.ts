@@ -66,13 +66,23 @@ export class TurnGuard {
   /** The triggers whose fires the caller's turn is handling or handled. */
   private firingTriggers(caller: Caller): Set<string> {
     const ids = new Set<string>();
+    const sessionId = sessionIdOf(caller.threadId);
+    if (sessionId) {
+      // An origin Claude session can serve several watches. A process-wide
+      // trigger marker locks mutations, but cannot authorize quieting every
+      // watch that has ever used the session, including after a receipt.
+      const started = caller.turnTrigger === "self-starter"
+        ? { fireId: caller.triggerFireId }
+        : triggerTurn(this.paths, sessionId);
+      if (started) {
+        const fire = started.fireId ? this.fires.get(started.fireId) : undefined;
+        if (fire && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
+        return ids;
+      }
+    }
     const turn = this.turnKey(caller);
     const reported = turn ? this.reportedTurns.get(turn) : undefined;
     if (reported) ids.add(reported);
-    const sessionId = sessionIdOf(caller.threadId);
-    const fireId = sessionId ? triggerTurn(this.paths, sessionId)?.fireId : undefined;
-    const started = fireId ? this.fires.get(fireId) : undefined;
-    if (started) ids.add(started.triggerId);
     for (const fire of this.fires.all()) {
       if ((fire.status === "delivered" || caller.turnTrigger === "self-starter") && caller.threadId && fire.target?.threadId === caller.threadId) {
         ids.add(fire.triggerId);

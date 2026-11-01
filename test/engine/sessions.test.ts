@@ -226,7 +226,7 @@ describe("headless turns", () => {
     const bin = join(scratch, "claude");
     writeFileSync(
       bin,
-      `#!/bin/sh\nprintf '%s\\n' "$PWD" "$CLAUDE_CONFIG_DIR" "\${CLAUDE_CODE_SESSION_ID:-none} \${CLAUDE_CODE_USE_BEDROCK:-none} \${SELF_STARTER_TRIGGER_TURN:-none}" "$@" > "${scratch}/args"\ncat > "${scratch}/stdin"\n${script}\n`,
+      `#!/bin/sh\nprintf '%s\\n' "$PWD" "$CLAUDE_CONFIG_DIR" "\${CLAUDE_CODE_SESSION_ID:-none} \${CLAUDE_CODE_USE_BEDROCK:-none} \${SELF_STARTER_TRIGGER_TURN:-none} \${SELF_STARTER_TRIGGER_FIRE_ID:-none}" "$@" > "${scratch}/args"\ncat > "${scratch}/stdin"\n${script}\n`,
     );
     chmodSync(bin, 0o755);
     return bin;
@@ -250,7 +250,7 @@ describe("headless turns", () => {
     assert.deepEqual(recorded(), [
       realpathSync(scratch), // as the shell sees it (the temporary folder of macOS is behind a symlink)
       "/cfg",
-      "none 1 1", // nothing of the session the daemon may have been started from, user settings kept, and marked as a trigger turn
+      "none 1 1 none", // user settings kept, marked as a trigger turn, no unrelated fire binding
       "-p",
       "--output-format",
       "json",
@@ -265,6 +265,21 @@ describe("headless turns", () => {
 
     await claude.run({ sessionId: "new-id", start: { name: "Trigger: Flag" }, cwd: scratch, message: "seed", sandbox: "workspace-write", timeoutMs: 10_000 });
     assert.deepEqual(recorded().slice(7), ["acceptEdits", "--allowedTools", "mcp__plugin_self-starter_self_starter", "--session-id", "new-id", "--name", "Trigger: Flag"]);
+  });
+
+  it("binds only the assigned fire and clears an inherited fire binding when starting a seed", async () => {
+    const claude = new ClaudeCli(fakeClaude(`echo '{"is_error":false,"result":"done"}'`));
+    const saved = process.env.SELF_STARTER_TRIGGER_FIRE_ID;
+    process.env.SELF_STARTER_TRIGGER_FIRE_ID = "fire_inherited";
+    try {
+      await claude.run({ sessionId: "s1", fireId: "fire_assigned", cwd: scratch, message: "untrusted fire_other", sandbox: "read-only", timeoutMs: 10_000 });
+      assert.match(recorded()[2]!, / 1 fire_assigned$/);
+      await claude.run({ sessionId: "seed-id", start: { name: "Trigger: Seed" }, cwd: scratch, message: "seed", sandbox: "read-only", timeoutMs: 10_000 });
+      assert.match(recorded()[2]!, / 1 none$/, "a daemon inherited from another turn cannot give a seed that old fire's authority");
+    } finally {
+      if (saved === undefined) delete process.env.SELF_STARTER_TRIGGER_FIRE_ID;
+      else process.env.SELF_STARTER_TRIGGER_FIRE_ID = saved;
+    }
   });
 
   it("reports why a run failed", async () => {
