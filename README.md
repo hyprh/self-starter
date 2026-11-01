@@ -1,12 +1,12 @@
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Let Codex keep watch—and pick up where you left off.</b><br>
-CI failed? New PR comments? A training run finished?<br>
-Ask for follow-ups in the same Codex conversation, with its existing context.<br>
-Works with Codex, Claude Code, ZCode and OpenCode.</p>
+<p align="center"><b>Local, zero-token event triggers for Claude Code, Codex, OpenCode and ZCode.</b><br>
+CI failed? New PR comments? A training run finished? GPU finally idle?<br>
+Local code keeps watch—even after you close your terminal—and brings the follow-up back to your conversation.</p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
+  <a href="#what-this-plugin-solves">Why Self-Starter</a> ·
   <a href="#demo">Demo</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
@@ -20,33 +20,41 @@ Works with Codex, Claude Code, ZCode and OpenCode.</p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
 </p>
 
-## Demo
-
-**Keep working. Get the result when it is ready.** A Futu watch spots an unusual move, Codex investigates it, and Self-Starter can notify you with the result.
-
-<p align="center">
-  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
-</p>
-
-*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical.*
-
 ## What this plugin solves
 
-Give Codex an ongoing responsibility: watch your PRs, jobs or account activity, and keep handling the follow-up in the conversation where you already work.
+Give your coding agent an ongoing responsibility: watch your PRs, long-running jobs, local services or external APIs, and handle the follow-up with the context you already built.
 
-**Ask once: "Keep watching this PR. When CI fails or new review comments arrive, investigate and continue in this conversation."** Self-Starter can bring future events back to the original Codex thread, so Codex can pick up the work with the context already there.
+**Ask once: "Keep watching this PR. When CI fails or new review comments arrive, investigate and continue in this conversation."** Your agent writes and tests a small local TypeScript probe, hands it to a background `launchd` or `systemd` service, and steps aside until the condition actually happens.
 
-| When this happens… | Codex picks up the next task |
+| When this happens… | Your agent picks up the next task |
 |---|---|
-| A new CI run fails on your commit | Read the logs and suggest a fix |
+| A new CI run fails on your commit | Read the failing job logs and suggest a fix ([walkthrough](docs/ci-watch.md)) |
 | Your PR gets new review comments | Investigate the feedback and propose changes |
-| A new issue is labelled bug | Read the report and identify relevant code |
-| Your training run finishes | Compare its results with the previous run |
-| Your brokerage account report updates | Explain new trades or cash movements |
+| Your training run finishes or `nvidia-smi` shows an idle GPU | Compare metrics with the last run or start the next experiment |
+| A local or staging service stays down for two minutes | Inspect recent logs and trace the root cause |
+| A research feed, package registry or brokerage report updates | Summarize what changed and notify you ([recipes](recipes)) |
 
-**Closing Codex does not end the watch.** While your machine is awake, an independent local service keeps checking the custom probe Codex wrote for your files, logs, commands or APIs. When the condition matches, it can resume the conversation and hand Codex the next task. **Code does the waiting. Codex does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
+### Why not built-in polling or cloud schedules?
 
-Repeating watches use a dedicated result thread by default. Ask to **continue in this conversation** to keep follow-ups in your original Codex thread. See [where Codex answers](docs/guide.md#where-codex-answers) and the platform-specific destinations below.
+| Approach | Tokens while waiting | Survives closing terminal / app? | Sees local files, GPUs & `localhost`? | Continues in your local conversation? |
+|---|---|---|---|---|
+| **In-session polling (`/loop`, thread timers)** | Calls the model on every check | No — stops when the session closes | Yes | Yes, while open |
+| **Cloud routines & remote schedules** | Calls the model on every scheduled run | Yes (runs in the cloud) | No — isolated from your machine & LAN | No — starts separate cloud runs |
+| **Self-Starter** | **Zero** during routine probe checks | **Yes** (`launchd` / `systemd` service) | **Yes** (logs, `nvidia-smi`, CLIs, APIs) | **Yes** in Codex & Claude Code; dedicated CLI session in OpenCode & ZCode |
+
+**Closing your terminal or app does not end the watch.** While your machine is awake, an independent local service keeps running the probe and enforces state transitions (`not-met → met`), minimum duration, deduplication, cooldowns and expiry. **Code does the waiting. Your agent does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
+
+Repeating watches use a dedicated result session by default. In Codex and Claude Code, ask to **continue in this conversation** to keep follow-ups in your original thread (delivered between turns while open, or resumed in the background when closed). See [where the agent answers](docs/guide.md#where-codex-answers) and the platform-specific destinations below.
+
+## Demo
+
+**Keep working. Get the result when it is ready.** For custom APIs as well as dev workflows, a local probe waits at zero token cost, wakes the agent when the condition hits, and sends a desktop notification once the investigation is ready:
+
+<p align="center">
+  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter demo: ask for a watch, keep working while a local probe waits, let Codex investigate when the event fires, and receive a desktop notification that the investigation is ready.">
+</p>
+
+*Edited replay of a real watch (Futu market move → Codex investigation → desktop notification; interface illustrated, quotes historical). For a pure engineering workflow, see [Investigate a new CI failure](docs/ci-watch.md).*
 
 ## Install
 
