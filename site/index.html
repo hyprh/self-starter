@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="en" data-agent="codex">
+<html lang="en" data-agent="codex" data-scene="ci">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Self-Starter — Event triggers for Codex, Claude Code, ZCode and OpenCode</title>
+<title>Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode</title>
 <link rel="icon" type="image/svg+xml" href="./icon-trigger.svg">
-<meta name="description" content="Watch files, jobs, services and APIs with local code. Self-Starter hands the next task to Codex, Claude Code, ZCode or OpenCode when your condition is met.">
+<meta name="description" content="Watch CI runs, training jobs, GPUs, local services and APIs at zero token cost—even after closing your terminal—and resume your conversation in Claude Code, Codex, OpenCode or ZCode.">
 <link rel="canonical" href="https://hyprh.github.io/self-starter/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Self-Starter">
-<meta property="og:title" content="Self-Starter — Custom event triggers for Codex, Claude Code, ZCode and OpenCode">
-<meta property="og:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
+<meta property="og:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
+<meta property="og:description" content="Local code watches PRs, jobs, GPUs, services and APIs while your terminal is closed—with zero model calls while waiting—and wakes your conversation when it happens.">
 <meta property="og:url" content="https://hyprh.github.io/self-starter/">
 <meta property="og:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta property="og:image:type" content="image/png">
@@ -18,8 +18,8 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Self-Starter — Custom event triggers for Codex, Claude Code, ZCode and OpenCode">
-<meta name="twitter:description" content="Describe your condition in plain language. Local code checks it without calling a model; when it happens, your agent picks up the task.">
+<meta name="twitter:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
+<meta name="twitter:description" content="Local code watches PRs, jobs, GPUs, services and APIs while your terminal is closed—with zero model calls while waiting—and wakes your conversation when it happens.">
 <meta name="twitter:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta name="twitter:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <script>
@@ -334,6 +334,158 @@ code:not(pre code) {
   margin-top: 8px;
   font-size: .7rem;
   color: var(--muted)
+}
+
+.showcase-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--soft)
+}
+
+.showcase-tabs button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 .78rem var(--font);
+  cursor: pointer
+}
+
+.showcase-tabs button[aria-selected=true] {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--fg)
+}
+
+[data-scene-panel] {
+  display: none;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0
+}
+
+html:not([data-scene]) [data-scene-panel=ci],html[data-scene=ci] [data-scene-panel=ci],html[data-scene=market] [data-scene-panel=market] {
+  display: flex
+}
+
+.ci-trace {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  padding: 12px 14px;
+  display: grid;
+  gap: 9px;
+  font: .73rem/1.45 var(--mono)
+}
+
+.ci-trace-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: .68rem
+}
+
+.ci-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--green);
+  font-weight: 500;
+  white-space: nowrap
+}
+
+.ci-row {
+  display: grid;
+  grid-template-columns: 68px 10px minmax(0,1fr);
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted)
+}
+
+.ci-row.fired {
+  color: var(--fg);
+  font-weight: 500
+}
+
+.ci-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: .55
+}
+
+.ci-dot.ok {
+  background: var(--up);
+  opacity: .85
+}
+
+.ci-dot.fire {
+  background: var(--signal);
+  opacity: 1;
+  box-shadow: 0 0 0 3px var(--signal-soft)
+}
+
+.compare-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface)
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: .88rem;
+  text-align: left
+}
+
+.compare-table th,.compare-table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top
+}
+
+.compare-table thead th {
+  background: var(--soft);
+  font: 600 .76rem var(--mono);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--muted)
+}
+
+.compare-table tbody tr:last-child th,.compare-table tbody tr:last-child td {
+  border-bottom: 0
+}
+
+.compare-table tbody th {
+  font-weight: 600;
+  color: var(--fg);
+  width: 24%
+}
+
+.compare-table td {
+  color: var(--muted)
+}
+
+.compare-table tr.highlight th,.compare-table tr.highlight td {
+  background: var(--signal-soft);
+  color: var(--fg)
+}
+
+.compare-table tr.highlight td b {
+  color: var(--green)
 }
 
 .market-case {
@@ -904,38 +1056,111 @@ footer>.wrap {
 <body>
 <header class="wrap top">
   <a class="brand" href="./"><img src="icon-trigger.svg" alt="" width="28" height="28">Self-Starter</a>
-  <nav aria-label="Main navigation"><a href="#install">Install</a><a href="#examples">Examples</a><a class="secondary-nav" href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">Guide</a><a href="https://github.com/hyprh/self-starter">GitHub ↗</a></nav>
+  <nav aria-label="Main navigation"><a href="#why">Why Self-Starter</a><a href="#install">Install</a><a href="#examples">Examples</a><a class="secondary-nav" href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">Guide</a><a href="https://github.com/hyprh/self-starter">GitHub ↗</a></nav>
 </header>
 <main>
   <div class="wrap hero">
     <div>
-      <p class="eyebrow">Custom events for coding agents</p>
+      <p class="eyebrow">Local event triggers for coding agents</p>
       <h1>Ask once.<br>Act when it happens.</h1>
-      <p class="lede">Tell your agent what to watch and what to do next. Local code checks files, jobs, services and APIs. When your condition is met, your agent picks up the task.</p>
-      <p class="platform-line"><b>Codex</b> &nbsp;·&nbsp; <b>Claude Code</b> &nbsp;·&nbsp; <b>ZCode</b> <small>source install</small> &nbsp;·&nbsp; <b>OpenCode</b> <small>source install</small></p>
-      <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#examples">See what it can watch →</a></div>
-      <p class="promise">Local probes. No model calls while waiting. macOS and Linux.</p>
+      <p class="lede">Tell your agent what to watch and what to do next. Local code checks PRs, training jobs, GPUs, services and APIs—even after you close your terminal—and brings the follow-up back to your conversation.</p>
+      <p class="platform-line"><b>Claude Code</b> &nbsp;·&nbsp; <b>Codex</b> &nbsp;·&nbsp; <b>OpenCode</b> <small>source install</small> &nbsp;·&nbsp; <b>ZCode</b> <small>source install</small></p>
+      <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#why">Why not /loop? →</a></div>
+      <p class="promise">Zero model calls while waiting · Runs while terminal is closed (launchd / systemd) · macOS and Linux</p>
     </div>
-    <div class="market-watch" aria-label="Illustrative stock watch with historical NVDA prices">
-      <div class="market-title"><span>NVDA / A WATCH IN ACTION</span><span>Example conversation</span></div>
-      <div class="market-message you">
-        <span class="who">You · Jul 13</span>
-        <p>Watch NVDA. If it moves 6% from the previous close or reaches $235, investigate and tell me what changed.</p>
+    <div class="market-watch" aria-label="Example watches in action">
+      <div class="showcase-tabs" role="tablist" aria-label="Example watch scenario">
+        <button id="scene-tab-ci" type="button" role="tab" data-scene-pick="ci" aria-controls="scene-ci" aria-selected="true">CI &amp; PR watch</button>
+        <button id="scene-tab-market" type="button" role="tab" data-scene-pick="market" aria-controls="scene-market" aria-selected="false" tabindex="-1">Market watch (NVDA)</button>
       </div>
-      <figure class="market-chart">
-        <div class="plot" id="plot"></div>
-        <figcaption>Historical daily candles, Jul 13–Oct 9, 2026, from Yahoo Finance. The conversation and checks are illustrative; the markers show a large move and the first crossing of $235.</figcaption>
-      </figure>
-      <div class="market-message">
-        <span class="who">Your agent · Aug 27</span>
-        <p>NVDA opened 6.3% higher at $222.86. I'll investigate the move and report what changed.</p>
+      <div id="scene-ci" data-scene-panel="ci" role="tabpanel" aria-labelledby="scene-tab-ci" tabindex="0">
+        <div class="market-title"><span>PR #128 / BACKGROUND CI WATCH</span><span>Original session resumed</span></div>
+        <div class="market-message you">
+          <span class="who">You · 14:10 · then closed terminal</span>
+          <p>Keep watching PR #128. When CI fails on a new commit or review comments arrive, read the logs and continue in this conversation.</p>
+        </div>
+        <figure class="market-chart">
+          <div class="ci-trace" role="img" aria-label="Local daemon timeline: 13 scheduled gh api checks with zero model calls while terminal is closed, followed by a failed CI run that wakes the session.">
+            <div class="ci-trace-head"><span>launchd / systemd · local TypeScript probe</span><span class="ci-badge">0 model calls</span></div>
+            <div class="ci-row"><span>14:12</span><span class="ci-dot ok"></span><span>Baseline recorded on head a81f09d (all checks green)</span></div>
+            <div class="ci-row"><span>14:14–38</span><span class="ci-dot"></span><span>12 scheduled gh api checks · terminal closed · 0 tokens</span></div>
+            <div class="ci-row fired"><span>14:40</span><span class="ci-dot fire"></span><span>Run #4918 failed on e4a91c2 (test-linux, attempt 1)</span></div>
+            <div class="ci-row"><span>14:40</span><span class="ci-dot ok"></span><span>Deduplicated event → resuming original conversation</span></div>
+          </div>
+          <figcaption>Illustrative GitHub Actions watch (<a href="https://github.com/hyprh/self-starter/blob/main/docs/ci-watch.md">walkthrough</a>). Plain code polls and deduplicates run attempts; the model runs only when a new failure hits.</figcaption>
+        </figure>
+        <div class="market-message">
+          <span class="who">Claude Code / Codex · 14:41 · back in your thread</span>
+          <p>Run #4918 failed on e4a91c2 in <code>session-process.test.ts</code>: an inherited pipe stayed open after timeout. I traced it to <code>session-process.ts:142</code> and drafted a fix.</p>
+        </div>
       </div>
-      <div class="market-message">
-        <span class="who">Your agent · Oct 2</span>
-        <p>NVDA opened at $236.06, above your $235 line. I'll check the latest context and send you an update.</p>
+      <div id="scene-market" data-scene-panel="market" role="tabpanel" aria-labelledby="scene-tab-market" tabindex="0">
+        <div class="market-title"><span>NVDA / A WATCH IN ACTION</span><span>Example conversation</span></div>
+        <div class="market-message you">
+          <span class="who">You · Jul 13</span>
+          <p>Watch NVDA. If it moves 6% from the previous close or reaches $235, investigate and tell me what changed.</p>
+        </div>
+        <figure class="market-chart">
+          <div class="plot" id="plot"></div>
+          <figcaption>Historical daily candles, Jul 13–Oct 9, 2026, from Yahoo Finance. The conversation and checks are illustrative; the markers show a large move and the first crossing of $235.</figcaption>
+        </figure>
+        <div class="market-message">
+          <span class="who">Your agent · Aug 27</span>
+          <p>NVDA opened 6.3% higher at $222.86. I'll investigate the move and report what changed.</p>
+        </div>
+        <div class="market-message">
+          <span class="who">Your agent · Oct 2</span>
+          <p>NVDA opened at $236.06, above your $235 line. I'll check the latest context and send you an update.</p>
+        </div>
       </div>
     </div>
   </div>
+
+  <section id="why">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Why Self-Starter</p>
+        <h2>Stop burning quota on polling—or losing local context.</h2>
+        <p class="sub">In-session loops call the model on every check and die when you close the terminal. Cloud schedules cannot see your machine or resume your local thread. Self-Starter puts plain code in the middle and the model at both ends.</p>
+      </div>
+      <div class="compare-wrap">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th scope="col">Approach</th>
+              <th scope="col">Tokens while waiting</th>
+              <th scope="col">Survives closing terminal?</th>
+              <th scope="col">Sees local files, GPUs &amp; LAN?</th>
+              <th scope="col">Continues in your conversation?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">In-session polling (<code>/loop</code>, thread timers)</th>
+              <td>Calls the model on every check</td>
+              <td>No — stops with the session</td>
+              <td>Yes</td>
+              <td>Yes, while open</td>
+            </tr>
+            <tr>
+              <th scope="row">Cloud routines &amp; remote schedules</th>
+              <td>Calls the model on every scheduled run</td>
+              <td>Yes (runs in the cloud)</td>
+              <td>No — isolated from your machine</td>
+              <td>No — opens separate cloud runs</td>
+            </tr>
+            <tr class="highlight">
+              <th scope="row">Self-Starter</th>
+              <td><b>Zero</b> during routine probe checks</td>
+              <td><b>Yes</b> (<code>launchd</code> / <code>systemd</code> service)</td>
+              <td><b>Yes</b> (logs, <code>nvidia-smi</code>, CLIs, APIs)</td>
+              <td><b>Yes</b> in Codex &amp; Claude Code; dedicated CLI session in OpenCode &amp; ZCode</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 
   <section id="install">
     <div class="wrap">
@@ -1147,12 +1372,41 @@ const plot = document.getElementById("plot");
 let drawnWidth = 0;
 const redraw = () => {
   const width = Math.round(plot.clientWidth);
-  if (width === drawnWidth) return;
+  if (width <= 0 || width === drawnWidth) return;
   drawnWidth = width;
   drawChart(plot);
 };
 redraw();
 if ("ResizeObserver" in window) new ResizeObserver(redraw).observe(plot);
+
+const SCENES = ["ci", "market"];
+const sceneTabs = [...document.querySelectorAll("[data-scene-pick]")];
+function pickScene(scene) {
+  if (!SCENES.includes(scene)) scene = "ci";
+  document.documentElement.dataset.scene = scene;
+  for (const tab of sceneTabs) {
+    const active = tab.dataset.scenePick === scene;
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  }
+  if (scene === "market") redraw();
+}
+pickScene(document.documentElement.dataset.scene);
+for (const tab of sceneTabs) {
+  tab.addEventListener("click", () => pickScene(tab.dataset.scenePick));
+  tab.addEventListener("keydown", (event) => {
+    const index = sceneTabs.indexOf(tab);
+    let next;
+    if (event.key === "ArrowRight") next = (index + 1) % sceneTabs.length;
+    else if (event.key === "ArrowLeft") next = (index + sceneTabs.length - 1) % sceneTabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = sceneTabs.length - 1;
+    if (next === undefined) return;
+    event.preventDefault();
+    pickScene(sceneTabs[next].dataset.scenePick);
+    sceneTabs[next].focus();
+  });
+}
 
 const AGENTS = ["codex", "claude", "zcode", "opencode"];
 const HASHES = { codex: "#codex", claude: "#claude-code", zcode: "#zcode", opencode: "#opencode" };
