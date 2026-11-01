@@ -288,8 +288,10 @@ export interface McpServerOptions {
   /** Set when Claude Code started the server; read from the environment by default. */
   session?: SessionHost;
   host?: Host;
-  /** Set only for MCP servers inherited by a daemon-started ZCode turn. */
+  /** Set only for MCP servers inherited by a daemon-started turn. */
   triggerTurn?: boolean;
+  /** Trusted Claude headless run binding, supplied by its process environment. */
+  triggerFireId?: string;
   /**
    * The plugin's launcher already answered `initialize` (with no tools), because installing this runtime
    * took longer than the host waits: the server tells the host that its tools changed, so it lists them again.
@@ -381,6 +383,7 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
   const session = "session" in options ? options.session : sessionHostFrom(process.env);
   const host: Host = options.host ?? (process.env.SELF_STARTER_HOST === "zcode" ? "zcode" : session ? "claude-code" : "codex");
   const triggerTurn = options.triggerTurn ?? process.env.SELF_STARTER_TRIGGER_TURN === "1";
+  const triggerFireId = options.triggerFireId ?? process.env.SELF_STARTER_TRIGGER_FIRE_ID;
 
   /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
   const callerOf = (meta: unknown): Caller => {
@@ -389,7 +392,10 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
       : session
         ? { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) }
         : callerFrom(meta);
-    if (triggerTurn) caller.turnTrigger = "self-starter";
+    if (triggerTurn) {
+      caller.turnTrigger = "self-starter";
+      if (host === "claude-code" && triggerFireId) caller.triggerFireId = triggerFireId;
+    }
     return caller;
   };
   const relayStarted = host === "claude-code" && session?.inbox

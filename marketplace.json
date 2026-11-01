@@ -5,7 +5,7 @@
     {
       "name": "self-starter",
       "source": "./zcode-plugin",
-      "version": "0.0.4",
+      "version": "0.0.5",
       "description": "Define custom events in plain language and let ZCode handle them in dedicated result sessions, with no model tokens spent while waiting.",
       "category": "productivity"
     }

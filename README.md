@@ -87,7 +87,7 @@ On their first start, the Codex and Claude Code plugins download the matching ru
 
 ### ZCode
 
-ZCode support is included in **v0.0.4** and uses a local source installation. From a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4):
+ZCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.5 tag](https://github.com/hyprh/self-starter/tree/v0.0.5):
 
 ```sh
 npm ci
@@ -100,7 +100,7 @@ Replace the placeholder with the absolute path to an authenticated ZCode CLI exe
 
 ### OpenCode
 
-OpenCode support is included in **v0.0.4** and uses a local source installation. From a checkout of the [v0.0.4 tag](https://github.com/hyprh/self-starter/tree/v0.0.4):
+OpenCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.5 tag](https://github.com/hyprh/self-starter/tree/v0.0.5):
 
 ```sh
 npm ci

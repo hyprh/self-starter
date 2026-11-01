@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.0.5 (2026-11-01)
+
+- **Scope headless Claude Code quieting to the current fire.** A background turn can quiet only the watch bound to its current fire, including after reporting the receipt. Historical watches sharing the same session do not become eligible, and missing or mismatched fire identity fails closed.
+- **Reject oversized probe output.** Checks whose stdout exceeds the existing output limit fail and stop the probe's process group. An earlier JSON line in a truncated prefix can no longer fire the watch.
+- **Bound stalled Codex requests.** App-server RPCs have a 30-second deadline, and connection failures become failed background turns instead of escaping the delivery path.
+- **Preserve Claude Code fire context.** Headless turns retain their Self-Starter provenance, including after reporting a fire. Session hooks can recover the installed state directory from the plugin's MCP configuration when the environment override is absent.
+- **Finish background cleanup reliably.** Cleanup still terminates already-frozen processes when a later scan fails, skips other-user and permission-denied helpers, and keeps shared daemons outside the task's lifetime. Detached daemon startup also closes its parent log descriptor after spawning.
+- **Avoid duplicate quiet-hours alerts.** Receipts replace deferred reminders for the same fire, silent receipts remove held alerts, and a failed deferred notification remains queued for a later attempt.
+- **Decode streamed output correctly.** Probe and Claude Code output use UTF-8 stream decoding so characters split across subprocess writes remain intact.
+- **Share host delivery paths.** Host delivery, turn guards and the OpenCode/ZCode session-process IPC client now have dedicated shared implementations, while the executor retains budgets, retries, receipts and concurrency policies. Service installation also discovers supported OpenCode executables and adds their directory to the service PATH.
+- **Update dependencies.** OpenCode's plugin and SDK packages move to 1.19.4, Nodemailer to 10.3.0, and the pinned scanner setup action to `actions/setup-python` 7.1.0.
+- **Show the workflow before installation.** The README leads with the demo and explains ongoing watches, follow-ups in the original Codex conversation and platform-specific result destinations.
+
 ## 0.0.4 (2026-10-21)
 
 - **Keep custom state directories.** Rebuilt services and generated CLI commands retain the resolved state directory even when the next agent launch no longer carries `SELF_STARTER_HOME`.

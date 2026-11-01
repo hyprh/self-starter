@@ -964,24 +964,24 @@ claude plugin install self-starter@self-starter</code></pre><button class="copy"
           </div>
           <div class="install-panel" id="panel-zcode" data-panel="zcode" role="tabpanel" aria-labelledby="zcode" tabindex="0">
             <h3>Install ZCode from source</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
-            <div class="command"><pre id="install-zcode"><code>git clone https://github.com/hyprh/self-starter.git
+            <div class="command"><pre id="install-zcode"><code>git clone --branch v0.0.5 https://github.com/hyprh/self-starter.git
 cd self-starter
 npm ci
 npm run build
 node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
 node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-zcode" aria-label="Copy ZCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>Included in v0.0.4. Use a checkout of that release tag. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
+            <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>Available since v0.0.4. The commands use the v0.0.5 release tag. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
             <div class="delivery"><b>Results in dedicated CLI sessions</b>Each agent watch uses a dedicated result session. Read results with Self-Starter history or the trigger tools. The original ZCode desktop conversation is not resumed.</div>
           </div>
           <div class="install-panel" id="panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="opencode" tabindex="0">
             <h3>Install OpenCode from source</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
-            <div class="command"><pre id="install-opencode"><code>git clone https://github.com/hyprh/self-starter.git
+            <div class="command"><pre id="install-opencode"><code>git clone --branch v0.0.5 https://github.com/hyprh/self-starter.git
 cd self-starter
 npm ci
 npm run build
 node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
 node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-opencode" aria-label="Copy OpenCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>Included in v0.0.4. Use a checkout of that release tag. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
+            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>Available since v0.0.4. The commands use the v0.0.5 release tag. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
             <div class="delivery"><b>Results in a dedicated session</b>Each watch reuses its result session, including when the UI is closed. Use Self-Starter history to find it. Events do not run in the conversation where you created the watch.</div>
           </div>
         </div>

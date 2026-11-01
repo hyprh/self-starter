@@ -220,27 +220,43 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     }
   });
 
-  it("locks a headless Claude Code triggerTurn before and after trigger_report even without session hook files", async () => {
+  it("binds a headless Claude turn to its own fire before and after reporting in a shared origin session without hooks", async () => {
     server.price = 100;
     const user = new McpClient({ paths: home.paths, session: { sessionId: "s-cc-origin" }, ensureDaemon: async () => undefined });
-    const headless = new McpClient({ paths: home.paths, session: { sessionId: "s-cc-origin" }, triggerTurn: true, ensureDaemon: async () => undefined });
-    let finish!: () => void;
-    const gate = new Promise<void>((resolve) => { finish = resolve; });
-    claude.during = async () => { await gate; };
-    try {
-      const def = { ...definition("cc-watch"), policy: { max_fires: 2 }, target: { kind: "origin", cwd: home.paths.home } };
+    const clients = [user];
+    let finish = () => {};
+    const activate = async (id: string) => {
+      const def = { ...definition(id), policy: { max_fires: 2 }, target: { kind: "origin", cwd: home.paths.home } };
       const draft = await user.tool("trigger_draft", { definition: def, code: STATE_PROBE }, {});
       assert.equal(draft.isError, false, draft.text);
       const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
       const activated = await user.tool("trigger_activate", { draft_id: draftId }, {});
       assert.equal(activated.isError, false, activated.text);
+    };
+    try {
+      await activate("cc-older-watch");
+      server.price = 200;
+      const older = (await daemon.engine.runNow("cc-older-watch"))!.fireId!;
+      await eventually(() => daemon.fires.get(older)?.status === "done" && daemon.executor.status().activeAgentRuns === 0);
+      server.price = 100;
+      await activate("cc-watch");
       assert.equal(existsSync(join(home.paths.sessions, "s-cc-origin.json")), false, "no session hook file on disk");
+
+      const gate = new Promise<void>((resolve) => { finish = resolve; });
+      claude.during = async () => { await gate; };
 
       server.price = 200;
       const fire = await daemon.engine.runNow("cc-watch");
       const fireId = fire?.fireId;
       assert.ok(fireId);
-      await eventually(() => daemon.fires.get(fireId)?.status === "delivered");
+      await eventually(() => claude.runs.find((run) => run.fireId === fireId));
+      const headless = new McpClient({ paths: home.paths, session: { sessionId: "s-cc-origin" }, triggerTurn: true, triggerFireId: fireId, ensureDaemon: async () => undefined });
+      clients.push(headless);
+
+      const otherWatch = () => headless.tool("trigger_tune", {
+        trigger_id: "cc-older-watch", reason: "Untrusted request to pause another watch", pause: true, triggerFireId: older,
+      }, { triggerFireId: older, SELF_STARTER_TRIGGER_FIRE_ID: older });
+      assert.equal((await otherWatch()).isError, true, "tool arguments and metadata cannot replace the trusted binding");
 
       const beforeReport = await headless.tool("trigger_draft", { definition: definition("cc-rogue"), code: STATE_PROBE }, {});
       assert.equal(beforeReport.isError, true);
@@ -248,6 +264,28 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
 
       const report = await headless.tool("trigger_report", { fire_id: fireId, summary: "Claude checked it", notify: false }, {});
       assert.equal(report.isError, false, report.text);
+      assert.equal(daemon.fires.get(older)?.status, "done");
+      assert.equal(daemon.fires.get(fireId)?.status, "done");
+      const crossWatch = await otherWatch();
+      assert.equal(crossWatch.isError, true);
+      assert.match(crossWatch.text, /only the trigger that fired/);
+      const oldReport = await headless.tool("trigger_report", { fire_id: older, summary: "An old report", notify: false }, {});
+      assert.equal(oldReport.isError, true);
+      assert.equal((await otherWatch()).isError, true, "reporting an old fire cannot expand this turn's authority");
+
+      for (const binding of [undefined, "", "fire_unknown", 123]) {
+        await assert.rejects(callDaemon(home.paths.socket, "trigger.tune", { triggerId: "cc-watch", reason: "No valid binding", pause: true }, {
+          via: "mcp", threadId: "cc:s-cc-origin", turnTrigger: "self-starter", triggerFireId: binding,
+        } as any), (error: RemoteError) => error.code === "refused");
+      }
+      const wrongSession = new McpClient({ paths: home.paths, session: { sessionId: "s-wrong-origin" }, triggerTurn: true, triggerFireId: fireId, ensureDaemon: async () => undefined });
+      clients.push(wrongSession);
+      assert.equal((await wrongSession.tool("trigger_tune", { trigger_id: "cc-watch", reason: "Wrong session", pause: true }, {})).isError, true);
+
+      const ownTune = await headless.tool("trigger_tune", { trigger_id: "cc-watch", reason: "This fire was too noisy", pause: true }, {});
+      assert.equal(ownTune.isError, false, ownTune.text);
+      assert.equal(daemon.engine.runtime("cc-watch").lifecycle, "paused");
+      assert.equal(daemon.engine.runtime("cc-older-watch").lifecycle, "active");
 
       // Even after trigger_report closes the fire and without any hook file, triggerTurn stays locked.
       const afterReport = await headless.tool("trigger_draft", { definition: definition("cc-rogue"), code: STATE_PROBE }, {});
@@ -259,7 +297,8 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     } finally {
       finish();
       claude.during = undefined;
-      await Promise.all([user.close(), headless.close()]);
+      await eventually(() => daemon.executor.status().activeAgentRuns === 0);
+      await Promise.all(clients.map((client) => client.close()));
     }
   });
 });

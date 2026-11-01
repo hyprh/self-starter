@@ -107,6 +107,7 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let stdoutOverflow = false;
 
     const finish = (result: RunResult) => {
       if (settled) return;
@@ -115,19 +116,31 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
       resolve({ ...result, stderr: stderr.slice(0, STDERR_LIMIT) });
     };
 
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const stop = () => {
       try {
         if (child.pid) process.kill(-child.pid, "SIGKILL");
       } catch {
         child.kill("SIGKILL");
       }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stop();
     }, timeoutMs);
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      if (stdout.length < STDOUT_LIMIT) stdout += chunk.slice(0, STDOUT_LIMIT - stdout.length);
+      if (stdoutOverflow) return;
+      const remaining = STDOUT_LIMIT - stdout.length;
+      if (remaining > 0) stdout += chunk.slice(0, remaining);
+      if (chunk.length > remaining) {
+        // A truncated prefix can contain an earlier valid JSON result. Once
+        // the final output is unknown, never interpret that prefix as a fire.
+        stdoutOverflow = true;
+        stop();
+      }
     });
     child.stderr.on("data", (chunk: string) => {
       if (stderr.length < STDERR_LIMIT) stderr += chunk.slice(0, STDERR_LIMIT - stderr.length);
@@ -137,7 +150,9 @@ export function runProbe(options: ProbeRunOptions): Promise<ProbeRunResult> {
     });
     child.on("close", (code) => {
       const durationMs = Date.now() - started;
-      if (timedOut) {
+      if (stdoutOverflow) {
+        finish({ ok: false, error: `stdout exceeded ${STDOUT_LIMIT} characters`, durationMs });
+      } else if (timedOut) {
         finish({ ok: false, error: `timed out after ${Math.round(timeoutMs / 1000)}s`, durationMs });
       } else if (code !== 0) {
         finish({ ok: false, error: `exited with code ${code}: ${errorSummary(stderr) || "no error output"}`, durationMs });
