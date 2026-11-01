@@ -3,11 +3,12 @@
 // detached process, but it does not come back after a restart.
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
-import { findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
+import { cliCommand, findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
+import { findOpenCode } from "../engine/opencode.js";
 import type { Paths } from "../engine/paths.js";
 import { findClaude } from "../engine/sessions.js";
 import { findZCode } from "../engine/zcode.js";
@@ -240,16 +241,20 @@ export function serviceSpec(paths: Paths, agentBins: Array<string | undefined>):
 export function spawnDetachedDaemon(paths: Paths): void {
   mkdirSync(paths.logs, { recursive: true, mode: 0o700 });
   const out = openSync(join(paths.logs, "service.log"), "a", 0o600);
-  const env: NodeJS.ProcessEnv = { ...process.env, SELF_STARTER_HOME: paths.home };
-  // A shared daemon and the work it starts have their own lifetimes, even
-  // when a headless action had to restart the service after a daemon crash.
-  env.SELF_STARTER_RUN_TOKEN = SHARED_DAEMON_SCOPE;
-  const child = spawn(process.execPath, [CLI_SCRIPT, "daemon"], {
-    detached: true,
-    stdio: ["ignore", out, out],
-    env,
-  });
-  child.unref();
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, SELF_STARTER_HOME: paths.home };
+    // A shared daemon and the work it starts have their own lifetimes, even
+    // when a headless action had to restart the service after a daemon crash.
+    env.SELF_STARTER_RUN_TOKEN = SHARED_DAEMON_SCOPE;
+    const child = spawn(process.execPath, [CLI_SCRIPT, "daemon"], {
+      detached: true,
+      stdio: ["ignore", out, out],
+      env,
+    });
+    child.unref();
+  } finally {
+    closeSync(out);
+  }
 }
 
 /** Asks a running daemon to stop, and waits until it no longer answers. */
@@ -278,6 +283,15 @@ export function compareVersions(a: string, b: string): number {
     if (difference !== 0) return Math.sign(difference);
   }
   return 0;
+}
+
+function findSupportedOpenCode(): string | undefined {
+  const bin = findOpenCode();
+  if (!bin) return undefined;
+  const { command, prefix } = cliCommand(bin);
+  const out = spawnSync(command, [...prefix, "--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 10_000 });
+  const version = /\b\d+\.\d+\.\d+\b/.exec(`${out.stdout ?? ""}${out.stderr ?? ""}`)?.[0];
+  return out.status === 0 && version?.startsWith("1.") && compareVersions(version, "1.19.3") >= 0 ? bin : undefined;
 }
 
 const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
@@ -310,11 +324,12 @@ export async function installService(paths: Paths, manager = serviceManager()): 
   config.codexBin ??= findCodex();
   config.claudeBin ??= findClaude();
   config.zcodeBin ??= findZCode();
+  config.opencodeBin ??= findSupportedOpenCode();
   config.service = true;
   saveConfig(paths, config);
   await stopRunningDaemon(paths);
   writeCommand(paths);
-  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin, config.zcodeBin]));
+  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin, config.zcodeBin, config.opencodeBin]));
 }
 
 /**

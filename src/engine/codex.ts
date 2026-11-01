@@ -155,7 +155,7 @@ export class CodexCli implements CodexRunner {
   private readonly command: string;
   private readonly prefix: string[];
 
-  constructor(bin: string) {
+  constructor(bin: string, private readonly requestTimeoutMs?: number) {
     ({ command: this.command, prefix: this.prefix } = cliCommand(bin));
   }
 
@@ -169,7 +169,10 @@ export class CodexCli implements CodexRunner {
   }
 
   private appServer(options: { cwd?: string; experimental?: boolean } = {}): Promise<AppServerSession> {
-    return AppServerSession.open(this.command, this.prefix, options);
+    return AppServerSession.open(this.command, this.prefix, {
+      ...options,
+      ...(this.requestTimeoutMs !== undefined ? { requestTimeoutMs: this.requestTimeoutMs } : {}),
+    });
   }
 
   /**
@@ -211,7 +214,7 @@ export class CodexCli implements CodexRunner {
         holdsOthers: paused && (await holdsOtherMessages(session, threadId)),
       };
     } finally {
-      session.close();
+      session?.close();
     }
   }
 
@@ -228,8 +231,9 @@ export class CodexCli implements CodexRunner {
    */
   async wakeThread(options: WakeOptions): Promise<TurnResult> {
     const { threadId } = options;
-    const session = await this.appServer({ experimental: options.startQueued !== undefined });
+    let session: AppServerSession | undefined;
     try {
+      session = await this.appServer({ experimental: options.startQueued !== undefined });
       const started = session.listen(turnEvent("turn/started", threadId));
       const completed = session.listen(turnEvent("turn/completed", threadId));
       await session.request("thread/resume", { threadId, sandbox: options.sandbox, excludeTurns: true, ...(options.cwd ? { cwd: options.cwd } : {}) });
@@ -254,7 +258,7 @@ export class CodexCli implements CodexRunner {
     } catch (error) {
       return { ok: false, threadId, error: (error as Error).message };
     } finally {
-      session.close();
+      session?.close();
     }
   }
 }

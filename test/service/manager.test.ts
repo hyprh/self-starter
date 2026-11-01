@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { describe, it } from "node:test";
 import { callDaemon, waitForDaemon } from "../../src/client/client.js";
 import { initialRuntime } from "../../src/core/state-machine.js";
@@ -155,6 +155,42 @@ describe("service manager", () => {
     assert.equal(compareVersions("0.10.0", "0.9.9"), 1);
     assert.equal(compareVersions("1.2", "1.2.0"), 0);
     assert.equal(compareVersions("1.2.3-beta.1", "1.2.3"), 0);
+  });
+
+  it("records a supported opencode binary and adds its directory to the service PATH", async () => {
+    const home = tempHome();
+    const specs: ServiceSpec[] = [];
+    const manager: ServiceManager = {
+      kind: "launchd", file: join(home.paths.home, "agent.plist"), installed: () => false,
+      install(spec) { specs.push(spec); },
+      uninstall() {}, start: () => false, stop: () => false, restart: () => false,
+    };
+    const makeOpenCode = (dirName: string, version: string) => {
+      const dir = join(home.paths.home, dirName);
+      const bin = join(dir, "opencode");
+      saveConfig(home.paths, { ...loadConfig(home.paths), opencodeBin: undefined });
+      rmSync(dir, { recursive: true, force: true });
+      execFileSync("/bin/mkdir", ["-p", dir]);
+      writeFileSync(bin, `#!/bin/sh\necho "${version}"\n`);
+      chmodSync(bin, 0o755);
+      return bin;
+    };
+    const saved = process.env.OPENCODE_BIN;
+    try {
+      process.env.OPENCODE_BIN = makeOpenCode("old-oc", "1.18.0");
+      await installService(home.paths, manager);
+      assert.equal(loadConfig(home.paths).opencodeBin, undefined, "incompatible OpenCode is not persisted");
+
+      const supported = makeOpenCode("good-oc", "1.19.3");
+      process.env.OPENCODE_BIN = supported;
+      await installService(home.paths, manager);
+      assert.equal(loadConfig(home.paths).opencodeBin, supported);
+      assert.ok(specs.at(-1)?.env.PATH?.split(delimiter).includes(dirname(supported)));
+    } finally {
+      if (saved === undefined) delete process.env.OPENCODE_BIN;
+      else process.env.OPENCODE_BIN = saved;
+      home.cleanup();
+    }
   });
 
   it("leaves a newer daemon running, and replaces an older one with this version", async () => {

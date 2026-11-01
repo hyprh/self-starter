@@ -5,7 +5,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { agentName, hostFor, hostOf, sessionIdOf, type Host } from "../core/conversations.js";
+import { agentName, hostFor, hostOf, type Host } from "../core/conversations.js";
 import { describeState, describeTrigger } from "../core/describe.js";
 import { definitionToYaml, probeTimings, validateDefinition, type TriggerDefinition } from "../core/definition.js";
 import { parseDuration } from "../core/duration.js";
@@ -18,8 +18,8 @@ import type { Executor } from "./executor.js";
 import type { FireLog, FireRecord } from "./fires.js";
 import type { Paths } from "./paths.js";
 import { applyRecipe, listRecipes, loadRecipe, type Recipe } from "./recipes.js";
-import { triggerTurn } from "./sessions.js";
 import type { DryRun, LoadedDraft, LoadedTrigger, Store } from "./store.js";
+import { TurnGuard } from "./turn-guard.js";
 
 export type ErrorCode = "not_found" | "invalid" | "refused" | "conflict";
 
@@ -49,8 +49,6 @@ export interface Caller {
 const MAX_CODE_BYTES = 64 * 1024;
 const MAX_TRIGGERS = 100;
 const DRAFT_TTL_MS = 24 * 3_600_000;
-const RECENT_FIRE_MS = 24 * 3_600_000;
-const REPORTED_TURNS_MAX = 1000;
 /** What trigger_update may not change: a new probe (code or mode) goes through trigger_draft and its trial run. */
 const LOCKED_PATHS = ["version", "id", "meta", "mode", "probe.runtime", "probe.entry", "target.thread_id"];
 /** What a recipe fixes in addition. */
@@ -149,11 +147,11 @@ export function fireView(fire: FireRecord) {
 export type FireView = ReturnType<typeof fireView>;
 
 export class TriggerService {
-  /** Turns that reported a fire, and the trigger of that fire. */
-  private readonly reportedTurns = new Map<string, string>();
+  private readonly turnGuard: TurnGuard;
   readonly startedAt = new Date().toISOString();
 
   constructor(private readonly deps: ServiceDeps) {
+    this.turnGuard = new TurnGuard(deps.fires, deps.paths, () => this.now());
     this.cleanupDrafts();
   }
 
@@ -161,64 +159,9 @@ export class TriggerService {
     return this.deps.now?.() ?? new Date();
   }
 
-  // ---- guard -------------------------------------------------------------
-
-  /**
-   * A turn that handles a trigger fire must not create, change or delete
-   * triggers, so that fire data can never make triggers multiply or change
-   * themselves. Requests from the terminal are the user's own.
-   */
   private guard(caller: Caller, action: string): void {
-    const why = this.handlingFire(caller);
-    if (why) {
-      throw new ServiceError(
-        "refused",
-        `Cannot ${action} now: ${why} Triggers cannot be created, changed or deleted while a trigger fire is being handled (trigger_tune can only make the trigger that fired quieter); the user can ask again in a new message.`,
-      );
-    }
-  }
-
-  /** Why the caller's turn counts as handling a trigger fire, or undefined when it does not. */
-  private handlingFire(caller: Caller): string | undefined {
-    if (caller.via !== "mcp") return undefined;
-    if (caller.turnTrigger === "self-starter") return "this turn was started by Self-Starter.";
-    if (caller.threadId && this.deps.fires.threadBusy(caller.threadId)) return "this thread is handling a trigger fire that has not been reported yet.";
-    const turn = this.turnKey(caller);
-    if (turn && this.reportedTurns.has(turn)) return "this turn handled a trigger fire.";
-    if (caller.turnTrigger === "queue" && caller.threadId && this.recentFireIn(caller.threadId)) {
-      return "this turn was started by a queued message, and this thread recently received a trigger fire.";
-    }
-    // In Claude Code, the plugin's hooks record what started the session's turn.
-    const sessionId = sessionIdOf(caller.threadId);
-    if (sessionId && triggerTurn(this.deps.paths, sessionId)) return "this turn was started by a Self-Starter message.";
-    return undefined;
-  }
-
-  /** The triggers whose fires the caller's turn is handling or handled. */
-  private firingTriggers(caller: Caller): Set<string> {
-    const ids = new Set<string>();
-    const turn = this.turnKey(caller);
-    const reported = turn ? this.reportedTurns.get(turn) : undefined;
-    if (reported) ids.add(reported);
-    const sessionId = sessionIdOf(caller.threadId);
-    const fireId = sessionId ? triggerTurn(this.deps.paths, sessionId)?.fireId : undefined;
-    const started = fireId ? this.deps.fires.get(fireId) : undefined;
-    if (started) ids.add(started.triggerId);
-    for (const fire of this.deps.fires.all()) {
-      if ((fire.status === "delivered" || caller.turnTrigger === "self-starter") && caller.threadId && fire.target?.threadId === caller.threadId) ids.add(fire.triggerId);
-    }
-    return ids;
-  }
-
-  private turnKey(caller: Caller): string | undefined {
-    return caller.turnId ? JSON.stringify([caller.threadId ?? null, caller.turnId]) : undefined;
-  }
-
-  private recentFireIn(threadId: string): boolean {
-    const cutoff = this.now().getTime() - RECENT_FIRE_MS;
-    return this.deps.fires
-      .all()
-      .some((fire) => fire.target?.threadId === threadId && fire.deliveredAt !== undefined && Date.parse(fire.deliveredAt) >= cutoff);
+    const refused = this.turnGuard.mutationRefusal(caller, action);
+    if (refused) throw new ServiceError("refused", refused);
   }
 
   // ---- loading -----------------------------------------------------------
@@ -342,7 +285,7 @@ export class TriggerService {
     draft.meta.dryRun = toTrial(await this.deps.engine.dryRun(definition, draft.dir));
     this.deps.store.saveDraftMeta(draft.meta);
     this.deps.log(`draft ${draft.meta.draftId} created (${caller.via}${caller.threadId ? `, thread ${caller.threadId}` : ""})`);
-    return this.draftView(this.deps.store.loadDraft(draft.meta.draftId));
+    return this.draftView(draft);
   }
 
   private warnings(draft: LoadedDraft): string[] {
@@ -506,10 +449,8 @@ export class TriggerService {
   async tuneTrigger(params: { triggerId?: unknown; reason?: unknown; checkEvery?: unknown; cooldown?: unknown; for?: unknown; maxFires?: unknown; pause?: unknown }, caller: Caller) {
     const existing = this.load(params.triggerId);
     const before = existing.definition;
-    const fromFire = this.handlingFire(caller) !== undefined;
-    if (fromFire && !this.firingTriggers(caller).has(before.id)) {
-      throw new ServiceError("refused", `While handling a fire, only the trigger that fired can be made quieter, not ${before.id}; the user can ask in a new message.`);
-    }
+    const { fromFire, refused } = this.turnGuard.tuneRefusal(caller, before.id);
+    if (refused) throw new ServiceError("refused", refused);
     if (typeof params.reason !== "string" || params.reason.trim() === "") throw new ServiceError("invalid", "reason is required: one sentence the user will read");
     const reason = params.reason.trim();
     const def = JSON.parse(JSON.stringify(before)) as TriggerDefinition;
@@ -608,8 +549,7 @@ export class TriggerService {
 
   // ---- queries -----------------------------------------------------------
 
-  private summary(id: string): TriggerSummary {
-    const loaded = this.tryLoad(id);
+  private summary(id: string, loaded = this.tryLoad(id)): TriggerSummary {
     const runtime = this.deps.engine.runtime(id);
     const def = loaded?.definition;
     const threadId = def ? (def.target.kind === "origin" ? def.meta.origin_thread_id : def.target.thread_id) ?? null : null;
@@ -635,10 +575,11 @@ export class TriggerService {
   }
 
   get(params: { triggerId?: unknown }) {
-    const { definition, dir } = this.load(params.triggerId);
+    const loaded = this.load(params.triggerId);
+    const { definition, dir } = loaded;
     const runtime = this.deps.engine.runtime(definition.id);
     return {
-      ...this.summary(definition.id),
+      ...this.summary(definition.id, loaded),
       definitionYaml: definitionToYaml(definition),
       probePath: join(dir, definition.probe.entry),
       runtime: {
@@ -685,11 +626,7 @@ export class TriggerService {
       const message = (error as Error).message;
       throw new ServiceError(message.startsWith("no such fire") ? "not_found" : "refused", message);
     }
-    const turn = this.turnKey(caller);
-    if (turn) {
-      this.reportedTurns.set(turn, fire.triggerId);
-      if (this.reportedTurns.size > REPORTED_TURNS_MAX) this.reportedTurns.delete(this.reportedTurns.keys().next().value!);
-    }
+    this.turnGuard.recordReport(caller, fire.triggerId);
     const when = this.tryLoad(fire.triggerId)?.definition.notify.when ?? "never";
     return { fireId: fire.fireId, status: fire.status, userNotified: when === "always" || (when === "receipt" && notify) };
   }

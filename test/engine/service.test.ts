@@ -694,6 +694,39 @@ describe("delivery rules", { skip: deno ? false : "the deno npm package is not i
       t.cleanup();
     }
   });
+
+  it("deduplicates reminder vs timeout and replaces held reminders when a reply arrives during quiet hours", async () => {
+    const t = setup(server, { wakeClosedThreads: false });
+    try {
+      t.clock.at = Date.parse("2026-10-12T02:00:00Z");
+      const quiet = { quiet_hours: { from: "01:00", to: "07:00", tz: "UTC" } };
+      await t.activate({ id: "origin-timeout", name: "Origin timeout", target: { kind: "origin" }, policy: quiet }, STATE_PROBE, fromThread({ threadId: "thread-q1", turnId: "t1" }));
+      await t.activate({ id: "origin-replied", name: "Origin replied", target: { kind: "origin" }, policy: quiet }, STATE_PROBE, fromThread({ threadId: "thread-q2", turnId: "t1" }));
+
+      server.price = 200;
+      const timeoutFire = (await t.engine.runNow("origin-timeout"))!.fireId!;
+      const repliedFire = (await t.engine.runNow("origin-replied"))!.fireId!;
+      await eventually(() => t.fires.get(timeoutFire)?.status === "delivered" && t.fires.get(repliedFire)?.status === "delivered");
+
+      t.clock.at = Date.parse("2026-10-12T02:06:00Z");
+      await t.executor.tick();
+      assert.equal(t.notifier.sent.length, 0);
+
+      t.service.report({ fireId: repliedFire, summary: "Real investigation answer", notify: true }, fromThread({ threadId: "thread-q2", turnId: "t2" }));
+      t.clock.at = Date.parse("2026-10-12T02:36:00Z");
+      await t.executor.tick();
+      assert.equal(t.fires.get(timeoutFire)?.receipt?.source, "timeout");
+      assert.equal(t.notifier.sent.length, 0);
+
+      t.clock.at = Date.parse("2026-10-12T07:01:00Z");
+      await t.executor.tick();
+      assert.equal(t.notifier.sent.length, 2, "1 held reminder (no duplicate timeout) + 1 real receipt (no stale reminder)");
+      assert.equal(t.notifier.sent.filter((n) => n.title === "Origin timeout").length, 1);
+      assert.equal(t.notifier.sent.find((n) => n.title === "Origin replied")?.body, "Real investigation answer");
+    } finally {
+      t.cleanup();
+    }
+  });
 });
 
 describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm package is not installed" }, () => {

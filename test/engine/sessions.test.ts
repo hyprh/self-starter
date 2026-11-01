@@ -153,6 +153,27 @@ describe("the plugin's session hook", () => {
     }
     assert.equal(existsSync(join(paths.home, "escape.json")), false);
   });
+
+  it("writes to the custom home pinned in the plugin's .mcp.json when SELF_STARTER_HOME is unset", () => {
+    const pluginRoot = join(scratch, "local-plugin");
+    const custom = resolvePaths(join(scratch, "pinned-home"));
+    mkdirSync(join(pluginRoot, "bin"), { recursive: true });
+    writeFileSync(join(pluginRoot, "bin", "session-hook.mjs"), readFileSync(HOOK, "utf8"));
+    writeFileSync(join(pluginRoot, ".mcp.json"), JSON.stringify({
+      mcpServers: { self_starter: { command: process.execPath, args: [], env: { SELF_STARTER_HOME: custom.home } } },
+    }));
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: scratch, ...processEnv };
+    delete env.SELF_STARTER_HOME;
+    const out = spawnSync(process.execPath, [join(pluginRoot, "bin", "session-hook.mjs")], {
+      input: JSON.stringify({ session_id: "s-pinned", hook_event_name: "SessionStart", source: "startup", cwd: "/work" }),
+      env,
+      encoding: "utf8",
+    });
+    assert.equal(out.status, 0, out.stderr);
+    assert.equal(readSession(custom, "s-pinned")?.cwd, "/work");
+    assert.equal(currentSession(custom, inbox), "s-pinned");
+    assert.equal(readSession(resolvePaths(join(scratch, ".self-starter")), "s-pinned"), undefined);
+  });
 });
 
 /** A stand-in for a Claude Code process's inbox socket: keeps the lines of each connection. */
@@ -205,7 +226,7 @@ describe("headless turns", () => {
     const bin = join(scratch, "claude");
     writeFileSync(
       bin,
-      `#!/bin/sh\nprintf '%s\\n' "$PWD" "$CLAUDE_CONFIG_DIR" "\${CLAUDE_CODE_SESSION_ID:-none} \${CLAUDE_CODE_USE_BEDROCK:-none}" "$@" > "${scratch}/args"\ncat > "${scratch}/stdin"\n${script}\n`,
+      `#!/bin/sh\nprintf '%s\\n' "$PWD" "$CLAUDE_CONFIG_DIR" "\${CLAUDE_CODE_SESSION_ID:-none} \${CLAUDE_CODE_USE_BEDROCK:-none} \${SELF_STARTER_TRIGGER_TURN:-none}" "$@" > "${scratch}/args"\ncat > "${scratch}/stdin"\n${script}\n`,
     );
     chmodSync(bin, 0o755);
     return bin;
@@ -229,7 +250,7 @@ describe("headless turns", () => {
     assert.deepEqual(recorded(), [
       realpathSync(scratch), // as the shell sees it (the temporary folder of macOS is behind a symlink)
       "/cfg",
-      "none 1", // nothing of the session the daemon may have been started from, but the user's settings
+      "none 1 1", // nothing of the session the daemon may have been started from, user settings kept, and marked as a trigger turn
       "-p",
       "--output-format",
       "json",

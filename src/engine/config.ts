@@ -2,7 +2,7 @@
 
 import { accessSync, constants, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import type { Channel } from "../core/definition.js";
 import { readJson, writeJsonAtomic } from "./fs-util.js";
@@ -137,7 +137,9 @@ export function resolveDeno(config: Config): string | undefined {
 /** A codex binary inside a macOS app bundle (the Codex app, or the ChatGPT app that ships Codex). */
 function findInAppBundles(): string | undefined {
   if (process.platform !== "darwin") return undefined;
-  const bundles = ["/Applications/Codex.app", join(homedir(), "Applications/Codex.app"), "/Applications/ChatGPT.app", join(homedir(), "Applications/ChatGPT.app")];
+  const home = homedir();
+  const systemBundles = home === userInfo().homedir ? ["/Applications/Codex.app", "/Applications/ChatGPT.app"] : [];
+  const bundles = [...systemBundles, join(home, "Applications/Codex.app"), join(home, "Applications/ChatGPT.app")];
   const search = (dir: string, depth: number): string | undefined => {
     if (depth < 0 || !existsSync(dir)) return undefined;
     let entries;
