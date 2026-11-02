@@ -124,23 +124,33 @@ Use **OpenCode 1.x, version 1.19.3 or newer**, with working model access. Keep t
 
 ## Quick start
 
-Try a local file first: no API key or external service needed. Use a filename that does not exist yet; change it in both steps if you have tried this before.
+Test the three things built-in timers cannot do—**filtering noise at zero tokens, surviving a closed terminal, and resuming your conversation**—with no API key or external service.
 
-1. In your agent conversation, ask:
+1. Remove any leftover log (`rm -f /tmp/self-starter-demo.log`), open your agent in a project folder that has a `README.md`, and ask:
 
-   > Watch `/tmp/self-starter-demo/done` every 10 seconds for the next hour. When it appears, have the agent read it and summarize its contents once. Keep the task read-only. After activation, confirm that the first scheduled check found no file.
+   > Watch `/tmp/self-starter-demo.log` for the next hour (within ~10s latency). Ignore `INFO` lines—wake up once only when an `ERROR` line appears, include the matching log lines in the event data, inspect the file it names in this folder, and summarize what to check. Keep the task read-only, and confirm after activation that the first check did not fire.
 
-2. Wait for that confirmation, then run in a terminal:
+2. Once confirmed, **close your agent completely** (`exit` in Claude Code, or quit the Codex / OpenCode session). In a normal shell, write routine noise first:
 
    ```sh
-   mkdir -p /tmp/self-starter-demo && echo "build finished" > /tmp/self-starter-demo/done
+   echo "INFO: healthcheck ok" >> /tmp/self-starter-demo.log
    ```
 
-3. Codex and Claude Code can answer in the conversation where you asked. ZCode and OpenCode run the task in a dedicated CLI result session. Ask your agent for the watch's history to see the event, receipt and result destination.
+   Wait 15 seconds: local code checks the log with **zero model calls** and ignores the `INFO` line (`~/.self-starter/bin/self-starter list` shows the latest check summary).
 
-You can also inspect history in a terminal: `~/.self-starter/bin/self-starter history` after marketplace installation, or `node dist/src/cli/main.js history` from a source checkout. Then ask your agent to delete the demo watch.
+3. Now write an error while your agent is still closed:
 
-For a development workflow, try [watching a CI failure](docs/ci-watch.md).
+   ```sh
+   echo "ERROR: broken anchor or installation step in README.md" >> /tmp/self-starter-demo.log
+   ```
+
+4. Within ~30 seconds, Self-Starter spots the `ERROR` line and runs the follow-up in the background:
+   - **Codex and Claude Code** resume the closed conversation where you created the watch (`claude --resume` or reopen Codex to find the analysis already waiting).
+   - **ZCode and OpenCode** run the task in a dedicated CLI result session.
+
+   Run `~/.self-starter/bin/self-starter history` (or `node dist/src/cli/main.js history` from a source checkout) to see the fire, receipt and destination—such as `(your session, resumed in the background)`—then delete the demo watch and `/tmp/self-starter-demo.log`.
+
+For a live GitHub workflow, try [watching a CI failure](docs/ci-watch.md).
 
 ## What to watch
 
