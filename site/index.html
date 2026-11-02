@@ -1211,10 +1211,10 @@ node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" 
           </div>
         </div>
         <aside class="install-aside" aria-label="Your first watch">
-          <h3>Try a watch you can trigger yourself</h3>
-          <ol><li>Install your integration, then start a new agent session.</li><li>Ask it to watch for a new file and confirm the first scheduled check found nothing.</li><li>Create the file. Check the response and Self-Starter history.</li></ol>
-          <div class="request"><b>Ask your agent</b>“Tell me once when <code>/tmp/self-starter-demo/done</code> appears, and what it says. Check every 10 seconds and stop after an hour.”</div>
-          <p class="fine">Use a filename that does not exist yet. <a href="https://github.com/hyprh/self-starter/blob/main/README.md#quick-start">Follow the full quick start →</a></p>
+          <h3>Try what built-in timers cannot do</h3>
+          <ol><li>Open your agent in any project folder and set up the watch below.</li><li><b>Quit the agent or close your terminal.</b> Append routine <code>INFO</code> lines—local code ignores them at zero tokens.</li><li>Append an <code>ERROR</code> line. Self-Starter wakes your closed session in the background, inspects your repo, and notifies you.</li></ol>
+          <div class="request"><b>Ask your agent, then close the terminal</b>“Watch <code>/tmp/self-starter-demo.log</code> for the next hour (within ~10s latency). Ignore <code>INFO</code> lines—wake up once only when an <code>ERROR</code> line appears, inspect the file it names in this folder, and summarize what to check. Keep it read-only.”</div>
+          <p class="fine">No API key needed. Reopen your session (<code>claude --resume</code> or Codex) to find the answer waiting. <a href="https://github.com/hyprh/self-starter/blob/main/README.md#quick-start">Follow the 2-minute test →</a></p>
           <noscript><p class="fine">JavaScript is needed to switch install tabs. <a href="https://github.com/hyprh/self-starter#install">All four installation options are in the README.</a></p></noscript>
         </aside>
       </div>
