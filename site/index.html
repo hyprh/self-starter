@@ -1,16 +1,16 @@
 <!doctype html>
-<html lang="en" data-agent="codex" data-scene="ci">
+<html lang="en" data-agent="codex" data-scene="market">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode</title>
 <link rel="icon" type="image/svg+xml" href="./icon-trigger.svg">
-<meta name="description" content="Watch CI runs, training jobs, GPUs, local services and APIs at zero token cost—even after closing your terminal—and resume your conversation in Claude Code, Codex, OpenCode or ZCode.">
+<meta name="description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code spots it at zero token cost—even with your terminal closed—and wakes Claude Code, Codex, OpenCode or ZCode.">
 <link rel="canonical" href="https://hyprh.github.io/self-starter/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Self-Starter">
 <meta property="og:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
-<meta property="og:description" content="Local code watches PRs, jobs, GPUs, services and APIs while your terminal is closed—with zero model calls while waiting—and wakes your conversation when it happens.">
+<meta property="og:description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code checks with zero model calls while waiting—and wakes your conversation.">
 <meta property="og:url" content="https://hyprh.github.io/self-starter/">
 <meta property="og:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta property="og:image:type" content="image/png">
@@ -19,7 +19,7 @@
 <meta property="og:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
-<meta name="twitter:description" content="Local code watches PRs, jobs, GPUs, services and APIs while your terminal is closed—with zero model calls while waiting—and wakes your conversation when it happens.">
+<meta name="twitter:description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code checks with zero model calls while waiting—and wakes your conversation.">
 <meta name="twitter:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta name="twitter:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <script>
@@ -369,7 +369,7 @@ code:not(pre code) {
   min-width: 0
 }
 
-html:not([data-scene]) [data-scene-panel=ci],html[data-scene=ci] [data-scene-panel=ci],html[data-scene=market] [data-scene-panel=market] {
+html:not([data-scene]) [data-scene-panel=market],html[data-scene=market] [data-scene-panel=market],html[data-scene=ci] [data-scene-panel=ci] {
   display: flex
 }
 
@@ -1063,15 +1063,34 @@ footer>.wrap {
     <div>
       <p class="eyebrow">Local event triggers for coding agents</p>
       <h1>Ask once.<br>Act when it happens.</h1>
-      <p class="lede">Tell your agent what to watch and what to do next. Local code checks PRs, training jobs, GPUs, services and APIs—even after you close your terminal—and brings the follow-up back to your conversation.</p>
+      <p class="lede">Tell your agent what to watch and what to do next—whether CI fails, a GPU frees up, a service goes down or NVDA crosses $235. Local code checks while your terminal is closed, and brings the follow-up back to your conversation.</p>
       <p class="platform-line"><b>Claude Code</b> &nbsp;·&nbsp; <b>Codex</b> &nbsp;·&nbsp; <b>OpenCode</b> <small>source install</small> &nbsp;·&nbsp; <b>ZCode</b> <small>source install</small></p>
       <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#why">Why not /loop? →</a></div>
       <p class="promise">Zero model calls while waiting · Runs while terminal is closed (launchd / systemd) · macOS and Linux</p>
     </div>
     <div class="market-watch" aria-label="Example watches in action">
       <div class="showcase-tabs" role="tablist" aria-label="Example watch scenario">
-        <button id="scene-tab-ci" type="button" role="tab" data-scene-pick="ci" aria-controls="scene-ci" aria-selected="true">CI &amp; PR watch</button>
-        <button id="scene-tab-market" type="button" role="tab" data-scene-pick="market" aria-controls="scene-market" aria-selected="false" tabindex="-1">Market watch (NVDA)</button>
+        <button id="scene-tab-market" type="button" role="tab" data-scene-pick="market" aria-controls="scene-market" aria-selected="true">Market watch (NVDA)</button>
+        <button id="scene-tab-ci" type="button" role="tab" data-scene-pick="ci" aria-controls="scene-ci" aria-selected="false" tabindex="-1">CI &amp; PR watch</button>
+      </div>
+      <div id="scene-market" data-scene-panel="market" role="tabpanel" aria-labelledby="scene-tab-market" tabindex="0">
+        <div class="market-title"><span>NVDA / A WATCH IN ACTION</span><span>Example conversation</span></div>
+        <div class="market-message you">
+          <span class="who">You · Jul 13</span>
+          <p>Watch NVDA. If it moves 6% from the previous close or reaches $235, investigate and tell me what changed.</p>
+        </div>
+        <figure class="market-chart">
+          <div class="plot" id="plot"></div>
+          <figcaption>Historical daily candles, Jul 13–Oct 9, 2026, from Yahoo Finance. The conversation and checks are illustrative; the markers show a large move and the first crossing of $235.</figcaption>
+        </figure>
+        <div class="market-message">
+          <span class="who">Your agent · Aug 27</span>
+          <p>NVDA opened 6.3% higher at $222.86. I'll investigate the move and report what changed.</p>
+        </div>
+        <div class="market-message">
+          <span class="who">Your agent · Oct 2</span>
+          <p>NVDA opened at $236.06, above your $235 line. I'll check the latest context and send you an update.</p>
+        </div>
       </div>
       <div id="scene-ci" data-scene-panel="ci" role="tabpanel" aria-labelledby="scene-tab-ci" tabindex="0">
         <div class="market-title"><span>PR #128 / BACKGROUND CI WATCH</span><span>Original session resumed</span></div>
@@ -1092,25 +1111,6 @@ footer>.wrap {
         <div class="market-message">
           <span class="who">Claude Code / Codex · 14:41 · back in your thread</span>
           <p>Run #4918 failed on e4a91c2 in <code>session-process.test.ts</code>: an inherited pipe stayed open after timeout. I traced it to <code>session-process.ts:142</code> and drafted a fix.</p>
-        </div>
-      </div>
-      <div id="scene-market" data-scene-panel="market" role="tabpanel" aria-labelledby="scene-tab-market" tabindex="0">
-        <div class="market-title"><span>NVDA / A WATCH IN ACTION</span><span>Example conversation</span></div>
-        <div class="market-message you">
-          <span class="who">You · Jul 13</span>
-          <p>Watch NVDA. If it moves 6% from the previous close or reaches $235, investigate and tell me what changed.</p>
-        </div>
-        <figure class="market-chart">
-          <div class="plot" id="plot"></div>
-          <figcaption>Historical daily candles, Jul 13–Oct 9, 2026, from Yahoo Finance. The conversation and checks are illustrative; the markers show a large move and the first crossing of $235.</figcaption>
-        </figure>
-        <div class="market-message">
-          <span class="who">Your agent · Aug 27</span>
-          <p>NVDA opened 6.3% higher at $222.86. I'll investigate the move and report what changed.</p>
-        </div>
-        <div class="market-message">
-          <span class="who">Your agent · Oct 2</span>
-          <p>NVDA opened at $236.06, above your $235 line. I'll check the latest context and send you an update.</p>
         </div>
       </div>
     </div>
@@ -1379,10 +1379,10 @@ const redraw = () => {
 redraw();
 if ("ResizeObserver" in window) new ResizeObserver(redraw).observe(plot);
 
-const SCENES = ["ci", "market"];
+const SCENES = ["market", "ci"];
 const sceneTabs = [...document.querySelectorAll("[data-scene-pick]")];
 function pickScene(scene) {
-  if (!SCENES.includes(scene)) scene = "ci";
+  if (!SCENES.includes(scene)) scene = "market";
   document.documentElement.dataset.scene = scene;
   for (const tab of sceneTabs) {
     const active = tab.dataset.scenePick === scene;
