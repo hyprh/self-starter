@@ -163,6 +163,17 @@ describe("self-starter ui server", () => {
     const snap1 = JSON.parse(snap1Text);
     assert.equal(snap1.channels.webhooks.feishu.hint, `127.0.0.1:${mockPort} (…8877)`);
     assert.deepEqual(snap1.secrets, [{ name: "TEST_API_SECRET", hosts: ["api.example.com"] }]);
+    assert.deepEqual(
+      snap1.agents.map((a: { id: string }) => a.id),
+      ["codex", "claude-code", "zcode", "opencode"],
+    );
+
+    const cfgRes = await fetch(`${base}/api/agents/config`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ budget: { maxAgentRunsPerDay: 120, maxConcurrentAgentRuns: 3 } }),
+    });
+    assert.equal(cfgRes.status, 200);
 
     // 3. Create a draft via service, inspect & activate it via UI API
     const draft = await daemon.service.createDraft(
@@ -202,6 +213,8 @@ describe("self-starter ui server", () => {
     // 4. Verify Attention Inbox shows the fire as unread, then mark it read
     const snap2 = await (await fetch(`${base}/api/snapshot`, { headers })).json();
     assert.ok(snap2.status.checks.total >= 1, "tracks 0-token probe checks");
+    assert.equal(snap2.triggers[0].interval, "5m");
+    assert.equal(snap2.triggers[0].host, "codex");
     const unread = snap2.fires.filter((f: { needsAttention: boolean }) => f.needsAttention);
     assert.equal(unread.length, 1);
 

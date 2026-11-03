@@ -10,7 +10,9 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo, Socket } from "node:net";
+import { isAbsolute } from "node:path";
 import { callDaemon } from "../client/client.js";
+import { doctor } from "../cli/install.js";
 import { reopen } from "../core/conversations.js";
 import { isRecord } from "../core/patch.js";
 import {
@@ -25,7 +27,7 @@ import {
   sendEmail,
   setDefaultChannels,
 } from "../engine/channels.js";
-import { loadConfig, type EmailSettings, type WebhookProvider } from "../engine/config.js";
+import { isExecutable, loadConfig, saveConfig, type EmailSettings, type WebhookProvider } from "../engine/config.js";
 import { mailProviderFor, unsupportedSender } from "../engine/mail-providers.js";
 import { SystemNotifier, type Notifier } from "../engine/notify.js";
 import type { Paths } from "../engine/paths.js";
@@ -159,12 +161,73 @@ export async function startUiServer(options: UiServerOptions): Promise<RunningUi
       };
     });
 
+    const hostSpecs = [
+      {
+        id: "codex",
+        name: "Codex",
+        vendor: "OpenAI Codex App & CLI",
+        configKey: "codexBin" as const,
+        statusKey: "codex",
+        capabilities: ["Origin thread queue", "Dedicated thread", "Background app-server wake"],
+        installCmd: "codex plugin marketplace add hyprh/self-starter && codex plugin add self-starter@self-starter",
+      },
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        vendor: "Anthropic Claude Code >= 2.1.224",
+        configKey: "claudeBin" as const,
+        statusKey: "claude",
+        capabilities: ["Live session inbox", "Dedicated session", "Background claude -p --resume"],
+        installCmd: "claude plugin marketplace add hyprh/self-starter && claude plugin install self-starter@self-starter",
+      },
+      {
+        id: "zcode",
+        name: "ZCode",
+        vendor: "ZCode CLI Integration",
+        configKey: "zcodeBin" as const,
+        statusKey: "zcode",
+        capabilities: ["Dedicated CLI result session", "Session resume via zcode --resume"],
+        installCmd: "self-starter install --zcode /path/to/zcode",
+      },
+      {
+        id: "opencode",
+        name: "OpenCode",
+        vendor: "OpenCode 1.19.3–1.x Native Loader",
+        configKey: "opencodeBin" as const,
+        statusKey: "opencode",
+        capabilities: ["Native JS plugin loader", "Dedicated session via opencode run --session"],
+        installCmd: "self-starter install --opencode /path/to/opencode",
+      },
+    ];
+
+    const agents = hostSpecs.map((spec) => {
+      const detectedBin = typeof raw.status[spec.statusKey] === "string" ? (raw.status[spec.statusKey] as string) : null;
+      const configuredBin = cfg[spec.configKey] ?? null;
+      const hostTriggers = raw.triggers.filter((t) => (t.host ?? "codex") === spec.id);
+      const hostFires = fires.filter((f) => ((f as Record<string, unknown>).host ?? "codex") === spec.id);
+      return {
+        id: spec.id,
+        name: spec.name,
+        vendor: spec.vendor,
+        configKey: spec.configKey,
+        configuredBin,
+        detectedBin: detectedBin ?? configuredBin,
+        watchCount: hostTriggers.length,
+        activeWatchCount: hostTriggers.filter((t) => t.lifecycle === "active").length,
+        attentionCount: hostFires.filter((f) => Boolean((f as Record<string, unknown>).needsAttention)).length,
+        fireCount: hostFires.length,
+        capabilities: spec.capabilities,
+        installCmd: spec.installCmd,
+      };
+    });
+
     return {
       status: raw.status,
       triggers: raw.triggers,
       drafts: raw.drafts,
       fires,
       deferred: raw.deferred,
+      agents,
       channels: {
         default: settings.default,
         available: configuredChannels(cfg),
@@ -465,6 +528,44 @@ export async function startUiServer(options: UiServerOptions): Promise<RunningUi
       const removed = new Secrets(paths).remove(name);
       void broadcastSnapshot(true);
       sendJson(res, 200, { removed });
+      return;
+    }
+
+    if (method === "GET" && pathname === "/api/agents/doctor") {
+      const checks = await doctor(paths);
+      sendJson(res, 200, { checks, checkedAt: new Date().toISOString() });
+      return;
+    }
+
+    if (method === "POST" && pathname === "/api/agents/config") {
+      const body = await readJsonBody(req);
+      const cfg = loadConfig(paths);
+      const binKeys = ["codexBin", "claudeBin", "zcodeBin", "opencodeBin"] as const;
+      for (const key of binKeys) {
+        if (key in body) {
+          const val = typeof body[key] === "string" ? body[key].trim() : "";
+          if (val === "") {
+            delete cfg[key];
+          } else {
+            if (!isAbsolute(val) || !isExecutable(val)) {
+              throw new Error(`${val} must be an absolute path to an executable file`);
+            }
+            cfg[key] = val;
+          }
+        }
+      }
+      if (isRecord(body.budget)) {
+        const cur = cfg.budget ?? {};
+        const maxDay = Number(body.budget.maxAgentRunsPerDay);
+        const maxConc = Number(body.budget.maxConcurrentAgentRuns);
+        if (Number.isFinite(maxDay) && maxDay >= 1) cur.maxAgentRunsPerDay = Math.floor(maxDay);
+        if (Number.isFinite(maxConc) && maxConc >= 1) cur.maxConcurrentAgentRuns = Math.floor(maxConc);
+        cfg.budget = cur;
+      }
+      new Store(paths).ensureLayout();
+      saveConfig(paths, cfg);
+      void broadcastSnapshot(true);
+      sendJson(res, 200, { saved: true });
       return;
     }
 

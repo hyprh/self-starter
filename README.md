@@ -11,6 +11,7 @@ Local code keeps watch—even after you close your terminal—and brings the fol
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#what-to-watch">Use cases</a> ·
+  <a href="#local-web-console--push-routing">Web Console</a> ·
   <a href="docs/guide.md">Guide</a>
 </p>
 
@@ -32,7 +33,7 @@ Local code keeps watch—even after you close your terminal—and brings the fol
 
 ## What this plugin solves
 
-Give your coding agent an ongoing responsibility: watch your PRs, long-running jobs, local services or market activity, and handle the follow-up with the context you already built.
+Give your agent an ongoing responsibility: watch your PRs, long-running jobs, local services or market activity, and handle the follow-up with the context you already built.
 
 **Ask once: "Keep watching this PR. When CI fails or new review comments arrive, investigate and continue in this conversation."** Your agent writes and tests a small local TypeScript probe, hands it to a background `launchd` or `systemd` service, and steps aside until the condition actually happens.
 
@@ -177,7 +178,19 @@ These examples need access to their data sources. Network access and credentials
 1. **Describe the event.** Your agent writes a TypeScript probe or uses a ready-made recipe, tests it, and sets the action and destination.
 2. **Code does the waiting.** A local background service runs the probe on a schedule. The engine handles minimum duration, cooldown, deduplication, expiry and delivery retries without calling a model for each check.
 3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background; ZCode and OpenCode resume their dedicated result sessions. You can choose a notification without an agent task instead.
-4. **Check the result—or route it anywhere.** Run `~/.self-starter/bin/self-starter ui` (`self-starter ui` when on PATH) to open the local **Attention Inbox**, inspect 0-token check counts and active watches, copy one-click session resume commands, and route alerts per watch to **Desktop**, **Feishu / Lark**, **WeCom**, **DingTalk**, **Slack**, **Discord**, **Telegram**, **Bark**, **ntfy**, custom **Webhooks**, or [Email](docs/guide.md#notifications-and-outbound-channels).
+4. **Check the result—or route it anywhere.** Run `~/.self-starter/bin/self-starter ui` (`self-starter ui` when on PATH) to open the local **Web Console**, inspect 0-token check counts and active watches, copy one-click session resume commands, and route alerts per watch to **Desktop**, **Feishu / Lark**, **WeCom**, **DingTalk**, **Slack**, **Discord**, **Telegram**, **Bark**, **ntfy**, custom **Webhooks**, or [Email](docs/guide.md#notifications-and-outbound-channels).
+
+## Local Web console & push routing
+
+Run `self-starter ui` (`~/.self-starter/bin/self-starter ui`) to open the local `127.0.0.1` console—review active probe tasks across Codex, Claude Code, ZCode and OpenCode, inspect probe source code and dry-run logs, configure quiet hours, and route alerts per probe to any push channel:
+
+<p align="center">
+  <img src="docs/demos/console-probes-light.png" width="960" alt="Self-Starter local Web console in light theme showing active probe tasks across Claude Code and Codex, 0-token check counters, quiet hours, and per-task push routing to Desktop, Slack, Telegram, Bark and Feishu.">
+</p>
+
+<p align="center">
+  <img src="docs/demos/console-inbox-dark.png" width="960" alt="Self-Starter Attention Inbox in dark theme showing quiet-hours held notifications, actionable multi-agent receipts, and one-click session resume controls.">
+</p>
 
 ## Running locally
 

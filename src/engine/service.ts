@@ -711,15 +711,18 @@ export class TriggerService {
     this.cleanupDrafts();
     const runStats = this.deps.engine.runStats();
     const triggerNames = new Map<string, string>();
+    const triggerHosts = new Map<string, string>();
     const triggers = this.deps.store.listTriggerIds().map((id) => {
       const loaded = this.tryLoad(id);
       const def = loaded?.definition;
+      const summary = this.summary(id, loaded);
       if (def) triggerNames.set(id, def.name);
+      triggerHosts.set(id, summary.host);
       return {
-        ...this.summary(id, loaded),
+        ...summary,
         intent: def?.intent ?? "",
         mode: def?.mode ?? "state",
-        interval: def?.probe.interval ?? null,
+        interval: def?.probe.interval.default ?? null,
         notify: def?.notify ?? { when: "receipt" },
         quietHours: def?.policy.quiet_hours ?? null,
         cooldown: def?.policy.cooldown ?? null,
@@ -738,6 +741,7 @@ export class TriggerService {
           triggerId: view.triggerId,
           name: draft.definition.name,
           intent: draft.definition.intent,
+          host: hostFor(draft.definition),
           createdAt: meta.createdAt,
           replaces: view.replaces,
           trial: view.trial,
@@ -751,6 +755,7 @@ export class TriggerService {
           triggerId: meta.draftId,
           name: meta.draftId,
           intent: "",
+          host: hostOf(meta.originThreadId),
           createdAt: meta.createdAt,
           replaces: meta.replaces ?? null,
           trial: meta.dryRun ?? null,
@@ -770,6 +775,7 @@ export class TriggerService {
       .map((fire) => ({
         ...fireView(fire),
         triggerName: triggerNames.get(fire.triggerId) ?? fire.triggerId,
+        host: fire.target?.threadId ? hostOf(fire.target.threadId) : (triggerHosts.get(fire.triggerId) ?? "codex"),
       }));
 
     return {

@@ -24,8 +24,8 @@ export const WEBHOOK_PROVIDERS: readonly WebhookProvider[] = [
 
 export const PROVIDER_LABELS: Record<WebhookProvider, string> = {
   feishu: "Feishu / Lark",
-  wecom: "WeCom (企业微信)",
-  dingtalk: "DingTalk (钉钉)",
+  wecom: "WeCom",
+  dingtalk: "DingTalk",
   slack: "Slack",
   discord: "Discord",
   telegram: "Telegram Bot",
