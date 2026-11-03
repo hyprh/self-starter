@@ -16,6 +16,7 @@ import { ensureDaemon, installService, serviceManager, stopRunningDaemon } from 
 import { doctor, install, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
+import { uiCommand } from "./ui.js";
 
 const HELP = `self-starter ${VERSION}: let your coding agent act when something happens
 
@@ -26,7 +27,8 @@ Setup
   self-starter uninstall [--purge]                       remove them (--purge also deletes triggers and history)
   self-starter doctor                                    check the installation
 
-Triggers
+Triggers & Console
+  self-starter ui [--port <port>] [--no-open]            open the local Attention Inbox, watch dashboard & channel router
   self-starter list                                      all triggers and their state
   self-starter show <id>                                 definition, state, recent checks and fires
   self-starter test <id>                                 run the probe once, without firing
@@ -40,14 +42,15 @@ Secrets (API keys for probes)
   self-starter secret set <NAME> [--hosts <host,...>]    store a secret; --hosts limits which hosts a sandboxed probe may send it to
   self-starter secret list | self-starter secret rm <NAME>
 
-Notifications
+Notifications & Outbound Channels
   self-starter channel list                              where notifications go
+  self-starter channel add [<name>] <url> [--default]    connect Feishu, WeCom, DingTalk, Slack, Discord, Bark, ntfy or a webhook
+  self-starter channel telegram [<name>] [--default]     connect a Telegram bot (auto-detects your chat id)
   self-starter channel email <your address> [--to <addr>] [--default] [--no-test]
-                                                        email from Gmail, iCloud, Yahoo, Fastmail, QQ, 163/126 or Aliyun
-                                                        with an app password; other servers: --host <smtp-host> [--port] [--starttls]
-  self-starter channel default desktop[,email]           channels for triggers that do not choose their own
-  self-starter channel test [desktop|email]              send a test notification
-  self-starter channel rm email
+                                                         optional SMTP email (Gmail, iCloud, QQ, 163/126, Fastmail, Yahoo, Aliyun)
+  self-starter channel default desktop[,feishu,...]      channels for triggers that do not choose their own
+  self-starter channel test [<name>]                     send a test notification
+  self-starter channel rm <name>
 
 Background service
   self-starter service install|uninstall|start|stop|restart|status
@@ -193,6 +196,9 @@ async function main(argv: string[]): Promise<void> {
       return;
     case "version":
       out(VERSION);
+      return;
+    case "ui":
+      await uiCommand(paths, args);
       return;
     case "mcp":
       // --tools-changed: the plugin's launcher answered the host while it installed this runtime.

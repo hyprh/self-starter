@@ -132,7 +132,7 @@ notify:
 - `policy.concurrency` is `coalesce` by default; `queue` and `skip` are also available. `quiet_hours: { from: "23:00", to: "08:00", tz: Asia/Shanghai }` under `policy` holds notifications only.
 - Use `action.type: notify` without an action prompt for alerts that need no model. For `agent`, include a complete `action.prompt`. Always use `target.kind: dedicated`, including one-shot triggers; `origin` delivery is unsupported for OpenCode.
 - `action.sandbox` selects OpenCode tool permissions, not an OS sandbox. The engine applies explicit permissions to each background run; a prompt cannot override denied tools. The run has no approval client: operations that need approval are denied. Explain the intended side effects and obtain authorization before activation. Do not promise filesystem or network isolation from these permission names.
-- `notify.when` accepts `receipt`, `always` or `never`. Omit `notify.channels` to use the user's defaults. Email requires terminal setup with `self-starter channel email <address>`; use `service_status` to check readiness and never handle the app password in chat.
+- `notify.when` accepts `receipt`, `always` or `never`. Omit `notify.channels` to use the user's defaults, or choose from `channels.available` in `service_status` (for example `desktop`, `feishu`, `wecom`, `dingtalk`, `slack`, `discord`, `telegram`, `bark`, `ntfy`, or `email`). Channels and secrets are configured in `self-starter ui` or `self-starter channel`; never handle webhook URLs, bot tokens or app passwords in chat.
 
 ## Handling a [self-starter] message
 

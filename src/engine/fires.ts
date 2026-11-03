@@ -48,6 +48,7 @@ export interface FireRecord {
   error?: string;
   receipt?: Receipt;
   notifiedAt?: string;
+  acknowledgedAt?: string;
   skippedBecause?: string;
 }
 
@@ -60,7 +61,8 @@ export type FireEvent =
   | { type: "attempt_failed"; fireId: string; error: string; at: string }
   | { type: "failed"; fireId: string; error: string; at: string }
   | { type: "receipt"; fireId: string; receipt: Receipt; at: string }
-  | { type: "notified"; fireId: string; at: string };
+  | { type: "notified"; fireId: string; at: string }
+  | { type: "acknowledged"; fireId: string; at: string };
 
 function apply(index: Map<string, FireRecord>, event: FireEvent): void {
   if (event.type === "created") {
@@ -106,7 +108,19 @@ function apply(index: Map<string, FireRecord>, event: FireEvent): void {
     case "notified":
       fire.notifiedAt = event.at;
       break;
+    case "acknowledged":
+      fire.acknowledgedAt = event.at;
+      break;
   }
+}
+
+/** True when a fire warrants human attention in the Inbox and has not been marked read yet. */
+export function needsAttention(fire: FireRecord): boolean {
+  if (fire.acknowledgedAt) return false;
+  if (fire.receipt?.notify === true) return true;
+  if (fire.status === "failed") return true;
+  if (fire.status === "skipped" && fire.skippedBecause?.includes("budget")) return true;
+  return false;
 }
 
 export class FireLog {
@@ -155,5 +169,18 @@ export class FireLog {
     return this.all().some(
       (fire) => fire.status === "delivered" && fire.target?.threadId === threadId,
     );
+  }
+
+  /** Marks fires as read in the Attention Inbox. Returns the fire ids newly acknowledged. */
+  acknowledge(fireIds: Iterable<string>, at = new Date()): string[] {
+    const iso = at.toISOString();
+    const updated: string[] = [];
+    for (const fireId of new Set(fireIds)) {
+      const fire = this.index.get(fireId);
+      if (!fire || fire.acknowledgedAt) continue;
+      this.record({ type: "acknowledged", fireId, at: iso });
+      updated.push(fireId);
+    }
+    return updated;
   }
 }

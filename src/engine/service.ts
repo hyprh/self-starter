@@ -11,15 +11,16 @@ import { definitionToYaml, probeTimings, validateDefinition, type TriggerDefinit
 import { parseDuration } from "../core/duration.js";
 import { deepMerge, describeChanges, isRecord, patchPaths } from "../core/patch.js";
 import type { ProbeRunResult } from "./probe-runner.js";
-import { channelSettings } from "./channels.js";
+import { channelSettings, configuredChannels } from "./channels.js";
 import { loadConfig, type Config } from "./config.js";
 import type { Engine, RunRecord } from "./engine.js";
 import type { Executor } from "./executor.js";
-import type { FireLog, FireRecord } from "./fires.js";
+import { needsAttention, type FireLog, type FireRecord } from "./fires.js";
 import type { Paths } from "./paths.js";
 import { applyRecipe, listRecipes, loadRecipe, type Recipe } from "./recipes.js";
 import type { DryRun, LoadedDraft, LoadedTrigger, Store } from "./store.js";
 import { TurnGuard } from "./turn-guard.js";
+import { PROVIDER_LABELS } from "./webhooks.js";
 
 export type ErrorCode = "not_found" | "invalid" | "refused" | "conflict";
 
@@ -139,6 +140,9 @@ export function fireView(fire: FireRecord) {
     deliveredAt: fire.deliveredAt ?? null,
     wokenAt: fire.wokenAt ?? null,
     receipt: fire.receipt ?? null,
+    notifiedAt: fire.notifiedAt ?? null,
+    acknowledgedAt: fire.acknowledgedAt ?? null,
+    needsAttention: needsAttention(fire),
     error: fire.error ?? null,
     skippedBecause: fire.skippedBecause ?? null,
     mergedInto: fire.mergedInto ?? null,
@@ -307,6 +311,13 @@ export class TriggerService {
     }
     if (def.action.type === "agent" && def.target.kind === "dedicated" && !def.target.cwd) {
       out.push(`target.cwd is not set, so the dedicated ${conversation} will work in the user's home folder.`);
+    }
+    if (def.notify.channels) {
+      const configured = new Set(configuredChannels(loadConfig(this.deps.paths)));
+      const missing = def.notify.channels.filter((ch) => !configured.has(ch));
+      if (missing.length > 0) {
+        out.push(`Channel(s) not set up yet: ${missing.join(", ")}. Set them up in \`self-starter ui\` or \`self-starter channel add\`.`);
+      }
     }
     return out;
   }
@@ -640,6 +651,10 @@ export class TriggerService {
       const lifecycle = this.deps.engine.runtime(id).lifecycle;
       counts[lifecycle] = (counts[lifecycle] ?? 0) + 1;
     }
+    const cfg = loadConfig(this.deps.paths);
+    const settings = channelSettings(cfg);
+    const runStats = this.deps.engine.runStats();
+    const attentionCount = this.deps.fires.all().filter(needsAttention).length;
     return {
       version: this.deps.version,
       pid: process.pid,
@@ -652,12 +667,148 @@ export class TriggerService {
       opencode: this.deps.opencodeBin?.() ?? null,
       triggers: { total: ids.length, ...counts },
       drafts: this.deps.store.listDrafts().length,
-      channels: (() => {
-        const settings = channelSettings(loadConfig(this.deps.paths));
-        return { default: settings.default, email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (the user can run: self-starter channel email <their address>)" };
-      })(),
+      checks: { total: runStats.totalChecks, today: runStats.checksToday },
+      attentionCount,
+      channels: {
+        default: settings.default,
+        available: configuredChannels(cfg),
+        webhooks: Object.fromEntries(
+          Object.entries(settings.webhooks ?? {}).map(([k, v]) => [k, `${PROVIDER_LABELS[v.provider]} (${v.hint})`]),
+        ),
+        email: settings.email ? `set up, sending to ${settings.email.to}` : "not set up (optional: self-starter channel email <their address>)",
+      },
       budget: this.deps.config.budget,
       ...this.deps.executor.status(),
+    };
+  }
+
+  acknowledgeFires(params: { fireIds?: unknown; all?: unknown }) {
+    let ids: string[];
+    if (params.all === true) {
+      ids = this.deps.fires.all().filter(needsAttention).map((f) => f.fireId);
+    } else if (Array.isArray(params.fireIds) && params.fireIds.every((x): x is string => typeof x === "string")) {
+      ids = params.fireIds;
+    } else {
+      throw new ServiceError("invalid", "pass fireIds (list of fire ids) or all=true");
+    }
+    const acknowledged = this.deps.fires.acknowledge(ids, this.now());
+    return { acknowledged, attentionCount: this.deps.fires.all().filter(needsAttention).length };
+  }
+
+  async flushDeferred(params: { id?: unknown }) {
+    const id = typeof params.id === "string" && params.id ? params.id : undefined;
+    const sent = await this.deps.executor.flushDeferredNow(id);
+    return { sent, remaining: this.deps.executor.deferredItems().length };
+  }
+
+  dropDeferred(params: { id?: unknown }) {
+    if (typeof params.id !== "string" || !params.id) throw new ServiceError("invalid", "id is required");
+    const dropped = this.deps.executor.dropDeferredItem(params.id);
+    return { dropped, remaining: this.deps.executor.deferredItems().length };
+  }
+
+  uiSnapshot() {
+    this.cleanupDrafts();
+    const runStats = this.deps.engine.runStats();
+    const triggerNames = new Map<string, string>();
+    const triggers = this.deps.store.listTriggerIds().map((id) => {
+      const loaded = this.tryLoad(id);
+      const def = loaded?.definition;
+      if (def) triggerNames.set(id, def.name);
+      return {
+        ...this.summary(id, loaded),
+        intent: def?.intent ?? "",
+        mode: def?.mode ?? "state",
+        interval: def?.probe.interval ?? null,
+        notify: def?.notify ?? { when: "receipt" },
+        quietHours: def?.policy.quiet_hours ?? null,
+        cooldown: def?.policy.cooldown ?? null,
+        maxFires: def?.policy.max_fires ?? null,
+        recipe: def?.meta.recipe ?? null,
+        checks: runStats.byTrigger[id] ?? 0,
+      };
+    });
+
+    const drafts = this.deps.store.listDrafts().map((meta) => {
+      try {
+        const draft = this.deps.store.loadDraft(meta.draftId);
+        const view = this.draftView(draft);
+        return {
+          draftId: view.draftId,
+          triggerId: view.triggerId,
+          name: draft.definition.name,
+          intent: draft.definition.intent,
+          createdAt: meta.createdAt,
+          replaces: view.replaces,
+          trial: view.trial,
+          warnings: view.warnings,
+          changes: view.changes,
+          description: view.description,
+        };
+      } catch {
+        return {
+          draftId: meta.draftId,
+          triggerId: meta.draftId,
+          name: meta.draftId,
+          intent: "",
+          createdAt: meta.createdAt,
+          replaces: meta.replaces ?? null,
+          trial: meta.dryRun ?? null,
+          warnings: [],
+          changes: null,
+          description: "",
+        };
+      }
+    });
+
+    const allFires = this.deps.fires.all();
+    const recentSlice = allFires.slice(-60);
+    const recentIds = new Set(recentSlice.map((f) => f.fireId));
+    const extraAttention = allFires.filter((f) => needsAttention(f) && !recentIds.has(f.fireId));
+    const combinedFires = [...extraAttention, ...recentSlice]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((fire) => ({
+        ...fireView(fire),
+        triggerName: triggerNames.get(fire.triggerId) ?? fire.triggerId,
+      }));
+
+    return {
+      status: this.status(),
+      triggers,
+      drafts,
+      fires: combinedFires,
+      deferred: this.deps.executor.deferredItems(),
+    };
+  }
+
+  uiInspect(params: { kind?: unknown; id?: unknown }) {
+    if (params.kind === "draft") {
+      const draft = this.loadDraft(params.id);
+      const view = this.draftView(draft);
+      return {
+        kind: "draft" as const,
+        id: view.draftId,
+        triggerId: view.triggerId,
+        name: draft.definition.name,
+        definitionYaml: view.definitionYaml,
+        probeCode: draft.probeCode,
+        codePath: view.codePath,
+        trial: view.trial,
+        warnings: view.warnings,
+      };
+    }
+    const loaded = this.load(params.id);
+    const detail = this.get({ triggerId: loaded.definition.id });
+    return {
+      kind: "trigger" as const,
+      id: loaded.definition.id,
+      name: loaded.definition.name,
+      definitionYaml: detail.definitionYaml,
+      probeCode: loaded.probeCode,
+      codePath: detail.probePath,
+      runtime: detail.runtime,
+      recentRuns: detail.recentRuns,
+      recentFires: detail.recentFires,
     };
   }
 
@@ -666,6 +817,8 @@ export class TriggerService {
     return {
       ping: () => ({ version: this.deps.version, pid: process.pid }),
       status: () => this.status(),
+      "ui.snapshot": () => this.uiSnapshot(),
+      "ui.inspect": (p) => this.uiInspect(p),
       "draft.create": (p, c) => this.createDraft(p, c),
       "draft.get": (p) => this.getDraft(p),
       "draft.list": () => this.listDrafts(),
@@ -682,6 +835,10 @@ export class TriggerService {
       "trigger.tune": (p, c) => this.tuneTrigger(p, c),
       "fire.history": (p) => this.history(p),
       "fire.report": (p, c) => this.report(p, c),
+      "fire.acknowledge": (p) => this.acknowledgeFires(p),
+      "deferred.list": () => this.deps.executor.deferredItems(),
+      "deferred.flush": (p) => this.flushDeferred(p),
+      "deferred.drop": (p) => this.dropDeferred(p),
     };
   }
 }

@@ -13,6 +13,7 @@ import type { FireDraft } from "../core/state-machine.js";
 import type { CodexRunner } from "./codex.js";
 import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
+import { newId } from "./fs-util.js";
 import { HostDelivery } from "./host-delivery.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { OpenCodeRunner } from "./opencode.js";
@@ -45,9 +46,23 @@ export interface ExecutorDeps {
 }
 
 interface Deferred {
+  id: string;
+  heldAt: string;
   fireId?: string;
   notification: Notification;
   quiet: QuietHours | undefined;
+}
+
+export interface DeferredView {
+  id: string;
+  heldAt: string;
+  fireId: string | null;
+  triggerId: string | null;
+  title: string;
+  body: string;
+  threadId: string | null;
+  channels: string[] | null;
+  quiet: QuietHours | null;
 }
 
 function localDay(date: Date): string {
@@ -469,9 +484,14 @@ export class Executor {
   /** Sends a notification about a trigger to the trigger's channels, holding it during the trigger's quiet hours. */
   private async sendNotification(definition: TriggerDefinition | undefined, fireId: string | undefined, notification: Notification): Promise<void> {
     const quiet = definition?.policy.quiet_hours;
-    if (definition?.notify.channels && !notification.channels) notification = { ...notification, channels: definition.notify.channels };
+    notification = {
+      ...notification,
+      ...(definition?.id && !notification.triggerId ? { triggerId: definition.id } : {}),
+      ...(fireId && !notification.fireId ? { fireId } : {}),
+      ...(definition?.notify.channels && !notification.channels ? { channels: definition.notify.channels } : {}),
+    };
     if (isQuietTime(this.now(), quiet)) {
-      this.deferred.push({ ...(fireId ? { fireId } : {}), notification, quiet });
+      this.deferred.push({ id: newId("defer"), heldAt: this.now().toISOString(), ...(fireId ? { fireId } : {}), notification, quiet });
       return;
     }
     await this.deps.notifier.notify(notification);
@@ -497,5 +517,46 @@ export class Executor {
 
   status(): { activeAgentRuns: number; deferredNotifications: number; agentRunsToday: number } {
     return { activeAgentRuns: this.delivery.activeRuns, deferredNotifications: this.deferred.length, agentRunsToday: this.agentRunsToday() };
+  }
+
+  /** Notifications currently held by quiet_hours, for the Attention Inbox. */
+  deferredItems(): DeferredView[] {
+    return this.deferred.map((item) => ({
+      id: item.id,
+      heldAt: item.heldAt,
+      fireId: item.fireId ?? null,
+      triggerId: item.notification.triggerId ?? null,
+      title: item.notification.title,
+      body: item.notification.body,
+      threadId: item.notification.threadId ?? null,
+      channels: item.notification.channels ?? null,
+      quiet: item.quiet ?? null,
+    }));
+  }
+
+  /** Sends one held notification (by id or fireId) or all held notifications right away. */
+  async flushDeferredNow(target?: string): Promise<number> {
+    const now = this.now().toISOString();
+    const matched = target ? this.deferred.filter((item) => item.id === target || item.fireId === target) : [...this.deferred];
+    for (const item of matched) {
+      await this.deps.notifier.notify(item.notification);
+      if (item.fireId) this.deps.fires.record({ type: "notified", fireId: item.fireId, at: now });
+      const idx = this.deferred.indexOf(item);
+      if (idx >= 0) this.deferred.splice(idx, 1);
+    }
+    return matched.length;
+  }
+
+  /** Discards a held notification (by id or fireId) without sending it. */
+  dropDeferredItem(target: string): boolean {
+    let removed = false;
+    for (let i = this.deferred.length - 1; i >= 0; i--) {
+      const item = this.deferred[i]!;
+      if (item.id === target || item.fireId === target) {
+        this.deferred.splice(i, 1);
+        removed = true;
+      }
+    }
+    return removed;
   }
 }

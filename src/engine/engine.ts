@@ -77,6 +77,9 @@ export class Engine {
   private readonly runtimes = new Map<string, RuntimeState>();
   private readonly running = new Set<string>();
   private readonly recent = new Map<string, RunRecord[]>();
+  private readonly countsByTrigger = new Map<string, number>();
+  private readonly countsByDay = new Map<string, number>();
+  private totalChecks = 0;
   private timer: NodeJS.Timeout | undefined;
   private started = false;
   private lastExecutorTick = 0;
@@ -236,7 +239,31 @@ export class Engine {
     return [...(this.recent.get(id) ?? [])];
   }
 
+  runStats(): { totalChecks: number; checksToday: number; byTrigger: Record<string, number> } {
+    const today = Engine.localDayKey(this.now());
+    return {
+      totalChecks: this.totalChecks,
+      checksToday: this.countsByDay.get(today) ?? 0,
+      byTrigger: Object.fromEntries(this.countsByTrigger),
+    };
+  }
+
+  private static localDayKey(date: Date): string {
+    return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+  }
+
   private remember(record: RunRecord): void {
+    this.totalChecks += 1;
+    this.countsByTrigger.set(record.triggerId, (this.countsByTrigger.get(record.triggerId) ?? 0) + 1);
+    const parsed = Date.parse(record.ranAt);
+    if (!Number.isNaN(parsed)) {
+      const day = Engine.localDayKey(new Date(parsed));
+      this.countsByDay.set(day, (this.countsByDay.get(day) ?? 0) + 1);
+      if (this.countsByDay.size > 14) {
+        const oldest = this.countsByDay.keys().next().value;
+        if (oldest !== undefined && oldest !== day) this.countsByDay.delete(oldest);
+      }
+    }
     const list = this.recent.get(record.triggerId) ?? [];
     list.push(record);
     if (list.length > RECENT_RUNS) list.splice(0, list.length - RECENT_RUNS);

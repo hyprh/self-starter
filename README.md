@@ -177,18 +177,18 @@ These examples need access to their data sources. Network access and credentials
 1. **Describe the event.** Your agent writes a TypeScript probe or uses a ready-made recipe, tests it, and sets the action and destination.
 2. **Code does the waiting.** A local background service runs the probe on a schedule. The engine handles minimum duration, cooldown, deduplication, expiry and delivery retries without calling a model for each check.
 3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background; ZCode and OpenCode resume their dedicated result sessions. You can choose a notification without an agent task instead.
-4. **Check the result.** History records the event and the agent's receipt. Desktop notifications are supported; email is optional and configured in the [guide](docs/guide.md#email).
+4. **Check the result—or route it anywhere.** Run `~/.self-starter/bin/self-starter ui` (`self-starter ui` when on PATH) to open the local **Attention Inbox**, inspect 0-token check counts and active watches, copy one-click session resume commands, and route alerts per watch to **Desktop**, **Feishu / Lark**, **WeCom**, **DingTalk**, **Slack**, **Discord**, **Telegram**, **Bark**, **ntfy**, custom **Webhooks**, or [Email](docs/guide.md#notifications-and-outbound-channels).
 
 ## Running locally
 
 - **Keep the machine awake.** Checks run locally, including when the agent app is closed. External data sources also need connectivity.
 - **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. ZCode and OpenCode use native tool permissions rather than OS isolation. See the [security policy](SECURITY.md), [ZCode permissions](zcode-plugin/README.md#permissions) and [OpenCode guide](opencode-plugin/README.md).
 - **Verify delivery once.** Run the quick start on your own setup. Desktop notifications need a working notification service; on macOS, `terminal-notifier` enables clicks that open a Codex thread. Use the [Codex app checklist](docs/codex-app-checklist.md) to check foreground and background behavior.
-- **Keep secrets in the terminal.** API keys and email app passwords are configured with the CLI, never in chat or probe source. What a probe saw is passed to the agent as untrusted data.
+- **Keep secrets out of chat.** API keys, webhook URLs, bot tokens and email app passwords are stored locally via `self-starter ui` or the CLI (`0600` permissions), never in chat or probe source. What a probe saw is passed to the agent as untrusted data.
 
 ## More
 
-- [Guide](docs/guide.md): triggers, result destinations, secrets, email and CLI commands
+- [Guide](docs/guide.md): triggers, local Web console (`self-starter ui`), outbound push channels, secrets and CLI commands
 - [ZCode guide](zcode-plugin/README.md): local installation and dedicated result sessions
 - [OpenCode guide](opencode-plugin/README.md): native plugin installation and background result sessions
 - [Design](docs/design.md): architecture, execution boundaries and verification

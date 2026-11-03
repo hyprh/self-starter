@@ -13,9 +13,18 @@ export type NotifyWhen = "always" | "receipt" | "never";
 export type Sandbox = "read-only" | "workspace-write" | "danger-full-access";
 /** What a probe may do: what the user can ("full"), or only reach the hosts it lists ("sandbox"). */
 export type ProbeAccess = "full" | "sandbox";
-/** Where notifications go. */
-export const CHANNELS = ["desktop", "email"] as const;
-export type Channel = (typeof CHANNELS)[number];
+/** Built-in notification channels; user-configured webhook/push channels may use any valid channel name. */
+export const BUILTIN_CHANNELS = ["desktop", "email"] as const;
+export const CHANNELS = BUILTIN_CHANNELS;
+export type BuiltinChannel = (typeof BUILTIN_CHANNELS)[number];
+/** Where notifications go: "desktop", "email", or a named webhook/push channel such as "feishu" or "bark". */
+export type Channel = string;
+
+export const CHANNEL_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{0,30}[a-z0-9])?$/;
+
+export function isChannelName(value: unknown): value is Channel {
+  return typeof value === "string" && CHANNEL_NAME_PATTERN.test(value);
+}
 
 export interface QuietHours {
   from: string;
@@ -279,10 +288,10 @@ export function validateDefinition(raw: unknown): ValidationResult {
   if (!["always", "receipt", "never"].includes(notify.when)) errors.push('notify.when must be "always", "receipt" or "never"');
   if (notifyRaw.channels !== undefined && notifyRaw.channels !== null) {
     const list = notifyRaw.channels;
-    if (!Array.isArray(list) || list.length === 0 || !list.every((c) => CHANNELS.includes(c))) {
-      errors.push(`notify.channels must be a non-empty list of ${CHANNELS.map((c) => `"${c}"`).join(" and ")}`);
+    if (!Array.isArray(list) || list.length === 0 || !list.every(isChannelName)) {
+      errors.push('notify.channels must be a non-empty list of channel names such as "desktop", "email" or "feishu"');
     } else {
-      notify.channels = [...new Set(list as Channel[])];
+      notify.channels = [...new Set(list)];
     }
   }
 
