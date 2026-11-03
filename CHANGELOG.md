@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.0.6 (2026-11-04)
+
+- **Local Web console (`self-starter ui`).** Run `self-starter ui` to open a loopback (`127.0.0.1`) sidebar workspace with real-time SSE updates, zero-token check counters, probe source and YAML inspection, dry-run triggers, and eye-care light and dark themes. The server enforces `Host` validation, one-time URL token bootstrap into an `HttpOnly SameSite=Strict` cookie, CSP, and CSRF origin checks, while never returning stored secret values.
+- **Multi-agent hub and per-agent views.** Inspect probe tasks, notifications, doctor diagnostics, CLI paths and daily execution budgets across Codex, Claude Code, ZCode and OpenCode from a unified overview or dedicated per-agent tabs.
+- **Attention Inbox and quiet-hours control.** Read actionable agent receipts, acknowledge notifications (`fires.jsonl`), copy one-click session resume commands or open Codex threads directly, and flush or discard notifications held during quiet hours.
+- **Outbound push channels and per-watch routing.** Connect Feishu / Lark (with optional HMAC-SHA256 signing), WeCom, DingTalk (with optional HMAC-SHA256 signing), Slack, Discord, Telegram (including one-click chat ID discovery), Bark, ntfy and custom HTTP webhooks alongside Desktop and Email. Any watch can route alerts to a custom subset of channels without restarting the daemon, and channel credentials stay isolated in `channel-secrets.json` (`0600`).
+- **Clearer positioning and closed-session quick start.** Documentation and the website compare zero-token local probes against in-session polling (`/loop`) and cloud schedules, showcase engineering and market workflows side by side, and walk through filtering routine log lines at zero tokens before waking a closed session on error.
+
 ## 0.0.5 (2026-11-01)
 
 - **Scope headless Claude Code quieting to the current fire.** A background turn can quiet only the watch bound to its current fire, including after reporting the receipt. Historical watches sharing the same session do not become eligible, and missing or mismatched fire identity fails closed.
