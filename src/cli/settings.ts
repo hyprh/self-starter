@@ -1,22 +1,33 @@
 // `self-starter secret ...` and `self-starter channel ...`: what the user sets up
-// once, in a terminal, so that keys and passwords never pass through the chat.
+// once, in a terminal or via `self-starter ui`, so keys, passwords and webhook URLs
+// never pass through the chat.
 
-import { CHANNELS, type Channel } from "../core/definition.js";
+import { BUILTIN_CHANNELS } from "../core/definition.js";
 import {
   ChannelNotifier,
   channelSettings,
   composeEmail,
-  removeEmailChannel,
+  readWebhookSecret,
+  removeChannel,
   saveEmailChannel,
+  saveWebhookChannel,
   sendEmail,
   setDefaultChannels,
 } from "../engine/channels.js";
-import { loadConfig, type EmailSettings } from "../engine/config.js";
+import { loadConfig, type EmailSettings, type WebhookProvider } from "../engine/config.js";
 import { mailProviderFor, unsupportedSender } from "../engine/mail-providers.js";
 import { SystemNotifier } from "../engine/notify.js";
 import type { Paths } from "../engine/paths.js";
 import { Secrets } from "../engine/secrets.js";
 import { Store } from "../engine/store.js";
+import {
+  detectWebhookProvider,
+  discoverTelegramChats,
+  isWebhookProvider,
+  PROVIDER_LABELS,
+  sendWebhook,
+  suggestChannelName,
+} from "../engine/webhooks.js";
 import { flag, need, out, readSecret, UsageError, type Args } from "./io.js";
 
 export async function secretCommand(paths: Paths, args: Args): Promise<void> {
@@ -50,27 +61,43 @@ export async function secretCommand(paths: Paths, args: Args): Promise<void> {
 }
 
 export async function channelCommand(paths: Paths, args: Args): Promise<void> {
-  const [, action, name] = args.positional;
+  const [, action, name, rest] = args.positional;
   switch (action) {
     case "list":
     case undefined: {
       const settings = channelSettings(loadConfig(paths));
-      out(`desktop  ${process.platform === "darwin" ? "macOS notifications" : "notify-send"}`);
-      out(settings.email ? `email    to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email    not set up (self-starter channel email you@example.com)");
-      out(`default  ${settings.default.join(", ")}`);
+      out(`desktop   ${process.platform === "darwin" ? "macOS notifications" : "notify-send"}`);
+      for (const [id, meta] of Object.entries(settings.webhooks ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+        const label = meta.label ? ` (${meta.label})` : "";
+        out(`${id.padEnd(9)} ${PROVIDER_LABELS[meta.provider]}${label} → ${meta.hint}`);
+      }
+      out(settings.email ? `email     to ${settings.email.to} via ${settings.email.host}:${settings.email.port}` : "email     not set up (optional: self-starter channel email you@example.com)");
+      out(`default   ${settings.default.join(", ")}`);
       return;
     }
+    case "add":
+    case "webhook":
+      await setUpWebhook(paths, name, rest, args);
+      return;
+    case "telegram":
+      await setUpTelegram(paths, name, args);
+      return;
     case "email":
       await setUpEmail(paths, name, args);
       return;
     case "default": {
-      const names = need(name, "channel names, such as desktop,email").split(",").map((n) => n.trim()).filter(Boolean);
+      const names = need(name, "channel names, such as desktop,feishu").split(",").map((n) => n.trim()).filter(Boolean);
       out(`Default channels: ${setDefaultChannels(paths, names).join(", ")}`);
       return;
     }
     case "test": {
-      const channel = (name ?? "email") as Channel;
-      if (!CHANNELS.includes(channel)) throw new UsageError(`usage: self-starter channel test [${CHANNELS.join("|")}]`);
+      const settings = channelSettings(loadConfig(paths));
+      const webhookNames = Object.keys(settings.webhooks ?? {}).sort();
+      const valid = [...BUILTIN_CHANNELS, ...webhookNames];
+      const channel = name ?? (webhookNames[0] ?? "email");
+      if (!valid.includes(channel)) {
+        throw new UsageError(`usage: self-starter channel test [${valid.join("|")}]`);
+      }
       const errors: string[] = [];
       const notifier = new ChannelNotifier(paths, new SystemNotifier(), (line) => {
         if (/failed|not set up|no email channel/.test(line)) errors.push(line);
@@ -81,13 +108,110 @@ export async function channelCommand(paths: Paths, args: Args): Promise<void> {
       return;
     }
     case "rm":
-    case "remove":
-      if (name !== "email") throw new UsageError("only the email channel can be removed");
-      out(removeEmailChannel(paths) ? "Removed the email channel." : "No email channel was set up.");
+    case "remove": {
+      const target = need(name, "channel name");
+      if (target === "desktop") throw new UsageError("the desktop channel is built in; change default channels instead");
+      out(removeChannel(paths, target) ? `Removed channel ${target}.` : `No channel named ${target}.`);
       return;
+    }
     default:
-      throw new UsageError("usage: self-starter channel list|email|default|test|rm");
+      throw new UsageError("usage: self-starter channel list|add|telegram|email|default|test|rm");
   }
+}
+
+async function setUpWebhook(paths: Paths, first: string | undefined, second: string | undefined, args: Args): Promise<void> {
+  const isUrl = (v: string | undefined) => Boolean(v && /^https?:\/\//i.test(v.trim()));
+  let id: string | undefined;
+  let url: string | undefined;
+  if (second) {
+    id = first;
+    url = second;
+  } else if (isUrl(first)) {
+    url = first;
+  } else if (first) {
+    id = first;
+    url = await readSecret(`Webhook URL for ${first}: `);
+  } else {
+    throw new UsageError("usage: self-starter channel add [<name>] <webhook-url> [--provider feishu|wecom|dingtalk|slack|discord|bark|ntfy|webhook] [--secret] [--default]");
+  }
+  if (!url) throw new UsageError("missing webhook URL");
+
+  const providerArg = flag(args, "provider");
+  let provider: WebhookProvider;
+  if (providerArg) {
+    if (!isWebhookProvider(providerArg) || providerArg === "telegram") {
+      throw new UsageError(`--provider must be feishu, wecom, dingtalk, slack, discord, bark, ntfy or webhook (for Telegram, use: self-starter channel telegram)`);
+    }
+    provider = providerArg;
+  } else {
+    provider = detectWebhookProvider(url);
+  }
+
+  const existing = Object.keys(channelSettings(loadConfig(paths)).webhooks ?? {});
+  const channelId = id ?? suggestChannelName(provider, existing);
+  const signingSecret = args.flags.has("secret") ? await readSecret(`Signing secret for ${channelId}: `) : undefined;
+
+  new Store(paths).ensureLayout();
+  const meta = saveWebhookChannel(paths, {
+    id: channelId,
+    provider,
+    url,
+    ...(flag(args, "label") ? { label: flag(args, "label")! } : {}),
+    ...(signingSecret ? { signingSecret } : {}),
+  });
+  if (args.flags.has("default")) {
+    setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, channelId])]);
+  }
+  if (args.flags.has("no-test")) {
+    return out(`Saved channel "${channelId}" (${PROVIDER_LABELS[meta.provider]} → ${meta.hint}). Test it with: self-starter channel test ${channelId}`);
+  }
+  out(`Saved "${channelId}" (${PROVIDER_LABELS[meta.provider]} → ${meta.hint}). Sending a test notification...`);
+  await sendWebhook(meta, readWebhookSecret(paths, channelId), {
+    title: "Test notification",
+    body: `Channel "${channelId}" works: triggers routed to ${channelId} will deliver here.`,
+  });
+  out(`Sent. Make it a default with: self-starter channel default desktop,${channelId}`);
+}
+
+async function setUpTelegram(paths: Paths, givenName: string | undefined, args: Args): Promise<void> {
+  const existing = Object.keys(channelSettings(loadConfig(paths)).webhooks ?? {});
+  const channelId = givenName ?? suggestChannelName("telegram", existing);
+  const apiBaseUrl = flag(args, "api");
+  const botToken = await readSecret("Telegram bot token (from @BotFather): ");
+  if (!botToken.trim()) throw new UsageError("Telegram bot token is required");
+
+  let chatId = flag(args, "chat");
+  if (!chatId) {
+    out("Checking recent messages to your bot to find your chat id...");
+    const chats = await discoverTelegramChats(botToken, apiBaseUrl ? { apiBaseUrl } : {});
+    if (chats.length === 0) {
+      throw new Error("no recent chats found for this bot; send /start to your bot in Telegram first, or pass --chat <chat-id>");
+    }
+    chatId = chats[0]!.chatId;
+    out(`Found ${chats[0]!.title} (chat ${chatId}).`);
+  }
+
+  new Store(paths).ensureLayout();
+  const meta = saveWebhookChannel(paths, {
+    id: channelId,
+    provider: "telegram",
+    botToken,
+    chatId,
+    ...(apiBaseUrl ? { url: apiBaseUrl } : {}),
+    ...(flag(args, "label") ? { label: flag(args, "label")! } : {}),
+  });
+  if (args.flags.has("default")) {
+    setDefaultChannels(paths, [...new Set([...channelSettings(loadConfig(paths)).default, channelId])]);
+  }
+  if (args.flags.has("no-test")) {
+    return out(`Saved channel "${channelId}" (${meta.hint}).`);
+  }
+  out(`Saved "${channelId}" (${meta.hint}). Sending a test message...`);
+  await sendWebhook(meta, readWebhookSecret(paths, channelId), {
+    title: "Test notification",
+    body: `Channel "${channelId}" works: triggers routed to ${channelId} will deliver here.`,
+  });
+  out(`Sent. Make it a default with: self-starter channel default desktop,${channelId}`);
 }
 
 /**

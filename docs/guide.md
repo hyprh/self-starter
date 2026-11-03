@@ -87,9 +87,17 @@ Where fires go, for triggers made in Claude Code:
 - If you set `crossSessionInbound` to `hold` or `refuse`, Claude Code holds or drops a fire sent into an open session, as it does any message from another session; Self-Starter cannot tell, and reminds you after 5 minutes. Background runs use the `claude` on your PATH (or `claudeBin` in `~/.self-starter/config.json`) with the login Claude Code keeps; an API key that is only exported in your shell does not reach the background service.
 - `self-starter history` shows where each fire was answered: `(your session, open in Claude Code)` or `(your session, resumed in the background)`.
 
+## Console (`self-starter ui`)
+
+Run `self-starter ui` (or `~/.self-starter/bin/self-starter ui`) to open the local web console on `127.0.0.1:4319` (authenticated with a per-session `HttpOnly` token; zero open TCP ports when closed):
+
+- **Attention Inbox**: unread agent receipts (`notify: true`), failed deliveries, notifications held by `quiet_hours` (with one-click **Send Now** or **Discard**), one-click session resume commands (`claude --resume`, `codex://...`, `opencode --session`, `zcode --resume`), and **Browser Alerts** (ideal over `ssh -L` port forwarding on headless Linux boxes).
+- **Watches & Drafts**: live 0-token check counters, per-watch outbound channel pills (`notify.when`, `notify.channels`, `quiet_hours`), instant probe test runs, draft activation, and read-only source/YAML inspection.
+- **Channels & Secrets**: paste-one-URL push setup and write-only probe secrets without touching chat.
+
 ## Secrets
 
-If a probe needs an API key, Codex asks you to store it in a terminal; it never sees the key:
+If a probe needs an API key, add it in `self-starter ui` (**Channels & Secrets**) or in a terminal so the model never sees the key:
 
 ```sh
 self-starter secret set QUOTE_API_KEY
@@ -97,17 +105,29 @@ self-starter secret set QUOTE_API_KEY
 
 Probes that list the secret in `probe.permissions.env` get it as an environment variable. With `--hosts api.example.com`, a sandboxed probe only gets it when it cannot reach any other host.
 
-## Email
+<a id="email"></a>
 
-Notifications go to the desktop by default. To get them by email too, give your address:
+## Notifications and outbound channels
+
+Notifications go to `desktop` by default. You can connect push and webhook channels in `self-starter ui` or from the terminal—capability URLs and bot tokens are stored in `~/.self-starter/channel-secrets.json` (`0600`) and are never exposed to probes or chat:
+
+```sh
+# Auto-detects Feishu/Lark, WeCom, DingTalk, Slack, Discord, Bark, ntfy or generic JSON webhooks:
+self-starter channel add https://open.feishu.cn/open-apis/bot/v2/hook/<your-hook> --default
+
+# Connect a Telegram bot (automatically finds your chat id after you send /start to the bot):
+self-starter channel telegram --default
+```
+
+Optional SMTP email is also built in for Gmail, iCloud, Yahoo, Fastmail, QQ, 163, 126 and Aliyun addresses:
 
 ```sh
 self-starter channel email you@gmail.com
 ```
 
-The mail server is filled in for Gmail, iCloud, Yahoo, Fastmail, QQ, 163, 126 and Aliyun addresses. The command asks for an app password (create one in your mailbox's security settings; QQ and NetEase call it an authorization code), keeps it in a file only you can read, and sends you a test email. Outlook and Hotmail addresses cannot send this way, because Microsoft now requires OAuth; use another address, or your own server with `--host smtp.example.com [--port 587 --starttls]`.
+The command asks for an app password (QQ and NetEase call it an authorization code), keeps it in `channel-secrets.json`, and sends a test email. Outlook and Hotmail require OAuth and cannot send this way; use a webhook/push channel above or a custom SMTP server (`--host smtp.example.com [--port 587 --starttls]`).
 
-Then ask Codex to email you about a trigger, or make email a default with `self-starter channel default desktop,email`. Probes never see the app password.
+Route individual watches in `self-starter ui` (or ask your agent to set `notify.channels`, e.g. `["feishu"]` or `["desktop", "bark"]`), or set global defaults with `self-starter channel default desktop,feishu`.
 
 ## Ready-made recipes
 
@@ -121,6 +141,7 @@ Some things to watch come with a probe already written and tested, so Codex only
 If you installed only the plugin, the command is `~/.self-starter/bin/self-starter`.
 
 ```
+self-starter ui [--port <p>]        local Attention Inbox, watch dashboard and channel router
 self-starter list                   all triggers and their state
 self-starter show <id>              definition, state, recent checks and fires
 self-starter test <id>              run the probe once, without firing
@@ -130,7 +151,7 @@ self-starter drafts                 drafts Codex tried but did not turn on
 self-starter activate <draft-id>    turn a draft on
 self-starter recipes                ready-made recipes
 self-starter secret set|list|rm
-self-starter channel list|email|default|test|rm
+self-starter channel list|add|telegram|email|default|test|rm
 self-starter service install|uninstall|start|stop|restart|status
 self-starter logs
 self-starter doctor

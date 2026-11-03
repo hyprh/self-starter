@@ -10,6 +10,9 @@ export interface Notification {
   body: string;
   /** Thread (or Claude Code session) to open when the notification is clicked (where supported). */
   threadId?: string;
+  /** Trigger id and fire id when the notification belongs to a trigger fire. */
+  triggerId?: string;
+  fireId?: string;
   /** Where to send it; the configured default when left out. */
   channels?: Channel[];
 }

@@ -18,9 +18,38 @@ export interface EmailSettings {
   user?: string;
 }
 
+export type WebhookProvider =
+  | "feishu"
+  | "wecom"
+  | "dingtalk"
+  | "slack"
+  | "discord"
+  | "telegram"
+  | "bark"
+  | "ntfy"
+  | "webhook";
+
+export interface WebhookChannelMeta {
+  provider: WebhookProvider;
+  /** Non-secret display label, such as "Ops Feishu" or "iPhone Bark". */
+  label?: string;
+  /** Non-secret destination summary, such as "open.feishu.cn (…8f2a)" or "Telegram chat 123456". */
+  hint: string;
+  /** Recipient chat id for Telegram bots (non-secret; the bot token lives in channel-secrets.json). */
+  chatId?: string;
+  /** Header names sent with generic webhooks (values live in channel-secrets.json). */
+  headerNames?: string[];
+  /** True when an HMAC signing secret is configured in channel-secrets.json. */
+  hasSigningSecret?: boolean;
+}
+
 export interface Config {
   /** Notification channels; see channels.ts. */
-  channels?: { default?: Channel[]; email?: EmailSettings };
+  channels?: {
+    default?: Channel[];
+    email?: EmailSettings;
+    webhooks?: Record<string, WebhookChannelMeta>;
+  };
   /** Absolute path of the codex CLI. Recorded by `self-starter install`; found on PATH otherwise. */
   codexBin?: string;
   /** Absolute path of the claude CLI, for fires of triggers made in Claude Code; found on PATH otherwise. */
