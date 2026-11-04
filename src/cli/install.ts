@@ -11,6 +11,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { findAntigravity } from "../engine/antigravity.js";
 import { bundledDeno, cliCommand, findCodex, isExecutable, loadConfig, resolveDeno, saveConfig, which } from "../engine/config.js";
 import { ensurePrivateDir, writeFileAtomic, writeJsonAtomic } from "../engine/fs-util.js";
 import { findOpenCode } from "../engine/opencode.js";
@@ -18,7 +19,7 @@ import type { Paths } from "../engine/paths.js";
 import { findClaude } from "../engine/sessions.js";
 import { Store } from "../engine/store.js";
 import { findZCode } from "../engine/zcode.js";
-import { CC_PLUGIN_SOURCE, CLI_SCRIPT, OPENCODE_PLUGIN_SOURCE, PLUGIN_SOURCE, VERSION, ZCODE_PLUGIN_SOURCE } from "../runtime.js";
+import { AGY_PLUGIN_SOURCE, CC_PLUGIN_SOURCE, CLI_SCRIPT, OPENCODE_PLUGIN_SOURCE, PLUGIN_SOURCE, VERSION, ZCODE_PLUGIN_SOURCE } from "../runtime.js";
 import { compareVersions, installService, serviceManager, spawnDetachedDaemon, stopRunningDaemon } from "../service/manager.js";
 
 export const MARKETPLACE_NAME = "self-starter";
@@ -80,6 +81,21 @@ export function buildMarketplace(paths: Paths): void {
     owner: { name: "Self-Starter" },
     plugins: [{ name: PLUGIN_NAME, source: "./cc-plugin" }],
   });
+
+  const agyPlugin = copyPlugin(AGY_PLUGIN_SOURCE, join(paths.marketplace, "agy-plugin"), ".");
+  writeJsonAtomic(join(agyPlugin, "mcp_config.json"), {
+    mcpServers: { [MCP_SERVER_NAME]: { ...server, env: { ...env, SELF_STARTER_HOST: "antigravity" } } },
+  });
+  const agyNode = `'${process.execPath.replace(/'/g, `'\\''`)}'`;
+  const rawHooks = JSON.parse(readFileSync(join(agyPlugin, "hooks.json"), "utf8")) as {
+    "self-starter": { PreToolUse: Array<{ matcher: string; hooks: Array<{ type: string; command: string; timeout?: number }> }> };
+  };
+  for (const group of rawHooks["self-starter"].PreToolUse) {
+    for (const hook of group.hooks) {
+      if (hook.command === "node ./bin/guard.mjs") hook.command = `${agyNode} ./bin/guard.mjs`;
+    }
+  }
+  writeJsonAtomic(join(agyPlugin, "hooks.json"), rawHooks);
 
   const zcodePlugin = copyPlugin(ZCODE_PLUGIN_SOURCE, join(paths.marketplace, "zcode-plugin"), ".zcode-plugin");
   writeJsonAtomic(join(zcodePlugin, ".mcp.json"), {
@@ -152,7 +168,7 @@ interface Agent {
   /** As the user knows it. */
   name: string;
   /** The config.json key that records its CLI. */
-  configKey: "codexBin" | "claudeBin" | "zcodeBin" | "opencodeBin";
+  configKey: "codexBin" | "claudeBin" | "agyBin" | "zcodeBin" | "opencodeBin";
   bin: string;
   validate?(): void;
   install(paths: Paths): void;
@@ -229,6 +245,49 @@ function claudeAgent(bin: string): Agent {
           ok: plugin?.enabled === true,
           label: "claude plugin",
           detail: plugin ? (plugin.enabled ? `${PLUGIN_ID} installed` : `${PLUGIN_ID} is disabled; enable it with /plugin`) : "not installed; run `self-starter install`",
+        },
+      ];
+    },
+  };
+}
+
+function antigravityAgent(bin: string): Agent {
+  const run = (args: string[]) => runCli(bin, args);
+  return {
+    name: "Antigravity",
+    configKey: "agyBin",
+    bin,
+    install(paths) {
+      const installed = run(["plugin", "install", join(paths.marketplace, "agy-plugin")]);
+      if (!installed.ok) throw new Error(`agy plugin install failed: ${installed.output}`);
+      const enabled = run(["plugin", "enable", PLUGIN_NAME]);
+      if (!enabled.ok) throw new Error(`agy plugin enable failed: ${enabled.output}`);
+    },
+    uninstall() {
+      run(["plugin", "uninstall", PLUGIN_NAME]);
+    },
+    checks() {
+      const version = run(["--version"]);
+      const listed = run(["plugin", "list", "--json"]);
+      let plugin: { name?: string; id?: string; enabled?: boolean } | undefined;
+      try {
+        plugin = (JSON.parse(listed.output) as Array<typeof plugin>).find(
+          (entry) => entry?.name === PLUGIN_NAME || entry?.id === PLUGIN_ID,
+        );
+      } catch {
+        // Missing or invalid output is reported below, without claiming the plugin is loaded.
+      }
+      const usable = listed.ok && plugin?.enabled === true;
+      return [
+        { ok: version.ok, label: "antigravity", detail: `${version.output.split("\n")[0] ?? ""} (${bin})` },
+        {
+          ok: usable,
+          label: "agy plugin",
+          detail: usable
+            ? `${PLUGIN_NAME} enabled (dedicated CLI result sessions; pair with \`agy remote-control\` for mobile access)`
+            : plugin?.enabled === false
+              ? `${PLUGIN_NAME} is disabled; run \`agy plugin enable ${PLUGIN_NAME}\``
+              : "not installed; run `self-starter install`",
         },
       ];
     },
@@ -321,17 +380,31 @@ function opencodeAgent(bin: string): Agent {
 }
 
 /** The agents here, from the CLIs given, or found on PATH (and, for codex, in the macOS app bundles). */
-function agentsFound(bins: { codex?: string | undefined; claude?: string | undefined; zcode?: string | undefined; opencode?: string | undefined }): Agent[] {
+function agentsFound(bins: {
+  codex?: string | undefined;
+  claude?: string | undefined;
+  agy?: string | undefined;
+  zcode?: string | undefined;
+  opencode?: string | undefined;
+}): Agent[] {
   const codex = bins.codex ?? findCodex();
   const claude = bins.claude ?? findClaude();
+  const agy = bins.agy ?? findAntigravity();
   const zcode = bins.zcode ?? findZCode();
   const opencode = bins.opencode ?? findOpenCode();
-  return [...(codex ? [codexAgent(codex)] : []), ...(claude ? [claudeAgent(claude)] : []), ...(zcode ? [zcodeAgent(zcode)] : []), ...(opencode ? [opencodeAgent(opencode)] : [])];
+  return [
+    ...(codex ? [codexAgent(codex)] : []),
+    ...(claude ? [claudeAgent(claude)] : []),
+    ...(agy ? [antigravityAgent(agy)] : []),
+    ...(zcode ? [zcodeAgent(zcode)] : []),
+    ...(opencode ? [opencodeAgent(opencode)] : []),
+  ];
 }
 
 export interface InstallOptions {
   codex?: string;
   claude?: string;
+  agy?: string;
   zcode?: string;
   opencode?: string;
   service: boolean;
@@ -344,7 +417,7 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   if (major < 20) throw new Error(`Node.js 20 or newer is required (this is ${process.version})`);
   new Store(paths).ensureLayout();
 
-  for (const [name, bin] of [["codex", options.codex], ["claude", options.claude], ["zcode", options.zcode], ["opencode", options.opencode]] as const) {
+  for (const [name, bin] of [["codex", options.codex], ["claude", options.claude], ["agy", options.agy], ["zcode", options.zcode], ["opencode", options.opencode]] as const) {
     if (bin && !isExecutable(bin)) throw new Error(`--${name} ${bin} is not an executable`);
   }
   const config = loadConfig(paths);
@@ -360,7 +433,7 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   });
   if (agents.length === 0) {
     throw new Error(
-      "No supported agent was found. Install the Codex CLI (npm install -g @openai/codex), Claude Code, ZCode or OpenCode, or pass --codex <path>, --claude <path>, --zcode <path> or --opencode <path> (the Codex app on macOS ships codex inside its bundle).",
+      "No supported agent was found. Install the Codex CLI (npm install -g @openai/codex), Claude Code, Antigravity (agy), ZCode or OpenCode, or pass --codex <path>, --claude <path>, --agy <path>, --zcode <path> or --opencode <path> (the Codex app on macOS ships codex inside its bundle).",
     );
   }
   for (const agent of agents) {
@@ -377,7 +450,13 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   log(`plugin files: ${paths.marketplace}`);
   for (const agent of agents) {
     agent.install(paths);
-    log(agent.name === "OpenCode" ? `OpenCode plugin installed; restart OpenCode to load it` : `${agent.name} plugin installed: ${PLUGIN_ID}`);
+    log(
+      agent.name === "OpenCode"
+        ? "OpenCode plugin installed; restart OpenCode to load it"
+        : agent.name === "Antigravity"
+          ? `Antigravity plugin installed: ${PLUGIN_NAME}`
+          : `${agent.name} plugin installed: ${PLUGIN_ID}`,
+    );
   }
 
   const manager = serviceManager();
@@ -404,7 +483,7 @@ export async function uninstall(paths: Paths, options: { purge: boolean; log: (l
   await stopRunningDaemon(paths);
   log("background service removed");
   const config = loadConfig(paths);
-  for (const agent of agentsFound({ codex: config.codexBin, claude: config.claudeBin, zcode: config.zcodeBin, opencode: config.opencodeBin })) {
+  for (const agent of agentsFound({ codex: config.codexBin, claude: config.claudeBin, agy: config.agyBin, zcode: config.zcodeBin, opencode: config.opencodeBin })) {
     agent.uninstall(paths);
     log(`${agent.name} plugin removed`);
   }
@@ -433,8 +512,8 @@ export async function doctor(paths: Paths): Promise<Check[]> {
     add(false, "deno", "not found; run `npm install` in the self-starter folder");
   }
 
-  const agents = agentsFound({ codex: config.codexBin, claude: config.claudeBin, zcode: config.zcodeBin, opencode: config.opencodeBin });
-  add(agents.length > 0, "agents", agents.length > 0 ? agents.map((agent) => agent.name).join(", ") : "no supported agent found; install the Codex CLI, Claude Code, ZCode or OpenCode");
+  const agents = agentsFound({ codex: config.codexBin, claude: config.claudeBin, agy: config.agyBin, zcode: config.zcodeBin, opencode: config.opencodeBin });
+  add(agents.length > 0, "agents", agents.length > 0 ? agents.map((agent) => agent.name).join(", ") : "no supported agent found; install the Codex CLI, Claude Code, Antigravity (agy), ZCode or OpenCode");
   for (const agent of agents) checks.push(...agent.checks(paths));
 
   const manager = serviceManager();

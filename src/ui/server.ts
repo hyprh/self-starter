@@ -181,6 +181,15 @@ export async function startUiServer(options: UiServerOptions): Promise<RunningUi
         installCmd: "claude plugin marketplace add hyprh/self-starter && claude plugin install self-starter@self-starter",
       },
       {
+        id: "antigravity",
+        name: "Antigravity",
+        vendor: "Google Antigravity 2.0, IDE & agy CLI",
+        configKey: "agyBin" as const,
+        statusKey: "antigravity",
+        capabilities: ["Shared plugin (~/.gemini/config/plugins)", "Dedicated agy CLI session", "Remote Control synergy (agy remote-control)"],
+        installCmd: "self-starter install --agy /path/to/agy",
+      },
+      {
         id: "zcode",
         name: "ZCode",
         vendor: "ZCode CLI Integration",
@@ -540,7 +549,7 @@ export async function startUiServer(options: UiServerOptions): Promise<RunningUi
     if (method === "POST" && pathname === "/api/agents/config") {
       const body = await readJsonBody(req);
       const cfg = loadConfig(paths);
-      const binKeys = ["codexBin", "claudeBin", "zcodeBin", "opencodeBin"] as const;
+      const binKeys = ["codexBin", "claudeBin", "agyBin", "zcodeBin", "opencodeBin"] as const;
       for (const key of binKeys) {
         if (key in body) {
           const val = typeof body[key] === "string" ? body[key].trim() : "";

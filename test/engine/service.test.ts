@@ -15,7 +15,13 @@ const deno = bundledDeno();
 const ORIGIN = "thread-origin";
 const fromThread = (extra: Partial<Caller> = {}): Caller => ({ via: "mcp", threadId: ORIGIN, turnId: "turn-1", ...extra });
 
-function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeInstalled = true, opencodeInstalled = true) {
+function setup(
+  server: TestServer,
+  configChanges: Partial<Config> = {},
+  zcodeInstalled = true,
+  opencodeInstalled = true,
+  antigravityInstalled = true,
+) {
   const home = tempHome();
   const { paths } = home;
   const store = new Store(paths);
@@ -31,6 +37,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
   const log = (line: string) => logs.push(line);
   // Claude Code: sessions that a process shows take fires into their inbox; the others run headless.
   const claude = new FakeClaude();
+  const antigravity = new FakeZCode("conv");
   const zcode = new FakeZCode();
   const opencode = new FakeZCode("ses");
   const openSessions = new Set<string>();
@@ -40,7 +47,22 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
     inboxes.push({ sessionId, text });
     return "relayed" as const;
   };
-  const executor = new Executor({ store, fires, paths, config, notifier, codex: () => codex, claude: () => claude, zcode: () => zcodeInstalled ? zcode : undefined, opencode: () => opencodeInstalled ? opencode : undefined, deliverToSession, log, now, uptime: () => clock.uptime ?? clock.at });
+  const executor = new Executor({
+    store,
+    fires,
+    paths,
+    config,
+    notifier,
+    codex: () => codex,
+    claude: () => claude,
+    antigravity: () => antigravityInstalled ? antigravity : undefined,
+    zcode: () => zcodeInstalled ? zcode : undefined,
+    opencode: () => opencodeInstalled ? opencode : undefined,
+    deliverToSession,
+    log,
+    now,
+    uptime: () => clock.uptime ?? clock.at,
+  });
   const engine = new Engine({ store, executor, secrets, paths, config, deno: () => deno, log, now });
   const recipesDir = join(paths.home, "recipes");
   const service = new TriggerService({ store, fires, engine, executor, paths, config, version: "test", recipesDir, deno: () => deno, codexBin: () => "/fake/codex", log, now });
@@ -61,7 +83,7 @@ function setup(server: TestServer, configChanges: Partial<Config> = {}, zcodeIns
     return { view, trigger: service.activateDraft({ draftId: view.draftId }, caller) };
   };
 
-  return { home, paths, store, fires, secrets, notifier, codex, claude, zcode, opencode, openSessions, inboxes, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
+  return { home, paths, store, fires, secrets, notifier, codex, claude, antigravity, zcode, opencode, openSessions, inboxes, logs, clock, executor, engine, service, definition, activate, recipesDir, cleanup: home.cleanup };
 }
 
 describe("triggers end to end", { skip: deno ? false : "the deno npm package is not installed" }, () => {
@@ -1011,9 +1033,10 @@ describe("triggers made in Claude Code", { skip: deno ? false : "the deno npm pa
   });
 });
 
-for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
-  { host: "zcode", name: "ZCode", refPrefix: "zc:", idPrefix: "sess", otherHost: "opencode", otherPrefix: "oc:" },
-  { host: "opencode", name: "OpenCode", refPrefix: "oc:", idPrefix: "ses", otherHost: "zcode", otherPrefix: "zc:" },
+for (const { host, cliName, name, refPrefix, idPrefix, otherPrefix } of [
+  { host: "antigravity", cliName: "agy", name: "Antigravity", refPrefix: "agy:", idPrefix: "conv", otherPrefix: "zc:" },
+  { host: "zcode", cliName: "zcode", name: "ZCode", refPrefix: "zc:", idPrefix: "sess", otherPrefix: "oc:" },
+  { host: "opencode", cliName: "opencode", name: "OpenCode", refPrefix: "oc:", idPrefix: "ses", otherPrefix: "zc:" },
 ] as const) describe(`triggers made in ${name}`, { skip: deno ? false : "the deno npm package is not installed" }, () => {
   let server: TestServer;
   let t: ReturnType<typeof setup>;
@@ -1028,7 +1051,9 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
   const noOtherHostRuns = () => {
     assert.equal(t.codex.started.length + t.codex.queued.length + t.codex.wakes.length, 0, "CLI never falls back to Codex");
     assert.equal(t.claude.runs.length + t.inboxes.length, 0, "CLI does not use Claude sessions");
-    assert.equal(t[otherHost].runs.length, 0, "the other CLI host remains unused");
+    for (const cliHost of ["antigravity", "zcode", "opencode"] as const) {
+      if (cliHost !== host) assert.equal(t[cliHost].runs.length, 0, `${cliHost} remains unused`);
+    }
   };
   const replaceWithClaude = async () => {
     const caller = fromThread({ threadId: "cc:replacement" });
@@ -1093,7 +1118,7 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
   it("replaces a missing result session, recovers the same fire, and reuses its replacement", async () => {
     await t.activate({}, STATE_PROBE, fromHost());
     const oldRef = await ownSession();
-    const oldId = oldRef.slice(3);
+    const oldId = oldRef.slice(refPrefix.length);
     const run = t[host].run.bind(t[host]);
     t[host].run = async (options) => {
       const result = await run(options);
@@ -1120,7 +1145,7 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
     const second = await fire();
     await eventually(() => t.fires.get(second)?.status === "done");
     assert.equal(t[host].runs.length, 5);
-    assert.equal(t[host].runs.at(-1)?.sessionId, replacement.slice(3));
+    assert.equal(t[host].runs.at(-1)?.sessionId, replacement.slice(refPrefix.length));
     assert.equal(t.notifier.sent.length, 2, "each completed event sends one result notification");
     noOtherHostRuns();
   });
@@ -1129,7 +1154,7 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
     t.cleanup();
     t = setup(server, { budget: { ...DEFAULT_CONFIG.budget, maxAgentRunsPerDay: 1 } });
     await t.activate({}, STATE_PROBE, fromHost());
-    const oldId = (await ownSession()).slice(3);
+    const oldId = (await ownSession()).slice(refPrefix.length);
     const run = t[host].run.bind(t[host]);
     t[host].run = async (options) => {
       const result = await run(options);
@@ -1568,12 +1593,12 @@ for (const { host, name, refPrefix, idPrefix, otherHost, otherPrefix } of [
 
   it("records a missing CLI runner as a retryable delivery failure without choosing another host", async () => {
     t.cleanup();
-    t = setup(server, {}, host !== "zcode", host !== "opencode");
+    t = setup(server, {}, host !== "zcode", host !== "opencode", host !== "antigravity");
     await t.activate({}, STATE_PROBE, fromHost());
     const fireId = await fire();
     const failed = await eventually(() => t.fires.get(fireId)!.failures >= 1 ? t.fires.get(fireId) : undefined);
     assert.equal(failed.status, "pending");
-    assert.match(failed.error ?? "", new RegExp(`the ${host} CLI was not found`));
+    assert.match(failed.error ?? "", new RegExp(`the ${cliName} CLI was not found`));
     assert.equal(failed.target, undefined);
     assert.equal(failed.receipt, undefined);
     assert.equal(t[host].runs.length, 0);

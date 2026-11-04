@@ -8,7 +8,7 @@
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { callDaemon, RemoteError } from "../client/client.js";
-import { agentName, sessionRef, zcodeRef, type Host } from "../core/conversations.js";
+import { agentName, antigravityRef, sessionRef, zcodeRef, type Host } from "../core/conversations.js";
 import { isRecord } from "../core/patch.js";
 import { resolvePaths, type Paths } from "../engine/paths.js";
 import { currentSession, startRelay } from "../engine/sessions.js";
@@ -216,6 +216,21 @@ function str(value: unknown): string | undefined {
 /** Who is calling, from the _meta Codex attaches to each tool call. */
 export function callerFrom(meta: unknown, host: Host = "codex"): Caller {
   const m = isRecord(meta) ? meta : {};
+  if (host === "antigravity") {
+    const conversationId = str(m["antigravity.google/root_conversation_id"]) ?? str(m["antigravity.google/conversation_id"]);
+    if (!conversationId) {
+      throw new Error("Antigravity did not supply conversation_id in the MCP request metadata; update Antigravity before using Self-Starter.");
+    }
+    const rawToken = str(m.progressToken);
+    const turnId = rawToken ? rawToken.split(":")[0] || rawToken : undefined;
+    const cwd = str(m.workspace_path);
+    return {
+      via: "mcp",
+      threadId: antigravityRef(conversationId),
+      ...(turnId ? { turnId } : {}),
+      ...(cwd ? { cwd } : {}),
+    };
+  }
   if (host === "zcode") {
     const sessionId = str(m.session_id);
     if (!sessionId) throw new Error("ZCode did not supply session_id in the MCP request metadata; update ZCode before using Self-Starter.");
@@ -381,13 +396,14 @@ export function runMcpServer(options: McpServerOptions = {}): Promise<void> {
   const output = options.output ?? process.stdout;
   const ensure = options.ensureDaemon ?? ensureDaemon;
   const session = "session" in options ? options.session : sessionHostFrom(process.env);
-  const host: Host = options.host ?? (process.env.SELF_STARTER_HOST === "zcode" ? "zcode" : session ? "claude-code" : "codex");
+  const envHost = process.env.SELF_STARTER_HOST;
+  const host: Host = options.host ?? (envHost === "antigravity" ? "antigravity" : envHost === "zcode" ? "zcode" : session ? "claude-code" : "codex");
   const triggerTurn = options.triggerTurn ?? process.env.SELF_STARTER_TRIGGER_TURN === "1";
   const triggerFireId = options.triggerFireId ?? process.env.SELF_STARTER_TRIGGER_FIRE_ID;
 
   /** In Claude Code, the session this process shows now: it changes with /clear and /resume, the environment does not. */
   const callerOf = (meta: unknown): Caller => {
-    const caller: Caller = host === "zcode"
+    const caller: Caller = host === "zcode" || host === "antigravity"
       ? callerFrom(meta, host)
       : session
         ? { via: "mcp", threadId: sessionRef((session.inbox && currentSession(paths, session.inbox)) || session.sessionId) }

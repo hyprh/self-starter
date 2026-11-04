@@ -9,8 +9,8 @@ import { ensurePrivateDir } from "./fs-util.js";
 import { killSessionProcesses } from "./session-processes.js";
 
 const [sessionsDir, sessionId, timeoutMs, command, ...args] = process.argv.slice(2);
-const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : "zcode";
-const name = host === "opencode" ? "OpenCode" : "ZCode";
+const host = process.env.SELF_STARTER_HOST === "opencode" ? "opencode" : process.env.SELF_STARTER_HOST === "antigravity" ? "antigravity" : "zcode";
+const name = host === "opencode" ? "OpenCode" : host === "antigravity" ? "Antigravity" : "ZCode";
 if (!sessionsDir || sessionId === undefined || !command || !process.send) throw new Error(`${name} wrapper requires a session argument and IPC parent`);
 const lock = join(sessionsDir, `${sessionId}.${host}.lock`);
 const owner = JSON.stringify({ pid: process.pid, token: randomUUID() });

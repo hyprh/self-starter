@@ -19,6 +19,7 @@ export const UI_CLIENT_JS = `(function () {
   const HOST_LABELS = {
     "codex": "Codex",
     "claude-code": "Claude Code",
+    "antigravity": "Antigravity",
     "zcode": "ZCode",
     "opencode": "OpenCode"
   };
@@ -26,6 +27,7 @@ export const UI_CLIENT_JS = `(function () {
   const HOST_AVATARS = {
     "codex": "CX",
     "claude-code": "CC",
+    "antigravity": "AG",
     "zcode": "ZC",
     "opencode": "OC"
   };
@@ -705,7 +707,7 @@ export const UI_CLIENT_JS = `(function () {
         el("div", null,
           el("h1", { class: "page-title" }, "Attention Inbox"),
           el("p", { class: "page-subtitle" },
-            "Actionable agent receipts, delivery failures, and quiet-hours queue across Codex, Claude Code, ZCode and OpenCode."
+            "Actionable agent receipts, delivery failures, and quiet-hours queue across Codex, Claude Code, Antigravity, ZCode and OpenCode."
           )
         ),
         el("div", { class: "header-actions" },
@@ -1025,7 +1027,7 @@ export const UI_CLIENT_JS = `(function () {
         ? el("div", { class: "stack" }, ...triggers.map((t) => renderWatchCard(t, snap)))
         : el("div", { class: "empty-state" },
             el("h3", null, hostFilter === "all" ? "No watches configured yet" : ("No watches bound to " + (HOST_LABELS[hostFilter] || hostFilter))),
-            el("p", null, 'Ask Codex, Claude Code, ZCode or OpenCode in plain words—e.g. "Watch NVDA and alert me when it breaks 150 on high volume."')
+            el("p", null, 'Ask Codex, Claude Code, Antigravity, ZCode or OpenCode in plain words—e.g. "Watch NVDA and alert me when it breaks 150 on high volume."')
           )
     );
   }

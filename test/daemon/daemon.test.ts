@@ -67,6 +67,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   let daemon: Daemon;
   const codex = new FakeCodex();
   const claude = new FakeClaude();
+  const antigravity = new FakeZCode("conv");
   const zcode = new FakeZCode();
   const notifier = new RecordingNotifier();
 
@@ -87,7 +88,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
   before(async () => {
     server = await startServer();
     home = tempHome();
-    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => claude, zcode: () => zcode, notifier });
+    daemon = await startDaemon({ paths: home.paths, codex: () => codex, claude: () => claude, antigravity: () => antigravity, zcode: () => zcode, notifier });
   });
   after(async () => {
     await daemon.stop();
@@ -216,6 +217,74 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     } finally {
       finish();
       zcode.during = undefined;
+      await Promise.all([user.close(), background.close()]);
+    }
+  });
+
+  it("extracts Antigravity conversation metadata and drives dedicated agy fires end-to-end", async () => {
+    const progressKey = ["progress", "Token"].join("");
+    const stepRef = (name: string, step?: number) => (step === undefined ? name : `${name}:${step}`);
+    assert.deepEqual(
+      callerFrom(
+        {
+          "antigravity.google/root_conversation_id": "conv_root",
+          "antigravity.google/conversation_id": "conv_sub",
+          [progressKey]: stepRef("req-42", 9),
+          workspace_path: home.paths.home,
+        },
+        "antigravity",
+      ),
+      { via: "mcp", threadId: "agy:conv_root", turnId: "req-42", cwd: home.paths.home },
+    );
+    assert.deepEqual(
+      callerFrom({ "antigravity.google/conversation_id": "conv_only", [progressKey]: stepRef("req-7") }, "antigravity"),
+      { via: "mcp", threadId: "agy:conv_only", turnId: "req-7" },
+    );
+
+    server.price = 100;
+    const metadata = {
+      "antigravity.google/conversation_id": "conv_origin",
+      [progressKey]: stepRef("user-req", 1),
+      workspace_path: home.paths.home,
+    };
+    const user = new McpClient({ paths: home.paths, host: "antigravity", ensureDaemon: async () => undefined });
+    const background = new McpClient({ paths: home.paths, host: "antigravity", triggerTurn: true, ensureDaemon: async () => undefined });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => { finish = resolve; });
+    antigravity.during = async (options) => { if (options.sessionId) await gate; };
+    try {
+      const init = await user.request("initialize", { capabilities: {} });
+      assert.match(init.result.instructions, /what Antigravity should do/);
+      const missingMeta = await user.tool("trigger_draft", { definition: definition("agy-missing"), code: STATE_PROBE }, meta("codex-thread", "turn-1"));
+      assert.equal(missingMeta.isError, true);
+      assert.match(missingMeta.text, /Antigravity did not supply conversation_id/);
+
+      const draft = await user.tool("trigger_draft", { definition: definition("agy-watch"), code: STATE_PROBE }, metadata);
+      assert.equal(draft.isError, false, draft.text);
+      const draftId = /Draft (\S+) saved/.exec(draft.text)![1]!;
+      const activated = await user.tool("trigger_activate", { draft_id: draftId }, metadata);
+      assert.equal(activated.isError, false, activated.text);
+      const target = await eventually(() => daemon.store.loadTrigger("agy-watch").definition.target.thread_id);
+      assert.ok(target);
+      assert.match(target, /^agy:conv_/);
+      assert.equal(daemon.store.loadTrigger("agy-watch").definition.target.cwd, home.paths.home);
+
+      server.price = 200;
+      const fire = await daemon.engine.runNow("agy-watch");
+      assert.ok(fire?.fireId);
+      await eventually(() => antigravity.runs.find((run) => run.sessionId === target.slice(4)));
+      const firing = { "antigravity.google/conversation_id": target.slice(4), [progressKey]: stepRef("bg-req", 1), workspace_path: home.paths.home };
+      const report = await background.tool("trigger_report", { fire_id: fire.fireId, summary: "Antigravity investigated the event", notify: true }, firing);
+      assert.equal(report.isError, false, report.text);
+      assert.equal(daemon.fires.get(fire.fireId)?.receipt?.source, "tool");
+      const mutation = await background.tool("trigger_pause", { trigger_id: "agy-watch" }, { ...firing, [progressKey]: stepRef("bg-req-2", 1) });
+      assert.equal(mutation.isError, true);
+      assert.match(mutation.text, /this turn was started by Self-Starter/);
+      finish();
+      await eventually(() => daemon.executor.status().activeAgentRuns === 0);
+    } finally {
+      finish();
+      antigravity.during = undefined;
       await Promise.all([user.close(), background.close()]);
     }
   });

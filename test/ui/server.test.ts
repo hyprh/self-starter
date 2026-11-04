@@ -165,15 +165,17 @@ describe("self-starter ui server", () => {
     assert.deepEqual(snap1.secrets, [{ name: "TEST_API_SECRET", hosts: ["api.example.com"] }]);
     assert.deepEqual(
       snap1.agents.map((a: { id: string }) => a.id),
-      ["codex", "claude-code", "zcode", "opencode"],
+      ["codex", "claude-code", "antigravity", "zcode", "opencode"],
     );
 
     const cfgRes = await fetch(`${base}/api/agents/config`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ budget: { maxAgentRunsPerDay: 120, maxConcurrentAgentRuns: 3 } }),
+      body: JSON.stringify({ agyBin: process.execPath, budget: { maxAgentRunsPerDay: 120, maxConcurrentAgentRuns: 3 } }),
     });
     assert.equal(cfgRes.status, 200);
+    const snapAfterCfg = await (await fetch(`${base}/api/snapshot`, { headers })).json();
+    assert.equal(snapAfterCfg.agents.find((a: { id: string }) => a.id === "antigravity")?.configuredBin, process.execPath);
 
     // 3. Create a draft via service, inspect & activate it via UI API
     const draft = await daemon.service.createDraft(

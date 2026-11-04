@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode</title>
+<title>Self-Starter — Zero-token local event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode</title>
 <link rel="icon" type="image/svg+xml" href="./icon-trigger.svg">
-<meta name="description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code spots it at zero token cost—even with your terminal closed—and wakes Claude Code, Codex, OpenCode or ZCode.">
+<meta name="description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code spots it at zero token cost—even with your terminal closed—and wakes Claude Code, Codex, Antigravity, OpenCode or ZCode.">
 <link rel="canonical" href="https://hyprh.github.io/self-starter/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Self-Starter">
-<meta property="og:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
+<meta property="og:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode">
 <meta property="og:description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code checks with zero model calls while waiting—and wakes your conversation.">
 <meta property="og:url" content="https://hyprh.github.io/self-starter/">
 <meta property="og:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
@@ -18,15 +18,15 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, OpenCode and ZCode">
+<meta name="twitter:title" content="Self-Starter — Zero-token local event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode">
 <meta name="twitter:description" content="When CI fails, a training run finishes, a service goes down or NVDA crosses your price, local code checks with zero model calls while waiting—and wakes your conversation.">
 <meta name="twitter:image" content="https://hyprh.github.io/self-starter/assets/social-card.png">
 <meta name="twitter:image:alt" content="Self-Starter: custom event triggers using files, logs, commands and APIs.">
 <script>
 try {
-  const hashes = { "#codex": "codex", "#claude-code": "claude", "#zcode": "zcode", "#opencode": "opencode" };
+  const hashes = { "#codex": "codex", "#claude-code": "claude", "#antigravity": "antigravity", "#zcode": "zcode", "#opencode": "opencode" };
   const agent = hashes[location.hash] || localStorage.getItem("agent");
-  if (["codex", "claude", "zcode", "opencode"].includes(agent)) document.documentElement.dataset.agent = agent;
+  if (["codex", "claude", "antigravity", "zcode", "opencode"].includes(agent)) document.documentElement.dataset.agent = agent;
 } catch {}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -546,7 +546,7 @@ section {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(4,minmax(0,1fr));
+  grid-template-columns: repeat(5,minmax(0,1fr));
   gap: 4px;
   padding: 9px;
   border-bottom: 1px solid var(--line);
@@ -588,7 +588,7 @@ section {
   display: none
 }
 
-html:not([data-agent]) [data-panel=codex],html[data-agent=codex] [data-panel=codex],html[data-agent=claude] [data-panel=claude],html[data-agent=zcode] [data-panel=zcode],html[data-agent=opencode] [data-panel=opencode] {
+html:not([data-agent]) [data-panel=codex],html[data-agent=codex] [data-panel=codex],html[data-agent=claude] [data-panel=claude],html[data-agent=antigravity] [data-panel=antigravity],html[data-agent=zcode] [data-panel=zcode],html[data-agent=opencode] [data-panel=opencode] {
   display: block
 }
 
@@ -1064,7 +1064,7 @@ footer>.wrap {
       <p class="eyebrow">Local event triggers for coding agents</p>
       <h1>Ask once.<br>Act when it happens.</h1>
       <p class="lede">Tell your agent what to watch and what to do next—whether CI fails, a GPU frees up, a service goes down or NVDA crosses $235. Local code checks while your terminal is closed, and brings the follow-up back to your conversation.</p>
-      <p class="platform-line"><b>Claude Code</b> &nbsp;·&nbsp; <b>Codex</b> &nbsp;·&nbsp; <b>OpenCode</b> <small>source install</small> &nbsp;·&nbsp; <b>ZCode</b> <small>source install</small></p>
+      <p class="platform-line"><b>Claude Code</b> &nbsp;·&nbsp; <b>Codex</b> &nbsp;·&nbsp; <b>Antigravity</b> &nbsp;·&nbsp; <b>OpenCode</b> &nbsp;·&nbsp; <b>ZCode</b></p>
       <div class="actions"><a class="button" href="#install">Choose your agent</a><a class="text-link" href="#why">Why not /loop? →</a></div>
       <p class="promise">Zero model calls while waiting · Runs while terminal is closed (launchd / systemd) · macOS and Linux</p>
     </div>
@@ -1154,7 +1154,7 @@ footer>.wrap {
               <td><b>Zero</b> during routine probe checks</td>
               <td><b>Yes</b> (<code>launchd</code> / <code>systemd</code> service)</td>
               <td><b>Yes</b> (logs, <code>nvidia-smi</code>, CLIs, APIs)</td>
-              <td><b>Yes</b> in Codex &amp; Claude Code; dedicated CLI session in OpenCode &amp; ZCode</td>
+              <td><b>Yes</b> in Codex &amp; Claude Code; dedicated CLI session in Antigravity, OpenCode &amp; ZCode</td>
             </tr>
           </tbody>
         </table>
@@ -1170,8 +1170,9 @@ footer>.wrap {
           <div class="tabs" role="tablist" aria-label="Choose your agent">
             <button id="codex" type="button" role="tab" data-pick="codex" aria-controls="panel-codex" aria-selected="true">Codex</button>
             <button id="claude-code" type="button" role="tab" data-pick="claude" aria-controls="panel-claude" aria-selected="false" tabindex="-1">Claude Code</button>
-            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source install</span></button>
-            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source install</span></button>
+            <button id="antigravity" type="button" role="tab" data-pick="antigravity" aria-controls="panel-antigravity" aria-selected="false" tabindex="-1">Antigravity</button>
+            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source</span></button>
+            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source</span></button>
           </div>
           <div class="install-panel" id="panel-codex" data-panel="codex" role="tabpanel" aria-labelledby="codex" tabindex="0">
             <h3>Install for Codex</h3><p class="fine">macOS or Linux · Node.js 20+ · Codex app or CLI</p>
@@ -1186,6 +1187,17 @@ codex plugin add self-starter@self-starter</code></pre><button class="copy" type
 claude plugin install self-starter@self-starter</code></pre><button class="copy" type="button" data-copy="install-claude" aria-label="Copy Claude Code install commands">Copy</button></div>
             <div class="after-install"><p>Start a new Claude Code session. The first start installs the runtime and background service; allow a minute or two.</p></div>
             <div class="delivery"><b>Results in your session</b>A fire waits until the current turn finishes. When the session is closed, Self-Starter can resume it in the background. <a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md#claude-code">Delivery details →</a></div>
+          </div>
+          <div class="install-panel" id="panel-antigravity" data-panel="antigravity" role="tabpanel" aria-labelledby="antigravity" tabindex="0">
+            <h3>Install for Google Antigravity</h3><p class="fine">macOS or Linux · Node.js 20+ · Antigravity CLI (<code>agy</code>)</p>
+            <div class="command"><pre id="install-antigravity"><code>git clone --branch v0.0.6 https://github.com/hyprh/self-starter.git
+cd self-starter
+npm ci
+npm run build
+node dist/src/cli/main.js install --agy /absolute/path/to/agy
+node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-antigravity" aria-label="Copy Antigravity install commands">Copy</button></div>
+            <div class="after-install"><p>Installs the native <code>agy-plugin</code> (MCP server, trigger skill, and <code>PreToolUse</code> sandbox guard) plus the local background service. Start a new Antigravity conversation afterward.</p><p>Pair with <code>agy remote-control</code> on your workstation to inspect or continue triggered sessions from your phone while zero-token local probes stay alive. <a href="https://github.com/hyprh/self-starter/blob/main/agy-plugin/README.md">Antigravity plugin guide →</a></p></div>
+            <div class="delivery"><b>Results in dedicated CLI conversations</b>Each watch owns a dedicated <code>agy --conversation &lt;id&gt;</code> session guarded by <code>action.sandbox</code>.</div>
           </div>
           <div class="install-panel" id="panel-zcode" data-panel="zcode" role="tabpanel" aria-labelledby="zcode" tabindex="0">
             <h3>Install ZCode from source</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
@@ -1215,7 +1227,7 @@ node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" 
           <ol><li>Open your agent in any project folder and set up the watch below.</li><li><b>Quit the agent or close your terminal.</b> Append routine <code>INFO</code> lines—local code ignores them at zero tokens.</li><li>Append an <code>ERROR</code> line. Self-Starter wakes your closed session in the background, inspects your repo, and notifies you.</li></ol>
           <div class="request"><b>Ask your agent, then close the terminal</b>“Watch <code>/tmp/self-starter-demo.log</code> for the next hour (within ~10s latency). Ignore <code>INFO</code> lines—wake up once only when an <code>ERROR</code> line appears, inspect the file it names in this folder, and summarize what to check. Keep it read-only.”</div>
           <p class="fine">No API key needed. Reopen your session (<code>claude --resume</code> or Codex) to find the answer waiting. <a href="https://github.com/hyprh/self-starter/blob/main/README.md#quick-start">Follow the 2-minute test →</a></p>
-          <noscript><p class="fine">JavaScript is needed to switch install tabs. <a href="https://github.com/hyprh/self-starter#install">All four installation options are in the README.</a></p></noscript>
+          <noscript><p class="fine">JavaScript is needed to switch install tabs. <a href="https://github.com/hyprh/self-starter#install">All five installation options are in the README.</a></p></noscript>
         </aside>
       </div>
     </div>
@@ -1278,6 +1290,7 @@ counts as seen; the next report fires</pre>
       </ul></div>
       <div><div class="section-head"><h2>Go a little deeper</h2></div><div class="resources">
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">User guide →</a><span>Results, permissions, notifications, recipes and commands.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/agy-plugin/README.md">Antigravity native plugin →</a><span><code>agy</code> installation, PreToolUse sandbox guard and <code>agy remote-control</code> synergy.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode source installation →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode source installation →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/design.md">Design and verification notes →</a><span>How delivery works, CLI test coverage and remaining desktop checks.</span></div>
@@ -1408,8 +1421,8 @@ for (const tab of sceneTabs) {
   });
 }
 
-const AGENTS = ["codex", "claude", "zcode", "opencode"];
-const HASHES = { codex: "#codex", claude: "#claude-code", zcode: "#zcode", opencode: "#opencode" };
+const AGENTS = ["codex", "claude", "antigravity", "zcode", "opencode"];
+const HASHES = { codex: "#codex", claude: "#claude-code", antigravity: "#antigravity", zcode: "#zcode", opencode: "#opencode" };
 const tabs = [...document.querySelectorAll("[data-pick]")];
 function pick(agent, updateUrl = false) {
   if (!AGENTS.includes(agent)) agent = "codex";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -94,8 +94,127 @@ describe("the local marketplace that self-starter install writes", () => {
         env: { SELF_STARTER_HOME: paths.home, SELF_STARTER_HOST: "zcode" },
         timeoutMs: 30_000,
       });
+
+      assert.equal(read("agy-plugin/plugin.json").version, VERSION);
+      assert.deepEqual(read("agy-plugin/mcp_config.json").mcpServers[MCP_SERVER_NAME], {
+        ...server,
+        env: { SELF_STARTER_HOME: paths.home, SELF_STARTER_HOST: "antigravity" },
+      });
+      const agyHookCmd = read("agy-plugin/hooks.json")["self-starter"].PreToolUse[0].hooks[0].command as string;
+      assert.ok(agyHookCmd.includes(process.execPath) && agyHookCmd.endsWith(" ./bin/guard.mjs"));
     } finally {
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the Antigravity plugin", () => {
+  it("uses Antigravity's strict plugin.json schema, mcp_config.json, hooks.json, and shared launcher", () => {
+    const manifest = json("agy-plugin/plugin.json");
+    assert.deepEqual(Object.keys(manifest).sort(), ["description", "displayName", "logo", "name", "suggestedPrompts", "version"]);
+    assert.equal(manifest.name, PLUGIN_NAME);
+    assert.equal(manifest.version, VERSION);
+    assert.ok(existsSync(join(PACKAGE_ROOT, "agy-plugin", manifest.logo)));
+    const server = json("agy-plugin/mcp_config.json").mcpServers[MCP_SERVER_NAME];
+    assert.deepEqual([server.command, ...server.args], ["node", "${PLUGIN_ROOT}/bin/start.mjs", "mcp"]);
+    assert.deepEqual(server.env, { SELF_STARTER_HOST: "antigravity" });
+    assert.equal(readFileSync(join(PACKAGE_ROOT, "agy-plugin", "bin", "start.mjs"), "utf8"), readFileSync(join(PLUGIN_SOURCE, "bin", "start.mjs"), "utf8"));
+    assert.ok(json("package.json").files.includes("agy-plugin"), "the runtime package includes agy-plugin");
+  });
+
+  it("enforces interactive approvals and background sandbox policies in guard.mjs", () => {
+    const scratch = mkdtempSync(join(tmpdir(), "ss-agy-guard-"));
+    const ws = join(scratch, "workspace");
+    const outside = join(scratch, "outside");
+    mkdirSync(ws, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(ws, "escape-link"));
+    const guardPath = join(PACKAGE_ROOT, "agy-plugin", "bin", "guard.mjs");
+    const runGuard = (toolName: string, args: Record<string, unknown>, env: Record<string, string> = {}) => {
+      const res = spawnSync(process.execPath, [guardPath], {
+        input: JSON.stringify({ toolCall: { name: toolName, args } }),
+        env: { ...process.env, ...env },
+        encoding: "utf8",
+      });
+      assert.equal(res.status, 0, res.stderr);
+      return JSON.parse(res.stdout.trim()) as { decision: string; reason?: string };
+    };
+    try {
+      // Interactive turns: safe self_starter MCP tools -> allow; mutating or non-MCP tools -> ask
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "plugin_self-starter_self_starter", ToolName: "trigger_list" }).decision, "allow");
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "plugin_self-starter_self_starter", ToolName: "trigger_draft" }).decision, "ask");
+      assert.equal(runGuard("write_file", { Path: join(ws, "notes.md") }).decision, "ask");
+      assert.equal(runGuard("run_command", { CommandLine: "ls" }).decision, "ask");
+
+      // Background trigger turns: Self-Starter mutating tools are always denied, safe tools allowed
+      const bgReadOnly = { SELF_STARTER_TRIGGER_TURN: "1", SELF_STARTER_SANDBOX: "read-only", SELF_STARTER_WORKSPACE: ws };
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "self_starter", ToolName: "trigger_report" }, bgReadOnly).decision, "allow");
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "self_starter", ToolName: "trigger_tune" }, bgReadOnly).decision, "allow");
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "self_starter", ToolName: "trigger_delete" }, bgReadOnly).decision, "deny");
+      assert.equal(runGuard("write_file", { Path: join(ws, "notes.md") }, bgReadOnly).decision, "deny");
+      assert.equal(runGuard("run_command", { CommandLine: "echo hi" }, bgReadOnly).decision, "deny");
+
+      // Workspace-write allows ordinary workspace files, blocks outside, symlinks, .git/.agents/.gemini, and shell commands
+      const bgWrite = { SELF_STARTER_TRIGGER_TURN: "1", SELF_STARTER_SANDBOX: "workspace-write", SELF_STARTER_WORKSPACE: ws };
+      assert.equal(runGuard("write_file", { Path: join(ws, "src", "report.md") }, bgWrite).decision, "allow");
+      assert.equal(runGuard("edit_file", { Path: "relative/inside.txt" }, bgWrite).decision, "allow");
+      assert.equal(runGuard("write_file", { Path: join(outside, "pwn.txt") }, bgWrite).decision, "deny");
+      assert.equal(runGuard("write_file", { Path: join(ws, "escape-link", "pwn.txt") }, bgWrite).decision, "deny");
+      assert.equal(runGuard("write_file", { Path: join(ws, ".git", "hooks", "pre-commit") }, bgWrite).decision, "deny");
+      assert.equal(runGuard("write_file", { Path: join(ws, ".agents", "hooks.json") }, bgWrite).decision, "deny");
+      assert.equal(runGuard("write_file", { Path: join(ws, ".gemini", "settings.json") }, bgWrite).decision, "deny");
+      assert.equal(runGuard("run_command", { CommandLine: "touch x" }, bgWrite).decision, "deny");
+
+      // Danger-full-access allows commands & writes, while still blocking trigger mutations
+      const bgFull = { SELF_STARTER_TRIGGER_TURN: "1", SELF_STARTER_SANDBOX: "danger-full-access", SELF_STARTER_WORKSPACE: ws };
+      assert.equal(runGuard("run_command", { CommandLine: "echo ok" }, bgFull).decision, "allow");
+      assert.equal(runGuard("call_mcp_tool", { ServerName: "self_starter", ToolName: "trigger_activate" }, bgFull).decision, "deny");
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it("installs and enables agy-plugin, and doctor checks enabled state", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "ss-agy-install-"));
+    const envKeys = ["HOME", "XDG_CONFIG_HOME", "PATH", "CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"] as const;
+    const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+    Object.assign(process.env, { HOME: scratch, XDG_CONFIG_HOME: join(scratch, "config"), PATH: scratch });
+    for (const key of ["CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"]) delete process.env[key];
+    const paths = resolvePaths(join(scratch, "home"));
+    const calls = join(scratch, "calls.jsonl");
+    const mode = join(scratch, "mode");
+    writeFileSync(mode, "enabled");
+    const agyBin = join(scratch, "agy.mjs");
+    writeFileSync(agyBin, `#!${process.execPath}\nimport { appendFileSync, readFileSync } from "node:fs";
+const args = process.argv.slice(2);
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify(args) + "\\n");
+if (args[0] === "--version") console.log("1.4.8");
+else if (args[0] === "plugin" && args[1] === "list") {
+  const m = readFileSync(${JSON.stringify(mode)}, "utf8");
+  console.log(m === "invalid" ? "not json" : JSON.stringify([{ name: ${JSON.stringify(PLUGIN_NAME)}, enabled: m === "enabled" }]));
+} else console.log("ok");
+`, { mode: 0o755 });
+    try {
+      await install(paths, { agy: agyBin, service: false, log: () => {} });
+      assert.equal(loadConfig(paths).agyBin, agyBin);
+      const agyCalls = readFileSync(calls, "utf8").trim().split("\n").map((line) => JSON.parse(line) as string[]);
+      assert.deepEqual(agyCalls, [
+        ["plugin", "install", join(paths.marketplace, "agy-plugin")],
+        ["plugin", "enable", PLUGIN_NAME],
+      ]);
+      const check = async () => (await doctor(paths)).find((entry) => entry.label === "agy plugin")!;
+      assert.equal((await check()).ok, true);
+      for (const state of ["disabled", "missing", "invalid"]) {
+        writeFileSync(mode, state);
+        assert.equal((await check()).ok, false, state);
+      }
+    } finally {
+      await stopRunningDaemon(paths);
+      for (const key of envKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 });
@@ -181,8 +300,9 @@ describe("the plugin's launcher", () => {
   after(() => rmSync(scratch, { recursive: true, force: true }));
 
   /** Starts the launcher as its host does and returns `initialize`, or its exit code and error output. */
-  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" | "zcode" = "codex", pluginSource = PLUGIN_SOURCE): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
-    const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, host === "zcode" ? "zcode-plugin" : "cc-plugin", "bin", "start.mjs")];
+  function start(extraEnv: Record<string, string> = {}, host: "codex" | "claude-code" | "antigravity" | "zcode" = "codex", pluginSource = PLUGIN_SOURCE): Promise<{ serverInfo?: { name: string; version: string }; code?: number | null; stderr: string }> {
+    const pluginDir = host === "zcode" ? "zcode-plugin" : host === "antigravity" ? "agy-plugin" : "cc-plugin";
+    const launcher = host === "codex" ? ["./bin/start.mjs"] : [join(PACKAGE_ROOT, pluginDir, "bin", "start.mjs")];
     const child = spawn(process.execPath, [...launcher, "mcp"], {
       cwd: host === "codex" ? pluginSource : scratch,
       env: { PATH: `${bin}${delimiter}${process.env.PATH}`, HOME: scratch, SELF_STARTER_HOME: home, SELF_STARTER_RUNTIME: PACKAGE_ROOT, ...extraEnv },
@@ -229,6 +349,11 @@ describe("the plugin's launcher", () => {
 
   it("starts from the ZCode plugin's native manifest and explicit host", async () => {
     const started = await start({ SELF_STARTER_HOME: join(scratch, "home-zcode"), SELF_STARTER_HOST: "zcode" }, "zcode");
+    assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
+  });
+
+  it("starts from the Antigravity plugin's root plugin.json manifest and explicit host", async () => {
+    const started = await start({ SELF_STARTER_HOME: join(scratch, "home-agy"), SELF_STARTER_HOST: "antigravity" }, "antigravity");
     assert.deepEqual(started.serverInfo, { name: "self-starter", version: VERSION });
   });
 

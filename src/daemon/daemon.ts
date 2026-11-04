@@ -3,6 +3,7 @@
 
 import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { AntigravityCli, findAntigravity, type AntigravityRunner } from "../engine/antigravity.js";
 import { ChannelNotifier } from "../engine/channels.js";
 import { CodexCli, type CodexRunner } from "../engine/codex.js";
 import { loadConfig, resolveCodex, resolveDeno } from "../engine/config.js";
@@ -31,6 +32,7 @@ export interface DaemonOptions {
   codex?: () => CodexRunner | undefined;
   /** Overrides how headless Claude Code turns run (tests). */
   claude?: () => SessionRunner | undefined;
+  antigravity?: () => AntigravityRunner | undefined;
   zcode?: () => ZCodeRunner | undefined;
   opencode?: () => OpenCodeRunner | undefined;
   logToStderr?: boolean;
@@ -132,6 +134,11 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
         const bin = claudeBin();
         return bin ? new ClaudeCli(bin) : undefined;
       });
+    const agyBin = () => loadConfig(paths).agyBin ?? findAntigravity();
+    const antigravity = options.antigravity ?? (() => {
+      const bin = agyBin();
+      return bin ? new AntigravityCli(bin, paths.sessions) : undefined;
+    });
     const zcodeBin = () => loadConfig(paths).zcodeBin ?? findZCode();
     const zcode = options.zcode ?? (() => {
       const bin = zcodeBin();
@@ -144,10 +151,10 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     });
     const deno = () => resolveDeno(config);
     const clock = options.now ? { now: options.now } : {};
-    const executor = new Executor({ store, fires, paths, config, notifier, codex, claude, zcode, opencode, log, ...clock });
+    const executor = new Executor({ store, fires, paths, config, notifier, codex, claude, antigravity, zcode, opencode, log, ...clock });
     const engine = new Engine({ store, executor, secrets, paths, config, deno, log, ...clock });
     const recipesDir = options.recipesDir ?? join(PACKAGE_ROOT, "recipes");
-    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, claudeBin, zcodeBin, opencodeBin, log, ...clock });
+    const service = new TriggerService({ store, fires, engine, executor, paths, config, version: VERSION, recipesDir, deno, codexBin, claudeBin, agyBin, zcodeBin, opencodeBin, log, ...clock });
     const handlers = service.handlers();
     handlers["daemon.stop"] = () => {
       setTimeout(() => options.onStopRequest?.(), 50);
@@ -157,7 +164,7 @@ export async function startDaemon(options: DaemonOptions = {}): Promise<Daemon> 
     engine.start();
     executor.kick();
     log(
-      `self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"}, claude ${claudeBin() ?? "missing"}, zcode ${zcodeBin() ?? "missing"}, opencode ${opencodeBin() ?? "missing"})`,
+      `self-starter daemon ${VERSION} started (pid ${process.pid}, home ${paths.home}, deno ${deno() ?? "missing"}, codex ${codexBin() ?? "missing"}, claude ${claudeBin() ?? "missing"}, agy ${agyBin() ?? "missing"}, zcode ${zcodeBin() ?? "missing"}, opencode ${opencodeBin() ?? "missing"})`,
     );
     return {
       paths,

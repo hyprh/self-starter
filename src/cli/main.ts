@@ -21,7 +21,7 @@ import { uiCommand } from "./ui.js";
 const HELP = `self-starter ${VERSION}: let your coding agent act when something happens
 
 Setup
-  self-starter install [--codex <path>] [--claude <path>] [--zcode <path>] [--opencode <path>] [--no-service]
+  self-starter install [--codex <path>] [--claude <path>] [--agy <path>] [--zcode <path>] [--opencode <path>] [--no-service]
                                                          install the plugin in supported agents found on this machine,
                                                          and the background service
   self-starter uninstall [--purge]                       remove them (--purge also deletes triggers and history)
@@ -208,7 +208,15 @@ async function main(argv: string[]): Promise<void> {
       await runDaemonForeground();
       return;
     case "install":
-      await install(paths, { codex: flag(args, "codex"), claude: flag(args, "claude"), zcode: flag(args, "zcode"), opencode: flag(args, "opencode"), service: !args.flags.has("no-service"), log: (l) => out(`✓ ${l}`) });
+      await install(paths, {
+        codex: flag(args, "codex"),
+        claude: flag(args, "claude"),
+        agy: flag(args, "agy"),
+        zcode: flag(args, "zcode"),
+        opencode: flag(args, "opencode"),
+        service: !args.flags.has("no-service"),
+        log: (l) => out(`✓ ${l}`),
+      });
       out("\nDone. Restart the host app, or start a new agent session, so it loads the plugin. Then ask, for example:");
       out('  "Watch https://example.com/status and tell me when it stops returning 200."');
       out("The agent uses the plugin's skill (self-starter:triggers) to set it up.");

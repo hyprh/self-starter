@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { callDaemon, waitForDaemon } from "../../src/client/client.js";
+import { AntigravityCli } from "../../src/engine/antigravity.js";
 import { DEFAULT_CONFIG, saveConfig } from "../../src/engine/config.js";
 import { OpenCodeCli } from "../../src/engine/opencode.js";
 import { resolvePaths } from "../../src/engine/paths.js";
@@ -73,10 +74,10 @@ it("kills frozen descendants even when a child rejects SIGSTOP with EPERM or ps 
   assert.deepEqual(errorSignals, [[20, "SIGSTOP"], [20, "SIGKILL"]], "already-frozen PIDs are never left stopped");
 });
 
-for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached tool ownership`, () => {
+for (const host of ["opencode", "zcode", "antigravity"] as const) describe(`${host}'s detached tool ownership`, () => {
   let scratch: string;
-  const sessionId = host === "opencode" ? "ses_owned" : "sess_owned";
-  const siblingId = host === "opencode" ? "ses_other" : "sess_other";
+  const sessionId = host === "opencode" ? "ses_owned" : host === "antigravity" ? "conv_owned" : "sess_owned";
+  const siblingId = host === "opencode" ? "ses_other" : host === "antigravity" ? "conv_other" : "sess_other";
   beforeEach(() => { scratch = mkdtempSync(join(tmpdir(), "ss-process-owner-")); });
   afterEach(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -94,11 +95,12 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
   `);
   const cli = (body: string) => {
     const bin = join(scratch, "cli.mjs");
+    const option = host === "opencode" ? "--session" : host === "antigravity" ? "--conversation" : "--resume";
     writeFileSync(bin, `
       import { appendFileSync, existsSync, writeFileSync } from 'node:fs';
       import { spawn } from 'node:child_process';
       const args = process.argv.slice(2);
-      const option = ${JSON.stringify(host === "opencode" ? "--session" : "--resume")};
+      const option = ${JSON.stringify(option)};
       const sessionId = args[args.indexOf(option) + 1];
       for await (const chunk of process.stdin) {}
       const done = () => {
@@ -106,6 +108,8 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
           for (const [type, part] of [['text', {text:'Done'}], ['step_finish', {reason:'stop'}]]) {
             console.log(JSON.stringify({type, sessionID:sessionId, part}));
           }
+        } else if (${JSON.stringify(host)} === 'antigravity') {
+          console.log(JSON.stringify({conversation_id:sessionId, status:'SUCCESS', response:'Done'}));
         } else console.log(JSON.stringify({sessionId, response:'Done'}));
       };
       writeFileSync(sessionId + '.token', process.env.SELF_STARTER_RUN_TOKEN ?? '');
@@ -114,7 +118,10 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
     return bin;
   };
   const runner = (bin: string) => host === "opencode"
-    ? new OpenCodeCli(bin, join(scratch, "sessions")) : new ZCodeCli(bin, join(scratch, "sessions"));
+    ? new OpenCodeCli(bin, join(scratch, "sessions"))
+    : host === "antigravity"
+      ? new AntigravityCli(bin, join(scratch, "sessions"))
+      : new ZCodeCli(bin, join(scratch, "sessions"));
   const run = (bin: string, id = sessionId, timeoutMs = 800) => runner(bin).run({
     sessionId: id, cwd: scratch, message: "continue", sandbox: "workspace-write", timeoutMs,
   });
@@ -177,8 +184,9 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
     `);
     const parentScript = join(scratch, "daemon.mjs");
     const module = new URL(`../../src/engine/${host}.js`, import.meta.url).href;
+    const runnerClass = host === "opencode" ? "OpenCodeCli" : host === "antigravity" ? "AntigravityCli" : "ZCodeCli";
     writeFileSync(parentScript, `
-      const { ${host === "opencode" ? "OpenCodeCli" : "ZCodeCli"}: Runner } = await import(${JSON.stringify(module)});
+      const { ${runnerClass}: Runner } = await import(${JSON.stringify(module)});
       await new Runner(${JSON.stringify(bin)}, ${JSON.stringify(join(scratch, "sessions"))}).run({
         sessionId:${JSON.stringify(sessionId)},cwd:${JSON.stringify(scratch)},message:'continue',sandbox:'workspace-write',timeoutMs:1200,
       });
@@ -255,8 +263,9 @@ for (const host of ["opencode", "zcode"] as const) describe(`${host}'s detached 
       writeFileSync(${JSON.stringify(join(scratch, "scoped.token"))}, process.env.SELF_STARTER_RUN_TOKEN ?? '');
       setInterval(() => {}, 1000);
     `);
+    const runnerClass = host === "opencode" ? "OpenCodeCli" : host === "antigravity" ? "AntigravityCli" : "ZCodeCli";
     writeFileSync(scopedScript, `
-      const {${host === "opencode" ? "OpenCodeCli" : "ZCodeCli"}:Runner} = await import(${JSON.stringify(runnerModule)});
+      const {${runnerClass}:Runner} = await import(${JSON.stringify(runnerModule)});
       const result = await new Runner(${JSON.stringify(scopedBin)}, ${JSON.stringify(join(scratch, "scoped-sessions"))}).run({
         sessionId:${JSON.stringify(siblingId)},cwd:${JSON.stringify(scratch)},message:'continue',sandbox:'workspace-write',timeoutMs:300,
       });

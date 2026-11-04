@@ -13,7 +13,7 @@ export interface SessionProcess {
 }
 
 export interface SessionProcessRunOptions {
-  host: "zcode" | "opencode";
+  host: "antigravity" | "zcode" | "opencode";
   hostName: string;
   sessionsDir: string;
   sessionId?: string;
@@ -21,6 +21,7 @@ export interface SessionProcessRunOptions {
   command: string;
   args: string[];
   env?: NodeJS.ProcessEnv;
+  unsetEnv?: string[];
   stdin?: string;
   timeoutMs: number;
   onStart?: () => void;
@@ -131,12 +132,14 @@ export function killSessionProcesses(
  */
 export function runSessionProcess(options: SessionProcessRunOptions): Promise<SessionProcessOutcome> {
   return new Promise((resolve) => {
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, ...options.env, SELF_STARTER_HOST: options.host, SELF_STARTER_TRIGGER_TURN: "1" };
+    for (const key of options.unsetEnv ?? []) delete childEnv[key];
     const child = spawn(process.execPath, [
       fileURLToPath(new URL("./session-process.js", import.meta.url)),
       options.sessionsDir, options.sessionId ?? "", String(options.timeoutMs), options.command, ...options.args,
     ], {
       cwd: options.cwd,
-      env: { ...process.env, ...options.env, SELF_STARTER_HOST: options.host, SELF_STARTER_TRIGGER_TURN: "1" },
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       detached: true,
     });

@@ -45,6 +45,11 @@ const SANDBOX_TEXT = {
     "workspace-write": "can edit files in its folder",
     "danger-full-access": "no permission checks",
   },
+  antigravity: {
+    "read-only": "read tools only; writes and commands blocked by hook; no OS sandbox",
+    "workspace-write": "can edit workspace files; commands blocked by hook; no OS sandbox",
+    "danger-full-access": "no permission prompts; no OS sandbox",
+  },
   zcode: {
     "read-only": "plan mode: restricts writes and commands; no OS sandbox",
     "workspace-write": "edit mode: permits workspace edits; other tools may need approval; no OS sandbox",
