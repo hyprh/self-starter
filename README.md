@@ -4,7 +4,7 @@
 
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Local, zero-token event triggers for Claude Code, Codex, OpenCode and ZCode.</b><br>
+<p align="center"><b>Local, zero-token event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode.</b><br>
 CI failed? New PR comments? A training run finished—or NVDA just moved 6%?<br>
 Local code keeps watch—even after you close your terminal—and brings the follow-up back to your conversation.</p>
 
@@ -56,7 +56,7 @@ Give your agent an ongoing responsibility: watch your PRs, long-running jobs, lo
 |---|---|---|---|---|
 | **In-session polling (`/loop`, thread timers)** | Calls the model on every check | No — stops when the session closes | Yes | Yes, while open |
 | **Cloud routines & remote schedules** | Calls the model on every scheduled run | Yes (runs in the cloud) | No — isolated from your machine & LAN | No — starts separate cloud runs |
-| **Self-Starter** | **Zero** during routine probe checks | **Yes** (`launchd` / `systemd` service) | **Yes** (logs, `nvidia-smi`, CLIs, APIs) | **Yes** in Codex & Claude Code; dedicated CLI session in OpenCode & ZCode |
+| **Self-Starter** | **Zero** during routine probe checks | **Yes** (`launchd` / `systemd` service) | **Yes** (logs, `nvidia-smi`, CLIs, APIs) | **Yes** in Codex & Claude Code; dedicated CLI session in Antigravity, OpenCode & ZCode |
 
 **Closing your terminal or app does not end the watch.** While your machine is awake, an independent local service keeps running the probe and enforces state transitions (`not-met → met`), minimum duration, deduplication, cooldowns and expiry. **Code does the waiting. Your agent does the work.** Routine checks make no model calls; setup, session initialization and agent actions can still use tokens.
 
@@ -64,24 +64,25 @@ Repeating watches use a dedicated result session by default. In Codex and Claude
 
 ## Local Web console & push routing
 
-Run `self-starter ui` (`~/.self-starter/bin/self-starter ui`) to open the local `127.0.0.1` console—inspect active probe tasks across Codex, Claude Code, ZCode and OpenCode, review probe code and 0-token check counters, set quiet hours, and route alerts per probe to **Desktop**, **Feishu / Lark**, **WeCom**, **DingTalk**, **Slack**, **Discord**, **Telegram**, **Bark**, **ntfy**, custom **Webhooks**, or [Email](docs/guide.md#notifications-and-outbound-channels):
+Run `self-starter ui` (`~/.self-starter/bin/self-starter ui`) to open the local `127.0.0.1` console—inspect active probe tasks across Codex, Claude Code, Antigravity, ZCode and OpenCode, review probe code and 0-token check counters, set quiet hours, and route alerts per probe to **Desktop**, **Feishu / Lark**, **WeCom**, **DingTalk**, **Slack**, **Discord**, **Telegram**, **Bark**, **ntfy**, custom **Webhooks**, or [Email](docs/guide.md#notifications-and-outbound-channels):
 
 <p align="center">
-  <img src="docs/demos/console-probes-light.png" width="960" alt="Self-Starter local Web console in light theme showing active probe tasks across Claude Code and Codex, 0-token check counters, quiet hours, and per-task push routing to Desktop, Slack, Telegram, Bark and Feishu.">
+  <img src="docs/demos/console-probes-light.png" width="960" alt="Self-Starter local Web console in light theme showing active probe tasks across Claude Code, Codex and Antigravity, 0-token check counters, quiet hours, and per-task push routing to Desktop, Slack, Telegram, Bark and Feishu.">
 </p>
 
 <p align="center">
-  <img src="docs/demos/console-inbox-dark.png" width="960" alt="Self-Starter Attention Inbox in dark theme showing quiet-hours held notifications, actionable multi-agent receipts, and one-click session resume controls.">
+  <img src="docs/demos/console-inbox-dark.png" width="960" alt="Self-Starter Attention Inbox in dark theme showing quiet-hours held notifications, actionable multi-agent receipts across Codex, Claude Code and Antigravity, and one-click session resume controls.">
 </p>
 
 ## Install
 
-Choose the integration for your agent. All four share the same local trigger engine; their installation and result destinations differ.
+Choose the integration for your agent. All five share the same local trigger engine; their installation and result destinations differ.
 
 | Agent | Installation | Where the agent answers |
 |---|---|---|
 | **[Codex](#codex)** | GitHub plugin marketplace | The original conversation or a dedicated thread |
 | **[Claude Code](#claude-code)** | GitHub plugin marketplace | The original session or a dedicated session |
+| **[Antigravity](#antigravity)** | Local source installation (`agy-plugin`) | A dedicated CLI conversation (`agy --conversation <id>`); pairs with `agy remote-control` |
 | **[ZCode](#zcode)** | Local source installation from v0.0.4 | A dedicated CLI result session; no delivery into the original desktop conversation |
 | **[OpenCode](#opencode)** | Local source installation from v0.0.4 | A dedicated CLI result session, reused for later events |
 
@@ -110,6 +111,19 @@ Inside Claude Code:
 Use Claude Code 2.1.224 or newer for delivery into open sessions, then start a new session after installation. See the [Claude Code guide](docs/guide.md#claude-code) for session delivery and permissions.
 
 On their first start, the Codex and Claude Code plugins download the matching runtime (about 50 MB, including [Deno](https://deno.com)) and set up a launchd or systemd background service. Allow a minute or two; later starts need no download. The terminal command is `~/.self-starter/bin/self-starter`.
+
+### Antigravity
+
+Google Antigravity (`agy` CLI / Antigravity 2.0) uses a native plugin (`agy-plugin/`) and dedicated CLI conversations. Install from a local checkout:
+
+```sh
+npm ci
+npm run build
+node dist/src/cli/main.js install --agy /absolute/path/to/agy
+node dist/src/cli/main.js doctor
+```
+
+Start a new Antigravity conversation after installation. Each watch runs in a dedicated `agy --conversation <id>` result session guarded by a `PreToolUse` sandbox hook (`read-only`, `workspace-write` or `danger-full-access`). **Remote Control synergy:** unlike cloud-hosted [Remote Agents](https://antigravity.google/docs/remote-agents) that spin down after ~15 minutes of inactivity, running `agy remote-control` on your workstation pairs directly with Self-Starter—local probes keep watching GPUs, `localhost` and logs at zero tokens, and you can inspect or continue any triggered conversation from your phone. See the [Antigravity plugin guide](agy-plugin/README.md).
 
 ### ZCode
 
@@ -163,7 +177,7 @@ Test the three things built-in timers cannot do—**filtering noise at zero toke
 
 4. Within ~30 seconds, Self-Starter spots the `ERROR` line and runs the follow-up in the background:
    - **Codex and Claude Code** resume the closed conversation where you created the watch (`claude --resume` or reopen Codex to find the analysis already waiting).
-   - **ZCode and OpenCode** run the task in a dedicated CLI result session.
+   - **Antigravity, ZCode and OpenCode** run the task in a dedicated CLI result session (`agy --conversation <id>`, `zcode --resume <id>` or `opencode --session <id>`).
 
    Run `~/.self-starter/bin/self-starter history` (or `node dist/src/cli/main.js history` from a source checkout) to see the fire, receipt and destination—such as `(your session, resumed in the background)`—then delete the demo watch and `/tmp/self-starter-demo.log`.
 
@@ -193,19 +207,20 @@ These examples need access to their data sources. Network access and credentials
 
 1. **Describe the event.** Your agent writes a TypeScript probe or uses a ready-made recipe, tests it, and sets the action and destination.
 2. **Code does the waiting.** A local background service runs the probe on a schedule. The engine handles minimum duration, cooldown, deduplication, expiry and delivery retries without calling a model for each check.
-3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background; ZCode and OpenCode resume their dedicated result sessions. You can choose a notification without an agent task instead.
+3. **Your agent does the work.** When the event fires, the task goes to the destination shown above. Codex and Claude Code can resume closed conversations in the background; Antigravity, ZCode and OpenCode resume their dedicated result sessions. You can choose a notification without an agent task instead.
 4. **Check the result—or route it anywhere.** Open the [local Web console](#local-web-console--push-routing) (`self-starter ui`) or run `self-starter history` to read actionable receipts, resume sessions in one click, manage quiet-hours queues, and route alerts per watch to your desktop, chat channels or email.
 
 ## Running locally
 
 - **Keep the machine awake.** Checks run locally, including when the agent app is closed. External data sources also need connectivity.
-- **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. ZCode and OpenCode use native tool permissions rather than OS isolation. See the [security policy](SECURITY.md), [ZCode permissions](zcode-plugin/README.md#permissions) and [OpenCode guide](opencode-plugin/README.md).
+- **Review what can run.** Probes run as your user by default; API-only probes can use a restricted sandbox. Background agent tasks have separate permissions and cannot obtain interactive approval. Antigravity, ZCode and OpenCode use native hook or tool permissions rather than OS isolation. See the [security policy](SECURITY.md), [Antigravity guide](agy-plugin/README.md), [ZCode permissions](zcode-plugin/README.md#permissions) and [OpenCode guide](opencode-plugin/README.md).
 - **Verify delivery once.** Run the quick start on your own setup. Desktop notifications need a working notification service; on macOS, `terminal-notifier` enables clicks that open a Codex thread. Use the [Codex app checklist](docs/codex-app-checklist.md) to check foreground and background behavior.
 - **Keep secrets out of chat.** API keys, webhook URLs, bot tokens and email app passwords are stored locally via `self-starter ui` or the CLI (`0600` permissions), never in chat or probe source. What a probe saw is passed to the agent as untrusted data.
 
 ## More
 
 - [Guide](docs/guide.md): triggers, local Web console (`self-starter ui`), outbound push channels, secrets and CLI commands
+- [Antigravity guide](agy-plugin/README.md): native plugin installation, dedicated `agy` sessions and `agy remote-control`
 - [ZCode guide](zcode-plugin/README.md): local installation and dedicated result sessions
 - [OpenCode guide](opencode-plugin/README.md): native plugin installation and background result sessions
 - [Design](docs/design.md): architecture, execution boundaries and verification

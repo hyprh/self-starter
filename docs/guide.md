@@ -1,10 +1,10 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, ZCode and OpenCode source installations, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, Antigravity, ZCode and OpenCode source installations, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. [ZCode](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. ZCode and [OpenCode](#opencode) require a local source installation of v0.0.4 or newer.
+Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. [ZCode](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. [Antigravity](#antigravity), ZCode and [OpenCode](#opencode) use a local source installation.
 
 For Codex:
 
@@ -24,7 +24,7 @@ self-starter install   # installs for supported agents it finds and starts the s
 self-starter doctor    # checks everything
 ```
 
-`self-starter install` installs integrations for the supported agents it finds and starts the background service. Codex, Claude Code and ZCode use a local plugin marketplace; OpenCode uses a native plugin loader. These integrations run this checkout. If an agent is not on your PATH, pass its executable with `--codex`, `--claude`, `--zcode` or `--opencode`, followed by its absolute path. Run it again after pulling changes; your triggers are kept. `--no-service` runs the daemon without the service, and the plugin then leaves it that way.
+`self-starter install` installs integrations for the supported agents it finds and starts the background service. Codex, Claude Code and ZCode use a local plugin marketplace; Antigravity installs `agy-plugin` through `agy plugin install`; OpenCode uses a native plugin loader. These integrations run this checkout. If an agent is not on your PATH, pass its executable with `--codex`, `--claude`, `--agy`, `--zcode` or `--opencode`, followed by its absolute path. Run it again after pulling changes; your triggers are kept. `--no-service` runs the daemon without the service, and the plugin then leaves it that way.
 
 For notifications that open the right conversation when clicked on macOS, install `terminal-notifier` (`brew install terminal-notifier`). On Linux, notifications use `notify-send`.
 
@@ -44,6 +44,10 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 - **`dedicated`** sends each fire to the trigger's own conversation, titled "Trigger: <name>" in Codex, the same way. It suits long-running watches, so that their fires do not crowd your work. It is the default for triggers that can fire more than once.
 - Runs in the background can change files and run commands in their folder (Codex's `workspace-write` sandbox); a trigger can choose `read-only`, or `danger-full-access` when it needs more.
 - `self-starter history` ends each answered fire with where Codex answered: `(your thread, open in Codex)` or `(your thread, opened in the background)`.
+
+## Antigravity
+
+Google Antigravity (`agy` CLI / Antigravity 2.0) installs as a native plugin (`agy-plugin/`) via `node dist/src/cli/main.js install --agy /absolute/path/to/agy`. Each watch runs in a dedicated CLI conversation (`agy --conversation <id>`) guarded by `agy-plugin/bin/guard.mjs` (`PreToolUse`), enforcing `read-only`, `workspace-write` (blocking outside-workspace writes, symlinks, `.git`/`.agents`/`.gemini` edits, and shell commands), or `danger-full-access`. Running `agy remote-control` on your workstation pairs directly with Self-Starter so local zero-token probes keep running while you inspect or continue triggered conversations from mobile—unlike cloud [Remote Agents](https://antigravity.google/docs/remote-agents) that shut down after ~15 minutes of inactivity. See the [Antigravity plugin guide](../agy-plugin/README.md).
 
 ## ZCode
 
@@ -91,7 +95,7 @@ Where fires go, for triggers made in Claude Code:
 
 Run `self-starter ui` (or `~/.self-starter/bin/self-starter ui`) to open the local web console on `127.0.0.1:4319` (authenticated with a per-session `HttpOnly` token; zero open TCP ports when closed):
 
-- **Attention Inbox**: unread agent receipts (`notify: true`), failed deliveries, notifications held by `quiet_hours` (with one-click **Send Now** or **Discard**), one-click session resume commands (`claude --resume`, `codex://...`, `opencode --session`, `zcode --resume`), and **Browser Alerts** (ideal over `ssh -L` port forwarding on headless Linux boxes).
+- **Attention Inbox**: unread agent receipts (`notify: true`), failed deliveries, notifications held by `quiet_hours` (with one-click **Send Now** or **Discard**), one-click session resume commands (`claude --resume`, `codex://...`, `agy --conversation`, `opencode --session`, `zcode --resume`), and **Browser Alerts** (ideal over `ssh -L` port forwarding on headless Linux boxes).
 - **Watches & Drafts**: live 0-token check counters, per-watch outbound channel pills (`notify.when`, `notify.channels`, `quiet_hours`), instant probe test runs, draft activation, and read-only source/YAML inspection.
 - **Channels & Secrets**: paste-one-URL push setup and write-only probe secrets without touching chat.
 

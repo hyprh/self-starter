@@ -14,7 +14,7 @@ import { CLI_SCRIPT } from "../../src/runtime.js";
 
 function fixture() {
   const scratch = mkdtempSync(join(tmpdir(), "ss-opencode-install-"));
-  const keys = ["HOME", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR", "PATH", "CODEX_BIN", "CLAUDE_BIN", "ZCODE_BIN", "OPENCODE_BIN"] as const;
+  const keys = ["HOME", "XDG_CONFIG_HOME", "OPENCODE_CONFIG_DIR", "PATH", "CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"] as const;
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const versionFile = join(scratch, "version");
   writeFileSync(versionFile, "1.19.3");
@@ -23,7 +23,7 @@ function fixture() {
   Object.assign(process.env, {
     HOME: join(scratch, "user"), XDG_CONFIG_HOME: join(scratch, "config"),
     OPENCODE_CONFIG_DIR: join(scratch, "extra-config"), PATH: join(scratch, "no-binaries"),
-    CODEX_BIN: bin, CLAUDE_BIN: bin, ZCODE_BIN: bin, OPENCODE_BIN: bin,
+    CODEX_BIN: bin, CLAUDE_BIN: bin, AGY_BIN: bin, ZCODE_BIN: bin, OPENCODE_BIN: bin,
   });
   const paths = resolvePaths(join(scratch, "self-starter"));
   return {
@@ -150,7 +150,7 @@ describe("OpenCode native plugin installation", () => {
   it("reports no supported agent when the only discovered CLI is incompatible OpenCode", async () => {
     const f = fixture();
     try {
-      for (const key of ["CODEX_BIN", "CLAUDE_BIN", "ZCODE_BIN"]) process.env[key] = "";
+      for (const key of ["CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN"]) process.env[key] = "";
       writeFileSync(f.versionFile, "1.18.0");
       const messages: string[] = [];
       await assert.rejects(install(f.paths, { service: false, log: (line) => messages.push(line) }), /No supported agent was found/);

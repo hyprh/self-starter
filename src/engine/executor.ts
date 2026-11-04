@@ -11,6 +11,7 @@ import type { ProbeEvent } from "../core/probe-output.js";
 import { isQuietTime } from "../core/quiet-hours.js";
 import type { FireDraft } from "../core/state-machine.js";
 import type { CodexRunner } from "./codex.js";
+import type { AntigravityRunner } from "./antigravity.js";
 import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
 import { newId } from "./fs-util.js";
@@ -35,6 +36,7 @@ export interface ExecutorDeps {
   codex: () => CodexRunner | undefined;
   /** Runs headless turns of Claude Code sessions; undefined when no claude binary is available. */
   claude?: () => SessionRunner | undefined;
+  antigravity?: () => AntigravityRunner | undefined;
   zcode?: () => ZCodeRunner | undefined;
   opencode?: () => OpenCodeRunner | undefined;
   /** Hands a message to a Claude Code process that shows the session (tests replace it). */

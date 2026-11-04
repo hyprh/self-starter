@@ -18,6 +18,9 @@ export const PLUGIN_SOURCE = join(PACKAGE_ROOT, "codex-plugin");
 /** Source of the Claude Code plugin (skills, hooks and manifest). */
 export const CC_PLUGIN_SOURCE = join(PACKAGE_ROOT, "cc-plugin");
 
+/** Source of the Google Antigravity plugin (skill, hook, MCP config and manifest). */
+export const AGY_PLUGIN_SOURCE = join(PACKAGE_ROOT, "agy-plugin");
+
 /** Source of the ZCode plugin (skill and manifest). */
 export const ZCODE_PLUGIN_SOURCE = join(PACKAGE_ROOT, "zcode-plugin");
 

@@ -8,6 +8,8 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import {
   agentName,
+  antigravityRef,
+  antigravitySessionIdOf,
   hostFor,
   hostOf,
   opencodeRef,
@@ -54,7 +56,8 @@ const POST_GRACE_MS = 60_000;
 const THREAD_GONE = /archived|not found|no such|unknown thread|does not exist/i;
 /** What codex answers when another process, such as a Codex app, has the thread open. */
 const OPEN_ELSEWHERE = /active writer/i;
-type CliHost = "zcode" | "opencode";
+type CliHost = "antigravity" | "zcode" | "opencode";
+const isCliHost = (host: string): host is CliHost => host === "antigravity" || host === "zcode" || host === "opencode";
 
 /** The folder, while it exists; the home folder otherwise. */
 function folderOrHome(folder: string | null | undefined): string {
@@ -122,7 +125,7 @@ export class HostDelivery {
   /** Creates the dedicated thread (or session) right after activation, so it exists before the first fire. */
   prepareDedicated(triggerId: string): void {
     const host = hostFor(this.deps.store.loadTrigger(triggerId).definition);
-    if (host === "zcode" || host === "opencode") {
+    if (isCliHost(host)) {
       this.ensureCliSession(triggerId, host).catch((error: Error) => {
         this.log(`could not create the ${agentName(host)} session of ${triggerId} yet: ${error.message}`);
       });
@@ -145,14 +148,14 @@ export class HostDelivery {
   async deliver(definition: TriggerDefinition, fire: FireRecord): Promise<void> {
     const host = hostFor(definition);
     if (host === "claude-code") return this.dispatchToSession(definition, fire);
-    if (host === "zcode" || host === "opencode") return this.dispatchToCliSession(definition, fire, host);
+    if (isCliHost(host)) return this.dispatchToCliSession(definition, fire, host);
     return this.dispatchToCodex(definition, fire);
   }
 
   /** A fire handed to a conversation is still open: enter/wake the conversation or remind the user. */
   async follow(fire: FireRecord, age: number): Promise<void> {
     const host = hostOf(fire.target?.threadId);
-    if (host === "zcode" || host === "opencode") return this.followCliSession(fire, age, host);
+    if (isCliHost(host)) return this.followCliSession(fire, age, host);
     if (sessionIdOf(fire.target?.threadId) !== undefined) return this.followSession(fire, age);
     const outcome = this.outcome.get(fire.fireId);
     // The trigger's own thread is always woken; the user can keep Self-Starter out of their own threads.
@@ -378,7 +381,8 @@ export class HostDelivery {
 
   private async createCliSession(definition: TriggerDefinition, host: CliHost): Promise<string> {
     const runner = this.deps[host]?.();
-    if (!runner) throw new Error(`the ${host} CLI was not found; run \`self-starter doctor\``);
+    const cliName = host === "antigravity" ? "agy" : host;
+    if (!runner) throw new Error(`the ${cliName} CLI was not found; run \`self-starter doctor\``);
     const result = await runner.run({
       cwd: definition.target.cwd ?? homedir(),
       message: renderDedicatedSeed(definition, "session"),
@@ -386,7 +390,10 @@ export class HostDelivery {
       timeoutMs: Math.min(this.deps.config.agentRunTimeoutMinutes, 5) * 60_000,
     });
     if (!result.ok || !result.sessionId) throw new Error(`could not create the ${agentName(host)} session: ${result.error ?? "no session id"}`);
-    const ref = this.bindDedicated(definition, host === "opencode" ? opencodeRef(result.sessionId) : zcodeRef(result.sessionId));
+    const ref = this.bindDedicated(
+      definition,
+      host === "opencode" ? opencodeRef(result.sessionId) : host === "antigravity" ? antigravityRef(result.sessionId) : zcodeRef(result.sessionId),
+    );
     this.log(`dedicated ${agentName(host)} session of ${definition.id}: ${result.sessionId}`);
     return ref;
   }
@@ -435,7 +442,7 @@ export class HostDelivery {
     if (fire.target?.via === undefined && runner && this.runSlotFree() && (this.nextCheck.get(fire.fireId) ?? 0) <= this.uptime()) {
       const definition = this.cliTask(fire, ref, host);
       if (!definition) return;
-      const sessionId = (host === "opencode" ? opencodeSessionIdOf(ref) : zcodeSessionIdOf(ref))!;
+      const sessionId = (host === "opencode" ? opencodeSessionIdOf(ref) : host === "antigravity" ? antigravitySessionIdOf(ref) : zcodeSessionIdOf(ref))!;
       this.headlessSessions.add(ref);
       this.runTurn(fire, `${agentName(host)} session ${sessionId}`, async () => {
         const result = await runner.run({

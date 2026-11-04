@@ -1,0 +1,16 @@
+{
+  "self-starter": {
+    "PreToolUse": [
+      {
+        "matcher": "^(call_mcp_tool|run_command|send_command_input|manage_task|write_file|edit_file|replace_file_content|multi_replace_file_content|delete_file)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./bin/guard.mjs",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

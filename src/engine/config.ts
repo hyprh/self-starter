@@ -54,6 +54,8 @@ export interface Config {
   codexBin?: string;
   /** Absolute path of the claude CLI, for fires of triggers made in Claude Code; found on PATH otherwise. */
   claudeBin?: string;
+  /** Absolute path of Google Antigravity's agy CLI for dedicated result sessions. */
+  agyBin?: string;
   /** Absolute path of ZCode for dedicated result sessions. */
   zcodeBin?: string;
   /** Absolute path of OpenCode for dedicated result sessions. */

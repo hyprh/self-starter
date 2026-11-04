@@ -25,6 +25,7 @@ const DARK_VARS = `
   --down-soft: #331b1a;
   --host-codex: #62b6cb;
   --host-claude: #ee913a;
+  --host-antigravity: #6ba3ff;
   --host-zcode: #a58df5;
   --host-opencode: #5ec490;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.34);
@@ -57,6 +58,7 @@ export const UI_STYLES = `:root,
   --down-soft: #fceae8;
   --host-codex: #1f6f8b;
   --host-claude: #b45318;
+  --host-antigravity: #2563eb;
   --host-zcode: #6347b8;
   --host-opencode: #1f784e;
   --shadow-sm: 0 1px 2px rgba(29, 27, 24, 0.04);
@@ -313,6 +315,7 @@ svg.icon-sm {
 
 .host-dot.codex { background: var(--host-codex); }
 .host-dot.claude-code { background: var(--host-claude); }
+.host-dot.antigravity { background: var(--host-antigravity); }
 .host-dot.zcode { background: var(--host-zcode); }
 .host-dot.opencode { background: var(--host-opencode); }
 .host-dot.all { background: var(--faint); }

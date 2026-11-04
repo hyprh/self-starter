@@ -7,6 +7,7 @@ import { closeSync, existsSync, mkdirSync, openSync, rmSync, writeFileSync } fro
 import { homedir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
+import { findAntigravity } from "../engine/antigravity.js";
 import { cliCommand, findCodex, loadConfig, saveConfig, which } from "../engine/config.js";
 import { findOpenCode } from "../engine/opencode.js";
 import type { Paths } from "../engine/paths.js";
@@ -323,13 +324,14 @@ export async function installService(paths: Paths, manager = serviceManager()): 
   const config = loadConfig(paths);
   config.codexBin ??= findCodex();
   config.claudeBin ??= findClaude();
+  config.agyBin ??= findAntigravity();
   config.zcodeBin ??= findZCode();
   config.opencodeBin ??= findSupportedOpenCode();
   config.service = true;
   saveConfig(paths, config);
   await stopRunningDaemon(paths);
   writeCommand(paths);
-  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin, config.zcodeBin, config.opencodeBin]));
+  manager.install(serviceSpec(paths, [config.codexBin, config.claudeBin, config.agyBin, config.zcodeBin, config.opencodeBin]));
 }
 
 /**

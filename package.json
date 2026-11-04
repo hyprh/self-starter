@@ -25,6 +25,7 @@
     "dist/src",
     "codex-plugin",
     "cc-plugin",
+    "agy-plugin",
     "zcode-plugin",
     "opencode-plugin",
     "recipes"

@@ -72,6 +72,7 @@ export interface ServiceDeps {
   deno: () => string | undefined;
   codexBin: () => string | undefined;
   claudeBin?: () => string | undefined;
+  agyBin?: () => string | undefined;
   zcodeBin?: () => string | undefined;
   opencodeBin?: () => string | undefined;
   log: (line: string) => void;
@@ -260,7 +261,8 @@ export class TriggerService {
     const cleaned: Record<string, unknown> = { ...(raw as Record<string, unknown>) };
     delete cleaned.meta;
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
-    if (hostOf(caller.threadId) === "zcode" || hostOf(caller.threadId) === "opencode") {
+    const callerHost = hostOf(caller.threadId);
+    if (callerHost === "antigravity" || callerHost === "zcode" || callerHost === "opencode") {
       cleaned.target = { kind: "dedicated", ...(caller.cwd ? { cwd: caller.cwd } : {}), ...(isRecord(cleaned.target) ? cleaned.target : {}) };
     }
     const validated = validateDefinition(cleaned);
@@ -396,7 +398,7 @@ export class TriggerService {
 
   private checkTarget(definition: TriggerDefinition): void {
     const host = hostFor(definition);
-    if ((host === "zcode" || host === "opencode") && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
+    if ((host === "antigravity" || host === "zcode" || host === "opencode") && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
       throw new ServiceError("invalid", `${agentName(host)} currently supports dedicated result sessions; set target.kind to dedicated.`);
     }
   }
@@ -663,6 +665,7 @@ export class TriggerService {
       deno: this.deps.deno() ?? null,
       codex: this.deps.codexBin() ?? null,
       claude: this.deps.claudeBin?.() ?? null,
+      antigravity: this.deps.agyBin?.() ?? null,
       zcode: this.deps.zcodeBin?.() ?? null,
       opencode: this.deps.opencodeBin?.() ?? null,
       triggers: { total: ids.length, ...counts },

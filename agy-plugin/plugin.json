@@ -1,0 +1,12 @@
+{
+  "name": "self-starter",
+  "displayName": "Self-Starter",
+  "version": "0.0.6",
+  "description": "Define custom events in plain language and let Antigravity handle them in dedicated CLI result sessions, with zero model tokens spent while waiting.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Watch https://example.com/status and notify me if it stops returning 200",
+    "When runs/exp42/train.log finishes, compare its results with exp41",
+    "List my active Self-Starter triggers and recent fires"
+  ]
+}

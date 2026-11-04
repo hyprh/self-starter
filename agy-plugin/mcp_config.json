@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "self_starter": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/bin/start.mjs", "mcp"],
+      "env": {
+        "SELF_STARTER_HOST": "antigravity"
+      }
+    }
+  }
+}
