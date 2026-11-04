@@ -20,7 +20,7 @@ Requires macOS or Linux, Node.js 20 or newer, and an authenticated Antigravity C
 ### Option 1: Install from a source checkout (recommended)
 
 ```sh
-git clone https://github.com/hyprh/self-starter.git
+git clone --branch v0.0.7 https://github.com/hyprh/self-starter.git
 cd self-starter
 npm ci && npm run build
 node dist/src/cli/main.js install --agy /path/to/agy

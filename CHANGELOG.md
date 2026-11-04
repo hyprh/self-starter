@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.7 (2026-11-04)
+
+- **Google Antigravity native plugin (`agy-plugin/`).** Install Self-Starter into Antigravity (`agy` CLI / Antigravity 2.0) with `node dist/src/cli/main.js install --agy /absolute/path/to/agy` or directly via `agy plugin install ./agy-plugin`. The bundle provides the shared MCP trigger server, bundled `triggers` skill, and a `PreToolUse` policy guard (`agy-plugin/bin/guard.mjs`) enforcing `read-only`, `workspace-write` (blocking outside-workspace edits, symlinks, `.git`/`.agents`/`.gemini` writes, and shell commands), and `danger-full-access` sandboxes while disallowing recursive trigger mutations during fire turns.
+- **Headless `agy` session delivery and Remote Control workflow.** Each Antigravity watch initializes and reuses a dedicated `agy --print --conversation <id>` result session (`agy:<id>`) with `ANTIGRAVITY_*` parent environment isolation, per-session lease locks, detached tool cleanup, and missing-conversation recovery. Pairing Self-Starter with `agy remote-control` on a local workstation keeps zero-token probes alive on GPUs, `localhost`, and logs while letting you inspect or continue triggered sessions from mobile (`agy --conversation <id>`).
+- **Warm terracotta and amber visual identity.** Replaced the legacy black-and-emerald palette across plugin icons, `self-starter ui`, the GitHub Pages site, and the Open Graph social card with a two-tone spark emblem and eye-care warm paper light / charcoal-terracotta dark themes.
+- **Five-agent Web console and diagnostics.** `self-starter ui`, `self-starter doctor`, and `self-starter history` now inspect and manage probes, receipts, CLI binaries, and session resume commands across Codex, Claude Code, Antigravity, ZCode, and OpenCode.
+
 ## 0.0.6 (2026-11-04)
 
 - **Local Web console (`self-starter ui`).** Run `self-starter ui` to open a loopback (`127.0.0.1`) sidebar workspace with real-time SSE updates, zero-token check counters, probe source and YAML inspection, dry-run triggers, and eye-care light and dark themes. The server enforces `Host` validation, one-time URL token bootstrap into an `HttpOnly SameSite=Strict` cookie, CSP, and CSRF origin checks, while never returning stored secret values.

@@ -1,7 +1,7 @@
 {
   "name": "self-starter",
   "displayName": "Self-Starter",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Define custom events in plain language and let Antigravity handle them in dedicated CLI result sessions, with zero model tokens spent while waiting.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [

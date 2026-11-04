@@ -114,7 +114,7 @@ On their first start, the Codex and Claude Code plugins download the matching ru
 
 ### Antigravity
 
-Google Antigravity (`agy` CLI / Antigravity 2.0) uses a native plugin (`agy-plugin/`) and dedicated CLI conversations. Install from a local checkout:
+Google Antigravity (`agy` CLI / Antigravity 2.0) uses a native plugin (`agy-plugin/`) and dedicated CLI conversations. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
 
 ```sh
 npm ci
@@ -127,7 +127,7 @@ Start a new Antigravity conversation after installation. Each watch runs in a de
 
 ### ZCode
 
-ZCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.6 tag](https://github.com/hyprh/self-starter/tree/v0.0.6):
+ZCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
 
 ```sh
 npm ci
@@ -140,7 +140,7 @@ Replace the placeholder with the absolute path to an authenticated ZCode CLI exe
 
 ### OpenCode
 
-OpenCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.6 tag](https://github.com/hyprh/self-starter/tree/v0.0.6):
+OpenCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
 
 ```sh
 npm ci
