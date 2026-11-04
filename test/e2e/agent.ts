@@ -228,5 +228,5 @@ try {
 } finally {
   // The plugin and everything else live in the scratch folders; only the daemon runs outside them.
   await callDaemon(paths.socket, "daemon.stop", {}, { via: "cli" }, 5000).catch(() => undefined);
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }

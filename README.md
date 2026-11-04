@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="site/icon-trigger.svg" width="60" height="60" alt="Self-Starter logo">
+</p>
+
 <h1 align="center">Self-Starter</h1>
 
 <p align="center"><b>Local, zero-token event triggers for Claude Code, Codex, OpenCode and ZCode.</b><br>

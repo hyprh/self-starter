@@ -1,64 +1,66 @@
 // Workspace stylesheet for `self-starter ui`:
 // - Sidebar console layout with multi-agent host navigation & channel tiles
-// - Eye-care warm yellow-green celadon light theme + obsidian-sage dark theme
+// - Eye-care warm linen paper light theme + warm obsidian-amber dark theme
 
 const DARK_VARS = `
-  --bg: #111512;
-  --sidebar: #0c0f0d;
-  --surface: #171c18;
-  --surface-2: #1d231f;
-  --fg: #e7ede6;
-  --muted: #93a092;
-  --faint: #6c796b;
-  --line: #252e27;
-  --line-strong: #334036;
-  --soft: #202722;
-  --brand: #63c493;
-  --brand-fg: #0b1811;
-  --brand-soft: #173024;
-  --signal: #eba949;
-  --signal-soft: #312513;
+  --bg: #151412;
+  --sidebar: #100f0d;
+  --surface: #1e1c19;
+  --surface-2: #26231f;
+  --fg: #f2efe9;
+  --muted: #9e978c;
+  --faint: #756f65;
+  --line: #2d2a25;
+  --line-strong: #3d3932;
+  --soft: #282520;
+  --brand: #ee913a;
+  --brand-btn: #df7c27;
+  --brand-fg: #fffcf8;
+  --brand-soft: #312113;
+  --signal: #f5b041;
+  --signal-soft: #332612;
   --green: #5ec490;
-  --green-soft: #152e22;
+  --green-soft: #162e22;
   --down: #e57169;
   --down-soft: #331b1a;
   --host-codex: #62b6cb;
-  --host-claude: #e59866;
+  --host-claude: #ee913a;
   --host-zcode: #a58df5;
-  --host-opencode: #63c493;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
-  --shadow: 0 2px 8px rgba(0, 0, 0, 0.28), 0 8px 24px rgba(0, 0, 0, 0.22);
+  --host-opencode: #5ec490;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.34);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.30), 0 8px 24px rgba(0, 0, 0, 0.24);
   color-scheme: dark;
 `;
 
 export const UI_STYLES = `:root,
 [data-theme="light"] {
-  /* Subtle warm yellow-green eye-care paper palette (Hue ~76deg, low saturation) */
-  --bg: #f4f6ef;
-  --sidebar: #ecefe5;
-  --surface: #fafbf7;
-  --surface-2: #eef1e8;
-  --fg: #1c231b;
-  --muted: #596455;
-  --faint: #7c8777;
-  --line: #dbe0d1;
-  --line-strong: #c8d0bc;
-  --soft: #e3e8db;
-  --brand: #2b674c;
-  --brand-fg: #fafbf7;
-  --brand-soft: #deede4;
-  --signal: #c47612;
-  --signal-soft: #faefd9;
-  --green: #237a52;
-  --green-soft: #dff2e8;
-  --down: #c24942;
-  --down-soft: #fbeae8;
+  /* Subtle warm linen eye-care paper palette + terracotta brand */
+  --bg: #f6f4ee;
+  --sidebar: #eeeae0;
+  --surface: #fdfcf9;
+  --surface-2: #f2efe7;
+  --fg: #1d1b18;
+  --muted: #686259;
+  --faint: #8a8378;
+  --line: #e2ddd2;
+  --line-strong: #cfc8b9;
+  --soft: #ebe6db;
+  --brand: #b45318;
+  --brand-btn: #b45318;
+  --brand-fg: #fffcf8;
+  --brand-soft: #faece1;
+  --signal: #c97a10;
+  --signal-soft: #fcf1dc;
+  --green: #1f784e;
+  --green-soft: #e0f2e9;
+  --down: #c2463f;
+  --down-soft: #fceae8;
   --host-codex: #1f6f8b;
-  --host-claude: #b85d28;
+  --host-claude: #b45318;
   --host-zcode: #6347b8;
-  --host-opencode: #2b674c;
-  --shadow-sm: 0 1px 2px rgba(28, 35, 27, 0.04);
-  --shadow: 0 1px 3px rgba(28, 35, 27, 0.05), 0 8px 22px rgba(28, 35, 27, 0.035);
+  --host-opencode: #1f784e;
+  --shadow-sm: 0 1px 2px rgba(29, 27, 24, 0.04);
+  --shadow: 0 1px 3px rgba(29, 27, 24, 0.05), 0 8px 22px rgba(29, 27, 24, 0.04);
   --font: "Inter", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --display: "Inter", "Schibsted Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -613,16 +615,16 @@ svg.icon-sm {
 }
 
 .btn-primary {
-  background: var(--brand);
+  background: var(--brand-btn);
   color: var(--brand-fg);
-  border-color: var(--brand);
+  border-color: var(--brand-btn);
   font-weight: 600;
 }
 
 .btn-primary:hover:not(:disabled) {
   filter: brightness(1.06);
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--brand-btn);
+  border-color: var(--brand-btn);
 }
 
 .btn-signal {

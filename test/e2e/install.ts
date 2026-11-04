@@ -144,5 +144,5 @@ try {
   await cli(pluginEnv, ["uninstall", "--purge"]).catch(() => undefined);
   process.exitCode = 1;
 } finally {
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }
