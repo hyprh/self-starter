@@ -151,6 +151,21 @@ node dist/src/cli/main.js doctor
 
 Use **OpenCode 1.x, version 1.19.3 or newer**, with working model access. Keep the checkout available and start a new OpenCode session after installation. The installer adds a native plugin loader without changing your OpenCode configuration. Each watch uses a dedicated result session; later events resume that session through the CLI, including when the UI is closed. Delivery into the conversation where you created the watch is not supported. See the [OpenCode guide](opencode-plugin/README.md).
 
+### Other MCP clients
+
+Any stdio MCP client (Cursor, Windsurf, Cline, Claude Desktop, and others) can connect to `self-starter mcp` directly to draft, test, activate and manage local zero-token `notify` watches across all 10 push channels (`action.type: "agent"` conversation wakeups require one of the five native coding-agent integrations above). Build a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7), start the background service (`node dist/src/cli/main.js service install`), and add the MCP server:
+
+```json
+{
+  "mcpServers": {
+    "self-starter": {
+      "command": "node",
+      "args": ["/absolute/path/to/self-starter/dist/src/cli/main.js", "mcp"]
+    }
+  }
+}
+```
+
 <a id="try-it-in-two-minutes"></a>
 
 ## Quick start
