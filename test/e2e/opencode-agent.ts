@@ -319,6 +319,6 @@ try {
   }
   await daemon.stop();
   await new Promise<void>((resolve) => model.close(() => resolve()));
-  if (passed) rmSync(scratch, { recursive: true, force: true });
+  if (passed) rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
   else console.error(`OpenCode test files retained at ${scratch}`);
 }

@@ -182,5 +182,5 @@ try {
   process.exitCode = 1;
 } finally {
   await selfStarter(["service", "stop"]).catch(() => undefined);
-  rmSync(env.SELF_STARTER_HOME, { recursive: true, force: true });
+  rmSync(env.SELF_STARTER_HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
 }

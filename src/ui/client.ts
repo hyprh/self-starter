@@ -497,12 +497,12 @@ export const UI_CLIENT_JS = `(function () {
         el("div", { class: "theme-switcher", role: "group", "aria-label": "Color theme" },
           el("button", {
             class: state.theme === "light" ? "theme-opt active" : "theme-opt",
-            title: "Warm celadon eye-care light theme",
+            title: "Warm linen eye-care light theme",
             onClick: () => { applyTheme("light"); render(true); }
           }, iconEl("sun", "icon-sm"), "Light"),
           el("button", {
             class: state.theme === "dark" ? "theme-opt active" : "theme-opt",
-            title: "Obsidian-sage dark theme",
+            title: "Warm obsidian dark theme",
             onClick: () => { applyTheme("dark"); render(true); }
           }, iconEl("moon", "icon-sm"), "Dark"),
           el("button", {
