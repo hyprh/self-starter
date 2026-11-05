@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
-import type { TurnResult } from "./codex.js";
 import { cliCommand, isExecutable, which } from "./config.js";
+import type { CliSessionRunOptions, CliSessionRunner, CliSessionTurnResult } from "./delivery/types.js";
 import { runSessionProcess } from "./session-processes.js";
 
 /** Native tool policies, not OS sandboxes. Prompt mode otherwise defaults to yolo. */
@@ -20,22 +20,9 @@ const MODES: Record<Sandbox, string> = {
 const isSessionId = (value: unknown): value is string =>
   typeof value === "string" && value === value.trim() && /^sess_[A-Za-z0-9._-]+$/.test(value);
 
-export interface ZCodeRunOptions {
-  /** Omit to create a dedicated session; subsequent turns resume its returned id. */
-  sessionId?: string;
-  cwd: string;
-  message: string;
-  sandbox: Sandbox;
-  timeoutMs: number;
-  /** Called once the session is owned, before a resumed CLI is allowed to start. */
-  onStart?: () => void;
-}
-
-export type ZCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean; sessionGone?: boolean };
-
-export interface ZCodeRunner {
-  run(options: ZCodeRunOptions): Promise<ZCodeTurnResult>;
-}
+export type ZCodeRunOptions = CliSessionRunOptions;
+export type ZCodeTurnResult = CliSessionTurnResult;
+export type ZCodeRunner = CliSessionRunner;
 
 const brief = (text: string) => text.trim().split("\n")[0]!.slice(0, 500);
 

@@ -15,7 +15,7 @@ import type { AntigravityRunner } from "./antigravity.js";
 import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
 import { newId } from "./fs-util.js";
-import { HostDelivery } from "./host-delivery.js";
+import { HostDelivery, type HostDeliveryStrategy } from "./host-delivery.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { OpenCodeRunner } from "./opencode.js";
 import type { Paths } from "./paths.js";
@@ -41,6 +41,8 @@ export interface ExecutorDeps {
   opencode?: () => OpenCodeRunner | undefined;
   /** Hands a message to a Claude Code process that shows the session (tests replace it). */
   deliverToSession?: (sessionId: string, text: string) => Promise<"relayed" | "posted" | undefined>;
+  /** Optional custom or overridden host delivery strategies. */
+  strategies?: Iterable<HostDeliveryStrategy>;
   log: (line: string) => void;
   now?: () => Date;
   /** Milliseconds that pass only while the computer is awake (performance.now() by default). */

@@ -1,6 +1,6 @@
 // Plain-language descriptions of a trigger, for the agent to explain it, listings and the CLI.
 
-import { agentName, hostFor } from "./conversations.js";
+import { agentName, hostFor, hostSpec } from "./conversations.js";
 import type { TriggerDefinition } from "./definition.js";
 import type { RuntimeState } from "./state-machine.js";
 
@@ -33,49 +33,16 @@ export function describeFiring(def: TriggerDefinition): string {
   return parts.join("; ");
 }
 
-/** What a fire may do when it runs in the background: Codex's sandbox, or the Claude Code permission mode it maps to. */
-const SANDBOX_TEXT = {
-  codex: {
-    "read-only": "read-only",
-    "workspace-write": "can change files and run commands in its folder",
-    "danger-full-access": "full access, no sandbox",
-  },
-  "claude-code": {
-    "read-only": "only what needs no approval, such as reading",
-    "workspace-write": "can edit files in its folder",
-    "danger-full-access": "no permission checks",
-  },
-  antigravity: {
-    "read-only": "read tools only; writes and commands blocked by hook; no OS sandbox",
-    "workspace-write": "can edit workspace files; commands blocked by hook; no OS sandbox",
-    "danger-full-access": "no permission prompts; no OS sandbox",
-  },
-  zcode: {
-    "read-only": "plan mode: restricts writes and commands; no OS sandbox",
-    "workspace-write": "edit mode: permits workspace edits; other tools may need approval; no OS sandbox",
-    "danger-full-access": "yolo mode: skips ordinary tool approvals; no OS sandbox",
-  },
-  opencode: {
-    "read-only": "read tools only; no OS sandbox",
-    "workspace-write": "can edit workspace files; commands are not approved automatically; no OS sandbox",
-    "danger-full-access": "no ordinary tool permission checks; no OS sandbox",
-  },
-} as const;
-
 export function describeAction(def: TriggerDefinition): string {
-  const host = hostFor(def);
-  if (def.action.type === "notify") return `a notification (${agentName(host)} is not involved)`;
-  const access = SANDBOX_TEXT[host][def.action.sandbox];
+  const spec = hostSpec(hostFor(def));
+  if (def.action.type === "notify") return `a notification (${spec.agentName} is not involved)`;
+  const access = spec.sandboxDescriptions[def.action.sandbox];
   const folder = def.target.cwd ? `; folder ${def.target.cwd}` : "";
   const where =
-    host === "codex"
-      ? def.target.kind === "origin"
-        ? `back in the thread where the trigger was created (if no Codex app has it open, it runs there in the background: ${access})`
-        : `in a dedicated thread (${access}${folder})`
-      : def.target.kind === "origin"
-        ? `back in the session where the trigger was created (if no terminal has it open, Self-Starter resumes it in the background: ${access})`
-        : `in a session of its own (${access}${folder})`;
-  return `${agentName(host)} works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
+    def.target.kind === "origin"
+      ? `back in the ${spec.noun} where the trigger was created (${spec.originBackgroundNote(access)})`
+      : `in ${spec.dedicatedTargetPhrase} (${access}${folder})`;
+  return `${spec.agentName} works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
 }
 
 export function describeAccess(def: TriggerDefinition): string {
