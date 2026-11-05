@@ -38,9 +38,11 @@ export function describeAction(def: TriggerDefinition): string {
   if (def.action.type === "notify") return `a notification (${spec.agentName} is not involved)`;
   const access = spec.sandboxDescriptions[def.action.sandbox];
   const folder = def.target.cwd ? `; folder ${def.target.cwd}` : "";
+  const originNote =
+    spec.originBackgroundNote?.(access) ?? `if no terminal has it open, Self-Starter resumes it in the background: ${access}`;
   const where =
     def.target.kind === "origin"
-      ? `back in the ${spec.noun} where the trigger was created (${spec.originBackgroundNote(access)})`
+      ? `back in the ${spec.noun} where the trigger was created (${originNote})`
       : `in ${spec.dedicatedTargetPhrase} (${access}${folder})`;
   return `${spec.agentName} works on this ${where}:\n  "${def.action.prompt ?? ""}"`;
 }

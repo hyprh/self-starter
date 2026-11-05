@@ -21,8 +21,8 @@ export interface HostSpec {
   readonly supportsOrigin: boolean;
   /** Plain-language phrase for a dedicated conversation in trigger descriptions. */
   readonly dedicatedTargetPhrase: string;
-  /** Plain-language explanation of how background delivery into the origin conversation works. */
-  originBackgroundNote(access: string): string;
+  /** Plain-language explanation of how background delivery into the origin conversation works (when supportsOrigin is true). */
+  originBackgroundNote?(access: string): string;
   /** Plain-language explanation of what each sandbox level allows in background turns. */
   readonly sandboxDescriptions: Readonly<Record<Sandbox, string>>;
   /** Terminal command (and optional app deep-link URL) to reopen a conversation by its raw host id. */
@@ -73,7 +73,6 @@ export const HOST_SPECS: Readonly<Record<Host, HostSpec>> = {
     noun: "session",
     supportsOrigin: false,
     dedicatedTargetPhrase: "a session of its own",
-    originBackgroundNote: sessionOriginBackgroundNote,
     sandboxDescriptions: {
       "read-only": "read tools only; writes and commands blocked by hook; no OS sandbox",
       "workspace-write": "can edit workspace files; commands blocked by hook; no OS sandbox",
@@ -89,7 +88,6 @@ export const HOST_SPECS: Readonly<Record<Host, HostSpec>> = {
     noun: "session",
     supportsOrigin: false,
     dedicatedTargetPhrase: "a session of its own",
-    originBackgroundNote: sessionOriginBackgroundNote,
     sandboxDescriptions: {
       "read-only": "plan mode: restricts writes and commands; no OS sandbox",
       "workspace-write": "edit mode: permits workspace edits; other tools may need approval; no OS sandbox",
@@ -105,7 +103,6 @@ export const HOST_SPECS: Readonly<Record<Host, HostSpec>> = {
     noun: "session",
     supportsOrigin: false,
     dedicatedTargetPhrase: "a session of its own",
-    originBackgroundNote: sessionOriginBackgroundNote,
     sandboxDescriptions: {
       "read-only": "read tools only; no OS sandbox",
       "workspace-write": "can edit workspace files; commands are not approved automatically; no OS sandbox",
@@ -115,7 +112,9 @@ export const HOST_SPECS: Readonly<Record<Host, HostSpec>> = {
   },
 };
 
-const PREFIXED_SPECS: readonly HostSpec[] = HOSTS.map((host) => HOST_SPECS[host]).filter((spec) => spec.prefix !== "");
+const PREFIXED_SPECS: readonly HostSpec[] = HOSTS.map((host) => HOST_SPECS[host])
+  .filter((spec) => spec.prefix !== "")
+  .sort((a, b) => b.prefix.length - a.prefix.length);
 
 export function hostSpec(host: Host): HostSpec {
   return HOST_SPECS[host];
@@ -129,6 +128,8 @@ export function formatRef(host: Host, id: string): string {
   return `${HOST_SPECS[host].prefix}${id}`;
 }
 
+export function parseRef(ref: string): { host: Host; id: string };
+export function parseRef(ref: string | null | undefined): { host: Host; id: string } | undefined;
 export function parseRef(ref: string | null | undefined): { host: Host; id: string } | undefined {
   if (ref === null || ref === undefined) return undefined;
   for (const spec of PREFIXED_SPECS) {
@@ -199,6 +200,6 @@ export function agentName(host: Host): string {
 
 /** How to get back to a conversation: a command for a terminal, and a link where the app has one. */
 export function reopen(ref: string): { command: string; url?: string } {
-  const parsed = parseRef(ref)!;
+  const parsed = parseRef(ref);
   return HOST_SPECS[parsed.host].reopen(parsed.id);
 }

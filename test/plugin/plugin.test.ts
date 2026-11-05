@@ -450,7 +450,7 @@ describe("the plugin's launcher", () => {
 });
 
 describe("self-starter doctor probe timeouts", () => {
-  it("bounds read-only CLI probes so a hung GUI wrapper cannot stall doctor for 60 seconds", async () => {
+  it("bounds read-only CLI probes with SIGKILL and reports timeout details so a hung GUI wrapper cannot stall doctor", async () => {
     assert.equal(PROBE_TIMEOUT_MS, 5_000);
     const scratch = mkdtempSync(join(tmpdir(), "ss-doctor-timeout-"));
     const envKeys = ["HOME", "XDG_CONFIG_HOME", "PATH", "CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"] as const;
@@ -459,14 +459,20 @@ describe("self-starter doctor probe timeouts", () => {
     for (const key of ["CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"]) delete process.env[key];
     const paths = resolvePaths(join(scratch, "home"));
     const hungBin = join(scratch, "zcode-hung.mjs");
-    writeFileSync(hungBin, `#!${process.execPath}\nsetInterval(() => {}, 10_000);\n`, { mode: 0o755 });
+    writeFileSync(
+      hungBin,
+      `#!${process.execPath}\nprocess.on("SIGTERM", () => {});\nsetInterval(() => {}, 10_000);\n`,
+      { mode: 0o755 },
+    );
     saveConfig(paths, { ...DEFAULT_CONFIG, zcodeBin: hungBin });
     try {
       const startedAt = performance.now();
       const checks = await doctor(paths, { probeTimeoutMs: 150 });
       const elapsedMs = performance.now() - startedAt;
       assert.ok(elapsedMs < 3_000, `doctor took ${Math.round(elapsedMs)}ms instead of bounding hung probes`);
-      assert.equal(checks.find((entry) => entry.label === "zcode")?.ok, false);
+      const zcodeCheck = checks.find((entry) => entry.label === "zcode");
+      assert.equal(zcodeCheck?.ok, false);
+      assert.match(zcodeCheck?.detail ?? "", /timed out after 1s/);
       assert.equal(checks.find((entry) => entry.label === "zcode plugin")?.ok, false);
     } finally {
       for (const key of envKeys) {

@@ -1,5 +1,5 @@
 // `self-starter install`, `self-starter uninstall` and `self-starter doctor`: wiring Self-Starter into
-// the agents on this machine: Codex, Claude Code, ZCode and OpenCode.
+// the agents on this machine: Codex, Claude Code, Antigravity, ZCode and OpenCode.
 //
 // The plugins are copied into a local marketplace under ~/.self-starter, laid out like this
 // repository (one folder that all agents read), with an MCP server command that starts this
@@ -34,19 +34,29 @@ const OPENCODE_VERSION = "1.19.3";
 const OPENCODE_LOADER_MARKER = "// Self-Starter native plugin: ";
 
 /** Runs an agent's CLI as the daemon does, so that what doctor sees is what the daemon gets. */
-function runCli(bin: string, args: string[], timeoutMs = INSTALL_TIMEOUT_MS): { ok: boolean; output: string } {
+function runCli(
+  bin: string,
+  args: string[],
+  timeoutMs = INSTALL_TIMEOUT_MS,
+  killSignal: NodeJS.Signals = "SIGTERM",
+): { ok: boolean; output: string } {
   const { command, prefix } = cliCommand(bin);
   const out = spawnSync(command, [...prefix, ...args], {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     timeout: timeoutMs,
+    killSignal,
   });
+  const timedOut = (out.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
   const output = `${out.stdout ?? ""}${out.stderr ?? ""}`
     .split("\n")
     .filter((line) => !line.startsWith("WARNING: proceeding"))
     .join("\n")
     .trim();
-  return { ok: out.status === 0, output };
+  return {
+    ok: out.status === 0,
+    output: output || (timedOut ? `timed out after ${Math.max(1, Math.ceil(timeoutMs / 1000))}s` : ""),
+  };
 }
 
 /** Copies a plugin into the local marketplace, at this installation's version. */
@@ -179,7 +189,8 @@ interface Agent {
 }
 
 function codexAgent(bin: string): Agent {
-  const run = (args: string[], timeoutMs = INSTALL_TIMEOUT_MS) => runCli(bin, args, timeoutMs);
+  const run = (args: string[]) => runCli(bin, args);
+  const probe = (args: string[], timeoutMs: number) => runCli(bin, args, timeoutMs, "SIGKILL");
   return {
     name: "Codex",
     configKey: "codexBin",
@@ -195,10 +206,10 @@ function codexAgent(bin: string): Agent {
       run(["plugin", "marketplace", "remove", MARKETPLACE_NAME]);
     },
     checks(_paths, probeTimeoutMs = PROBE_TIMEOUT_MS) {
-      const version = run(["--version"], probeTimeoutMs);
-      const queue = run(["queue", "--help"], probeTimeoutMs);
-      const appServer = run(["app-server", "--help"], probeTimeoutMs);
-      const plugins = run(["plugin", "list", "--marketplace", MARKETPLACE_NAME], probeTimeoutMs);
+      const version = probe(["--version"], probeTimeoutMs);
+      const queue = probe(["queue", "--help"], probeTimeoutMs);
+      const appServer = probe(["app-server", "--help"], probeTimeoutMs);
+      const plugins = probe(["plugin", "list", "--marketplace", MARKETPLACE_NAME], probeTimeoutMs);
       return [
         { ok: version.ok, label: "codex", detail: `${version.output.split("\n")[0] ?? ""} (${bin})` },
         { ok: queue.ok, label: "codex queue", detail: queue.ok ? "available (fires reach the thread where a trigger was made)" : "missing; update the Codex CLI" },
@@ -210,7 +221,8 @@ function codexAgent(bin: string): Agent {
 }
 
 function claudeAgent(bin: string): Agent {
-  const run = (args: string[], timeoutMs = INSTALL_TIMEOUT_MS) => runCli(bin, args, timeoutMs);
+  const run = (args: string[]) => runCli(bin, args);
+  const probe = (args: string[], timeoutMs: number) => runCli(bin, args, timeoutMs, "SIGKILL");
   return {
     name: "Claude Code",
     configKey: "claudeBin",
@@ -226,10 +238,10 @@ function claudeAgent(bin: string): Agent {
       run(["plugin", "marketplace", "remove", MARKETPLACE_NAME]);
     },
     checks(_paths, probeTimeoutMs = PROBE_TIMEOUT_MS) {
-      const version = run(["--version"], probeTimeoutMs);
+      const version = probe(["--version"], probeTimeoutMs);
       const number = /\d+\.\d+\.\d+/.exec(version.output)?.[0];
       const inboxes = number !== undefined && compareVersions(number, CLAUDE_INBOX_VERSION) >= 0;
-      const listed = run(["plugin", "list", "--json"], probeTimeoutMs);
+      const listed = probe(["plugin", "list", "--json"], probeTimeoutMs);
       let plugin: { enabled?: boolean } | undefined;
       try {
         plugin = (JSON.parse(listed.output) as Array<{ id?: string; enabled?: boolean }>).find((entry) => entry.id === PLUGIN_ID);
@@ -254,7 +266,8 @@ function claudeAgent(bin: string): Agent {
 }
 
 function antigravityAgent(bin: string): Agent {
-  const run = (args: string[], timeoutMs = INSTALL_TIMEOUT_MS) => runCli(bin, args, timeoutMs);
+  const run = (args: string[]) => runCli(bin, args);
+  const probe = (args: string[], timeoutMs: number) => runCli(bin, args, timeoutMs, "SIGKILL");
   return {
     name: "Antigravity",
     configKey: "agyBin",
@@ -269,8 +282,8 @@ function antigravityAgent(bin: string): Agent {
       run(["plugin", "uninstall", PLUGIN_NAME]);
     },
     checks(_paths, probeTimeoutMs = PROBE_TIMEOUT_MS) {
-      const version = run(["--version"], probeTimeoutMs);
-      const listed = run(["plugin", "list", "--json"], probeTimeoutMs);
+      const version = probe(["--version"], probeTimeoutMs);
+      const listed = probe(["plugin", "list", "--json"], probeTimeoutMs);
       let plugin: { name?: string; id?: string; enabled?: boolean } | undefined;
       try {
         plugin = (JSON.parse(listed.output) as Array<typeof plugin>).find(
@@ -297,7 +310,8 @@ function antigravityAgent(bin: string): Agent {
 }
 
 function zcodeAgent(bin: string): Agent {
-  const run = (args: string[], timeoutMs = INSTALL_TIMEOUT_MS) => runCli(bin, args, timeoutMs);
+  const run = (args: string[]) => runCli(bin, args);
+  const probe = (args: string[], timeoutMs: number) => runCli(bin, args, timeoutMs, "SIGKILL");
   return {
     name: "ZCode",
     configKey: "zcodeBin",
@@ -316,8 +330,8 @@ function zcodeAgent(bin: string): Agent {
       run(["plugins", "marketplace", "remove", MARKETPLACE_NAME]);
     },
     checks(_paths, probeTimeoutMs = PROBE_TIMEOUT_MS) {
-      const version = run(["--version"], probeTimeoutMs);
-      const listed = run(["plugins", "list", "--json"], probeTimeoutMs);
+      const version = probe(["--version"], probeTimeoutMs);
+      const listed = probe(["plugins", "list", "--json"], probeTimeoutMs);
       let plugin: { enabled?: boolean; diagnostics?: Array<{ severity?: string }> } | undefined;
       try {
         plugin = (JSON.parse(listed.output) as Array<typeof plugin & { id?: string }>).find((entry) => entry?.id === PLUGIN_ID);
@@ -343,7 +357,7 @@ function zcodeAgent(bin: string): Agent {
 
 function opencodeAgent(bin: string): Agent {
   const version = (probeTimeoutMs = PROBE_TIMEOUT_MS) => {
-    const result = runCli(bin, ["--version"], probeTimeoutMs);
+    const result = runCli(bin, ["--version"], probeTimeoutMs, "SIGKILL");
     const number = /\b\d+\.\d+\.\d+\b/.exec(result.output)?.[0];
     const supported = result.ok && number !== undefined && number.startsWith("1.") && compareVersions(number, OPENCODE_VERSION) >= 0;
     return { ...result, supported };
@@ -510,8 +524,12 @@ export async function doctor(paths: Paths, options: { probeTimeoutMs?: number } 
 
   const deno = resolveDeno(config);
   if (deno) {
-    const out = spawnSync(deno, ["--version"], { encoding: "utf8", timeout: probeTimeoutMs });
-    add(out.status === 0, "deno", `${(out.stdout ?? "").split("\n")[0] ?? ""} (${deno}${deno === bundledDeno() ? ", bundled" : ""})`);
+    const out = spawnSync(deno, ["--version"], { encoding: "utf8", timeout: probeTimeoutMs, killSignal: "SIGKILL" });
+    const timedOut = (out.error as NodeJS.ErrnoException | undefined)?.code === "ETIMEDOUT";
+    const firstLine =
+      (out.stdout ?? "").split("\n")[0]?.trim() ||
+      (timedOut ? `timed out after ${Math.max(1, Math.ceil(probeTimeoutMs / 1000))}s` : "");
+    add(out.status === 0, "deno", `${firstLine} (${deno}${deno === bundledDeno() ? ", bundled" : ""})`.trim());
   } else {
     add(false, "deno", "not found; run `npm install` in the self-starter folder");
   }

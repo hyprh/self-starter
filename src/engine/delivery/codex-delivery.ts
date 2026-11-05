@@ -28,6 +28,10 @@ export class CodexDeliveryStrategy implements HostDeliveryStrategy {
     private readonly getCodex: () => CodexRunner | undefined,
   ) {}
 
+  waitsForEntry(): boolean {
+    return false;
+  }
+
   forgetClosed(open: ReadonlySet<string>): void {
     for (const id of this.queuedAt.keys()) if (!open.has(id)) this.queuedAt.delete(id);
     for (const id of this.nextCheck.keys()) if (!open.has(id)) this.nextCheck.delete(id);

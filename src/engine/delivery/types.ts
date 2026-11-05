@@ -89,5 +89,14 @@ export interface HostDeliveryStrategy {
   prepareDedicated(triggerId: string): void;
   deliver(definition: TriggerDefinition, fire: FireRecord): Promise<void>;
   follow(fire: FireRecord, age: number): Promise<void>;
+  /**
+   * Whether a delivered fire is still waiting to enter its conversation (so its receipt timeout clock
+   * has not started yet). Defaults to `fire.target?.via === undefined` for session-based strategies;
+   * queue-based strategies such as Codex return `false` because delivery immediately queues the turn.
+   */
+  waitsForEntry?(fire: FireRecord): boolean;
   forgetClosed?(open: ReadonlySet<string>): void;
 }
+
+export type HostDeliveryStrategyFactory = (runtime: DeliveryRuntime) => HostDeliveryStrategy;
+export type HostDeliveryStrategyInput = HostDeliveryStrategy | HostDeliveryStrategyFactory;

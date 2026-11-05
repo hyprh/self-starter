@@ -15,7 +15,7 @@ import type { AntigravityRunner } from "./antigravity.js";
 import type { Config } from "./config.js";
 import type { FireLog, FireRecord, Receipt } from "./fires.js";
 import { newId } from "./fs-util.js";
-import { HostDelivery, type HostDeliveryStrategy } from "./host-delivery.js";
+import { HostDelivery, type HostDeliveryStrategyInput } from "./host-delivery.js";
 import type { Notification, Notifier } from "./notify.js";
 import type { OpenCodeRunner } from "./opencode.js";
 import type { Paths } from "./paths.js";
@@ -41,8 +41,8 @@ export interface ExecutorDeps {
   opencode?: () => OpenCodeRunner | undefined;
   /** Hands a message to a Claude Code process that shows the session (tests replace it). */
   deliverToSession?: (sessionId: string, text: string) => Promise<"relayed" | "posted" | undefined>;
-  /** Optional custom or overridden host delivery strategies. */
-  strategies?: Iterable<HostDeliveryStrategy>;
+  /** Optional custom or overridden host delivery strategies (or `(runtime) => strategy` factories). */
+  strategies?: Iterable<HostDeliveryStrategyInput>;
   log: (line: string) => void;
   now?: () => Date;
   /** Milliseconds that pass only while the computer is awake (performance.now() by default). */
@@ -211,7 +211,7 @@ export class Executor {
       if (!fire.deliveredAt) continue;
       const age = now - Date.parse(fire.deliveredAt);
       // A session fire waiting for a turn has not reached the agent; its receipt clock starts when it goes in.
-      const waiting = fire.target?.via === undefined && hostOf(fire.target?.threadId) !== "codex";
+      const waiting = this.delivery.isWaitingForEntry(fire);
       if (age > timeoutMs && !waiting) {
         const host = hostOf(fire.target?.threadId);
         const receipt: Receipt = {

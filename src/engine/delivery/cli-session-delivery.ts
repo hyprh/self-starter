@@ -57,13 +57,13 @@ export class CliSessionDeliveryStrategy implements HostDeliveryStrategy {
   async follow(fire: FireRecord, age: number): Promise<void> {
     const ref = fire.target?.threadId;
     if (!ref || this.activeSessions.has(ref)) return;
+    const parsed = parseRef(ref);
+    if (!parsed || parsed.host !== this.host) return;
     const spec = hostSpec(this.host);
     const runner = this.getRunner();
     if (fire.target?.via === undefined && runner && this.runtime.runSlotFree() && (this.nextCheck.get(fire.fireId) ?? 0) <= this.runtime.uptime()) {
       const definition = this.cliTask(fire, ref);
       if (!definition) return;
-      const parsed = parseRef(ref);
-      if (!parsed || parsed.host !== this.host) return;
       const sessionId = parsed.id;
       this.activeSessions.add(ref);
       this.runtime.runTurn(
@@ -72,6 +72,8 @@ export class CliSessionDeliveryStrategy implements HostDeliveryStrategy {
         async () => {
           const result = await runner.run({
             sessionId,
+            // Do NOT fall back to homedir() via folderOrHome when target.cwd is missing on disk:
+            // failing closed on ENOENT prevents widening workspace-write permissions to $HOME.
             cwd: definition.target.cwd ?? homedir(),
             message: renderEnvelope(this.runtime.hooks.envelope(definition, fire)),
             sandbox: definition.action.sandbox,
@@ -144,6 +146,7 @@ export class CliSessionDeliveryStrategy implements HostDeliveryStrategy {
     const runner = this.getRunner();
     if (!runner) throw new Error(`the ${spec.cliName} CLI was not found; run \`self-starter doctor\``);
     const result = await runner.run({
+      // Intentionally preserve explicit target.cwd without folderOrHome fallback (see follow()).
       cwd: definition.target.cwd ?? homedir(),
       message: renderDedicatedSeed(definition, "session"),
       sandbox: definition.action.sandbox,

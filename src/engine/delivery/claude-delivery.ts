@@ -32,6 +32,13 @@ export class ClaudeDeliveryStrategy implements HostDeliveryStrategy {
     private readonly customDeliverToSession?: (sessionId: string, text: string) => Promise<"relayed" | "posted" | undefined>,
   ) {}
 
+  forgetClosed(): void {
+    const now = this.runtime.now().getTime();
+    for (const [sessionId, posted] of this.postedAt) {
+      if (now - posted >= POST_GRACE_MS) this.postedAt.delete(sessionId);
+    }
+  }
+
   prepareDedicated(triggerId: string): void {
     this.ensureDedicatedSession(triggerId).catch((error: Error) => {
       this.runtime.log(`could not start the dedicated session of ${triggerId} yet: ${error.message}`);
@@ -77,8 +84,10 @@ export class ClaudeDeliveryStrategy implements HostDeliveryStrategy {
 
   /** Puts a fire into its session if no turn runs there: true when it went in, or started running there. */
   private async bringIntoSession(fire: FireRecord): Promise<boolean> {
-    const sessionId = sessionIdOf(fire.target?.threadId)!;
-    if (this.headlessSessions.has(sessionId) || this.sessionBusy(sessionId) || !this.runtime.store.hasTrigger(fire.triggerId)) return false;
+    const sessionId = sessionIdOf(fire.target?.threadId);
+    if (!sessionId || this.headlessSessions.has(sessionId) || this.sessionBusy(sessionId) || !this.runtime.store.hasTrigger(fire.triggerId)) {
+      return false;
+    }
     const { definition } = this.runtime.store.loadTrigger(fire.triggerId);
     const message = renderEnvelope(this.runtime.hooks.envelope(definition, fire));
     const how = await this.deliverToSession(sessionId, message).catch((error: Error) => {
