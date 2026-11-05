@@ -27,13 +27,13 @@ Local code keeps watch—even after you close your terminal—and brings the fol
 
 ## Demo
 
-**Keep working. Get the result when it is ready.** Here a Futu watch spots an unusual AMD move while you work elsewhere, Codex investigates what changed, and Self-Starter notifies your desktop—the same local engine watches your PRs, CI runs, GPUs and services:
+**Keep working. Get the result when it is ready.** Here a Futu watch spots an unusual AMD move at zero token cost while your terminal is closed, Codex wakes up to investigate what changed, and Self-Starter pushes the verdict to your desktop and Feishu—the same local engine watches your PRs, CI runs, GPUs and services:
 
 <p align="center">
-  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask for a stock watch, keep working while a local probe waits, let Codex investigate an AMD move, and receive a desktop notification that the investigation is ready.">
+  <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask once for a stock watch, close the terminal while a zero-token local probe checks OpenD, let Codex investigate an unusual AMD move, and receive the keep-watching verdict in your conversation, Desktop notification, and Feishu push.">
 </p>
 
-*Edited replay of a real Futu watch. The interface and desktop notification are illustrated; quotes are historical. For an engineering workflow, see [Investigate a new CI failure](docs/ci-watch.md).*
+*Edited replay of a real Futu watch. The interface and notifications are illustrated; quotes are historical. For an engineering workflow, see [Investigate a new CI failure](docs/ci-watch.md).*
 
 ## What this plugin solves
 
