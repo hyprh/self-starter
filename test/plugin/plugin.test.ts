@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
 import { after, describe, it } from "node:test";
-import { buildMarketplace, doctor, install, MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_ID, PLUGIN_NAME } from "../../src/cli/install.js";
-import { loadConfig } from "../../src/engine/config.js";
+import { buildMarketplace, doctor, install, MARKETPLACE_NAME, MCP_SERVER_NAME, PLUGIN_ID, PLUGIN_NAME, PROBE_TIMEOUT_MS } from "../../src/cli/install.js";
+import { DEFAULT_CONFIG, loadConfig, saveConfig } from "../../src/engine/config.js";
 import { resolvePaths } from "../../src/engine/paths.js";
 import { PLUGIN_SERVER_RULE } from "../../src/engine/sessions.js";
 import { TOOLS } from "../../src/mcp/server.js";
@@ -427,5 +428,58 @@ describe("the plugin's launcher", () => {
     const calls = npmCalls().length;
     assert.deepEqual((await start({ SELF_STARTER_HOME: slowHome, SELF_STARTER_RUNTIME: "/nowhere" })).serverInfo, { name: "self-starter", version: VERSION });
     assert.equal(npmCalls().length, calls);
+  });
+
+  it("keeps all four standalone plugin launchers byte-identical by SHA-256", () => {
+    const launcherPaths = [
+      "codex-plugin/bin/start.mjs",
+      "cc-plugin/bin/start.mjs",
+      "agy-plugin/bin/start.mjs",
+      "zcode-plugin/bin/start.mjs",
+    ];
+    const digests = launcherPaths.map((relPath) => ({
+      relPath,
+      sha256: createHash("sha256").update(readFileSync(join(PACKAGE_ROOT, relPath))).digest("hex"),
+    }));
+    const baseline = digests[0]!.sha256;
+    assert.match(baseline, /^[0-9a-f]{64}$/);
+    for (const { relPath, sha256 } of digests) {
+      assert.equal(sha256, baseline, `${relPath} drifted from codex-plugin/bin/start.mjs`);
+    }
+  });
+});
+
+describe("self-starter doctor probe timeouts", () => {
+  it("bounds read-only CLI probes with SIGKILL and reports timeout details so a hung GUI wrapper cannot stall doctor", async () => {
+    assert.equal(PROBE_TIMEOUT_MS, 5_000);
+    const scratch = mkdtempSync(join(tmpdir(), "ss-doctor-timeout-"));
+    const envKeys = ["HOME", "XDG_CONFIG_HOME", "PATH", "CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"] as const;
+    const savedEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+    Object.assign(process.env, { HOME: scratch, XDG_CONFIG_HOME: join(scratch, "config"), PATH: scratch });
+    for (const key of ["CODEX_BIN", "CLAUDE_BIN", "AGY_BIN", "ZCODE_BIN", "OPENCODE_BIN"]) delete process.env[key];
+    const paths = resolvePaths(join(scratch, "home"));
+    const hungBin = join(scratch, "zcode-hung.mjs");
+    writeFileSync(
+      hungBin,
+      `#!${process.execPath}\nprocess.on("SIGTERM", () => {});\nsetInterval(() => {}, 10_000);\n`,
+      { mode: 0o755 },
+    );
+    saveConfig(paths, { ...DEFAULT_CONFIG, zcodeBin: hungBin });
+    try {
+      const startedAt = performance.now();
+      const checks = await doctor(paths, { probeTimeoutMs: 150 });
+      const elapsedMs = performance.now() - startedAt;
+      assert.ok(elapsedMs < 3_000, `doctor took ${Math.round(elapsedMs)}ms instead of bounding hung probes`);
+      const zcodeCheck = checks.find((entry) => entry.label === "zcode");
+      assert.equal(zcodeCheck?.ok, false);
+      assert.match(zcodeCheck?.detail ?? "", /timed out after 1s/);
+      assert.equal(checks.find((entry) => entry.label === "zcode plugin")?.ok, false);
+    } finally {
+      for (const key of envKeys) {
+        if (savedEnv[key] === undefined) delete process.env[key];
+        else process.env[key] = savedEnv[key];
+      }
+      rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });

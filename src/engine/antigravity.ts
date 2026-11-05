@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
-import type { TurnResult } from "./codex.js";
 import { cliCommand, isExecutable, which } from "./config.js";
+import type { CliSessionRunOptions, CliSessionRunner, CliSessionTurnResult } from "./delivery/types.js";
 import { runSessionProcess } from "./session-processes.js";
 
 /**
@@ -33,22 +33,9 @@ export const ANTIGRAVITY_SESSION_VARIABLES = [
 const isSessionId = (value: unknown): value is string =>
   typeof value === "string" && value === value.trim() && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(value);
 
-export interface AntigravityRunOptions {
-  /** Omit to create a dedicated session; subsequent turns resume its returned conversation_id. */
-  sessionId?: string;
-  cwd: string;
-  message: string;
-  sandbox: Sandbox;
-  timeoutMs: number;
-  /** Called once the session is owned, before a resumed CLI is allowed to start. */
-  onStart?: () => void;
-}
-
-export type AntigravityTurnResult = TurnResult & { sessionId?: string; busy?: boolean; sessionGone?: boolean };
-
-export interface AntigravityRunner {
-  run(options: AntigravityRunOptions): Promise<AntigravityTurnResult>;
-}
+export type AntigravityRunOptions = CliSessionRunOptions;
+export type AntigravityTurnResult = CliSessionTurnResult;
+export type AntigravityRunner = CliSessionRunner;
 
 const brief = (text: string) => text.trim().split("\n")[0]!.slice(0, 500);
 

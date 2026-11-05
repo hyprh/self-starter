@@ -5,7 +5,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { agentName, hostFor, hostOf, type Host } from "../core/conversations.js";
+import { agentName, conversationNoun, hostFor, hostOf, supportsOrigin, type Host } from "../core/conversations.js";
 import { describeState, describeTrigger } from "../core/describe.js";
 import { definitionToYaml, probeTimings, validateDefinition, type TriggerDefinition } from "../core/definition.js";
 import { parseDuration } from "../core/duration.js";
@@ -262,7 +262,7 @@ export class TriggerService {
     delete cleaned.meta;
     if (isRecord(cleaned.target)) cleaned.target = { ...cleaned.target, thread_id: null };
     const callerHost = hostOf(caller.threadId);
-    if (callerHost === "antigravity" || callerHost === "zcode" || callerHost === "opencode") {
+    if (!supportsOrigin(callerHost)) {
       cleaned.target = { kind: "dedicated", ...(caller.cwd ? { cwd: caller.cwd } : {}), ...(isRecord(cleaned.target) ? cleaned.target : {}) };
     }
     const validated = validateDefinition(cleaned);
@@ -307,7 +307,7 @@ export class TriggerService {
     } else if (trial?.ok && def.mode === "event" && (trial.events ?? 0) > 0) {
       out.push(`The trial run saw ${trial.events} event(s). They count as already seen; only events that appear later fire the trigger.`);
     }
-    const conversation = hostOf(draft.meta.originThreadId) === "codex" ? "thread" : "session";
+    const conversation = conversationNoun(hostOf(draft.meta.originThreadId));
     if (def.action.type === "agent" && def.target.kind === "origin" && !draft.meta.originThreadId) {
       out.push("This request did not identify a conversation, so fires will go to a dedicated thread instead.");
     }
@@ -398,7 +398,7 @@ export class TriggerService {
 
   private checkTarget(definition: TriggerDefinition): void {
     const host = hostFor(definition);
-    if ((host === "antigravity" || host === "zcode" || host === "opencode") && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
+    if (!supportsOrigin(host) && definition.action.type === "agent" && definition.target.kind !== "dedicated") {
       throw new ServiceError("invalid", `${agentName(host)} currently supports dedicated result sessions; set target.kind to dedicated.`);
     }
   }

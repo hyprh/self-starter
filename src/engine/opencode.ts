@@ -9,29 +9,16 @@ import { stripVTControlCharacters } from "node:util";
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from "jsonc-parser";
 import type { Sandbox } from "../core/definition.js";
 import { isRecord } from "../core/patch.js";
-import type { TurnResult } from "./codex.js";
 import { cliCommand, isExecutable, which } from "./config.js";
+import type { CliSessionRunOptions, CliSessionRunner, CliSessionTurnResult } from "./delivery/types.js";
 import { runSessionProcess } from "./session-processes.js";
 
 const isSessionId = (value: unknown): value is string => typeof value === "string" && /^ses_[A-Za-z0-9]+$/.test(value);
 const brief = (text: string) => text.trim().split("\n")[0]!.slice(0, 500);
 
-export interface OpenCodeRunOptions {
-  /** Omit to create a dedicated result session; subsequent turns resume it. */
-  sessionId?: string;
-  cwd: string;
-  message: string;
-  sandbox: Sandbox;
-  timeoutMs: number;
-  /** The session is owned, but no CLI has started yet. */
-  onStart?: () => void;
-}
-
-export type OpenCodeTurnResult = TurnResult & { sessionId?: string; busy?: boolean; sessionGone?: boolean };
-
-export interface OpenCodeRunner {
-  run(options: OpenCodeRunOptions): Promise<OpenCodeTurnResult>;
-}
+export type OpenCodeRunOptions = CliSessionRunOptions;
+export type OpenCodeTurnResult = CliSessionTurnResult;
+export type OpenCodeRunner = CliSessionRunner;
 
 /** Native tool permissions, not operating-system isolation. */
 export function openCodePermission(sandbox: Sandbox): Record<string, string> {
