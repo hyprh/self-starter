@@ -4,14 +4,16 @@
 
 <h1 align="center">Self-Starter</h1>
 
-<p align="center"><b>Local, zero-token event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode.</b><br>
-CI failed? New PR comments? A training run finished—or NVDA just moved 6%?<br>
-Local code keeps watch—even after you close your terminal—and brings the follow-up back to your conversation.</p>
+<p align="center"><b>Give your coding agent a standing job.</b><br>
+"Keep an eye on this PR." "Tell me when the run converges." "Check why if my positions move."<br>
+Local code keeps watch with no model calls—even after you close your terminal. When it happens, your agent picks up the work with the context you already gave it, and decides whether it is worth interrupting you.</p>
+
+<p align="center"><sub>Claude Code · Codex · Antigravity · OpenCode · ZCode — macOS and Linux — MIT</sub></p>
 
 <p align="center">
   <a href="https://hyprh.github.io/self-starter/"><b>Website</b></a> ·
   <a href="#demo">Demo</a> ·
-  <a href="#what-this-plugin-solves">Why Self-Starter</a> ·
+  <a href="#why-self-starter">Why Self-Starter</a> ·
   <a href="#local-web-console--push-routing">Web Console</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
@@ -27,7 +29,7 @@ Local code keeps watch—even after you close your terminal—and brings the fol
 
 ## Demo
 
-**Keep working. Get the result when it is ready.** Here a Futu watch spots an unusual AMD move at zero token cost while your terminal is closed, Codex wakes up to investigate what changed, and Self-Starter pushes the verdict to your desktop and Feishu—the same local engine watches your PRs, CI runs, GPUs and services:
+**One standing job, end to end.** Here a Futu watch spots an unusual AMD move at zero token cost while your terminal is closed, Codex wakes up to investigate what changed, and Self-Starter pushes the verdict to your desktop and Feishu—the same local engine watches your PRs, CI runs, GPUs and services:
 
 <p align="center">
   <img src="docs/demos/futu-notification.gif" width="960" alt="Illustrated Self-Starter and Futu demo: ask once for a stock watch, close the terminal while a zero-token local probe checks OpenD, let Codex investigate an unusual AMD move, and receive the keep-watching verdict in your conversation, Desktop notification, and Feishu push.">
@@ -35,9 +37,17 @@ Local code keeps watch—even after you close your terminal—and brings the fol
 
 *Edited replay of a real Futu watch. The interface and notifications are illustrated; quotes are historical. For an engineering workflow, see [Investigate a new CI failure](docs/ci-watch.md).*
 
-## What this plugin solves
+<a id="what-this-plugin-solves"></a>
 
-Give your agent an ongoing responsibility: watch your PRs, long-running jobs, local services or market activity, and handle the follow-up with the context you already built.
+## Why Self-Starter
+
+Coding agents work turn by turn: you ask, they act, they stop. Much real work is "keep watching, and act when it happens"—a PR under review, a long training run, a flaky service, a watchlist. Self-Starter turns one request into a standing job with three parts:
+
+- **What to watch** is code. Your agent writes a small probe once; a local background service runs it without calling a model.
+- **What counts** is enforced by the engine: fire on a real change only, require a minimum duration, deduplicate, cool down, cap agent wakeups per day, and hold notifications during quiet hours.
+- **What to do** is the agent's job. It wakes with the evidence and your original instructions, does the follow-up, and records a short verdict—notifying you when it judges you need to look.
+
+Self-Starter brings no data of its own. A probe reads whatever you can reach from your machine: logs, `nvidia-smi`, `gh`, local services, or APIs such as Futu and IBKR.
 
 **Ask once: "Keep watching this PR. When CI fails or new review comments arrive, investigate and continue in this conversation."** Your agent writes and tests a small local TypeScript probe, hands it to a background `launchd` or `systemd` service, and steps aside until the condition actually happens.
 
