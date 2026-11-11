@@ -90,13 +90,23 @@ Choose the integration for your agent. All five share the same local trigger eng
 
 | Agent | Installation | Where the agent answers |
 |---|---|---|
-| **[Codex](#codex)** | GitHub plugin marketplace | The original conversation or a dedicated thread |
-| **[Claude Code](#claude-code)** | GitHub plugin marketplace | The original session or a dedicated session |
-| **[Antigravity](#antigravity)** | Local source installation (`agy-plugin`) | A dedicated CLI conversation (`agy --conversation <id>`); pairs with `agy remote-control` |
-| **[ZCode](#zcode)** | Local source installation from v0.0.4 | A dedicated CLI result session; no delivery into the original desktop conversation |
-| **[OpenCode](#opencode)** | Local source installation from v0.0.4 | A dedicated CLI result session, reused for later events |
+| **[Codex](#codex)** | GitHub plugin marketplace or `npx self-starter install` | The original conversation or a dedicated thread |
+| **[Claude Code](#claude-code)** | GitHub plugin marketplace or `npx self-starter install` | The original session or a dedicated session |
+| **[Antigravity](#antigravity)** | `npx self-starter install` (`agy-plugin`) | A dedicated CLI conversation (`agy --conversation <id>`); pairs with `agy remote-control` |
+| **[ZCode](#zcode)** | `npx self-starter install` (`zcode-plugin`) | A dedicated CLI result session; no delivery into the original desktop conversation |
+| **[OpenCode](#opencode)** | `npx self-starter install` (`opencode-plugin`) | A dedicated CLI result session, reused for later events |
 
 You need **macOS or Linux**, [Node.js](https://nodejs.org) **20+** and your chosen agent configured with working model access. For the current ZCode CLI, use **Node.js 24.14.0+**.
+
+Or install for every supported agent CLI found on your machine in one step:
+
+```sh
+npm install -g self-starter
+self-starter install
+self-starter doctor
+```
+
+(`npx self-starter install` also works without a global install—it saves a persistent runtime under `~/.self-starter/runtime` and writes `~/.self-starter/bin/self-starter`.)
 
 ### Codex
 
@@ -120,57 +130,49 @@ Inside Claude Code:
 
 Use Claude Code 2.1.224 or newer for delivery into open sessions, then start a new session after installation. See the [Claude Code guide](docs/guide.md#claude-code) for session delivery and permissions.
 
-On their first start, the Codex and Claude Code plugins download the matching runtime (about 50 MB, including [Deno](https://deno.com)) and set up a launchd or systemd background service. Allow a minute or two; later starts need no download. The terminal command is `~/.self-starter/bin/self-starter`.
+On their first start, the Codex and Claude Code plugins download the matching runtime (including [Deno](https://deno.com)) and set up a launchd or systemd background service. Allow a minute or two; later starts need no download. The terminal command is `self-starter` (when installed globally) or `~/.self-starter/bin/self-starter`.
 
 ### Antigravity
 
-Google Antigravity (`agy` CLI / Antigravity 2.0) uses a native plugin (`agy-plugin/`) and dedicated CLI conversations. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
+Google Antigravity (`agy` CLI / Antigravity 2.0) uses a native plugin (`agy-plugin/`) and dedicated CLI conversations:
 
 ```sh
-npm ci
-npm run build
-node dist/src/cli/main.js install --agy /absolute/path/to/agy
-node dist/src/cli/main.js doctor
+npx self-starter install
+~/.self-starter/bin/self-starter doctor
 ```
+
+(Pass `--agy /absolute/path/to/agy` if `agy` is not on your `PATH`, or install globally with `npm install -g self-starter` to put `self-starter` on `PATH`.)
 
 Start a new Antigravity conversation after installation. Each watch runs in a dedicated `agy --conversation <id>` result session guarded by a `PreToolUse` sandbox hook (`read-only`, `workspace-write` or `danger-full-access`). **Remote Control synergy:** unlike cloud-hosted [Remote Agents](https://antigravity.google/docs/remote-agents) that spin down after ~15 minutes of inactivity, running `agy remote-control` on your workstation pairs directly with Self-Starter—local probes keep watching GPUs, `localhost` and logs at zero tokens, and you can inspect or continue any triggered conversation from your phone. See the [Antigravity plugin guide](agy-plugin/README.md).
 
 ### ZCode
 
-ZCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
-
 ```sh
-npm ci
-npm run build
-node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
-node dist/src/cli/main.js doctor
+npx self-starter install --zcode /absolute/path/to/zcode
+~/.self-starter/bin/self-starter doctor
 ```
 
-Replace the placeholder with the absolute path to an authenticated ZCode CLI executable, not the desktop launcher. Keep the checkout available and start a new ZCode session. The installer registers a local marketplace and the background service. See the [ZCode guide](zcode-plugin/README.md) for setup, model access and permission modes.
+(Omit `--zcode` if `zcode` is already on your `PATH`; pass the authenticated ZCode CLI executable rather than the desktop app launcher.) Start a new ZCode session after installation. The installer registers a local marketplace and the background service. See the [ZCode guide](zcode-plugin/README.md) for setup, model access and permission modes.
 
 ### OpenCode
 
-OpenCode support has been available since **v0.0.4** and uses a local source installation. Install from a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7):
-
 ```sh
-npm ci
-npm run build
-node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
-node dist/src/cli/main.js doctor
+npx self-starter install
+~/.self-starter/bin/self-starter doctor
 ```
 
-Use **OpenCode 1.x, version 1.19.3 or newer**, with working model access. Keep the checkout available and start a new OpenCode session after installation. The installer adds a native plugin loader without changing your OpenCode configuration. Each watch uses a dedicated result session; later events resume that session through the CLI, including when the UI is closed. Delivery into the conversation where you created the watch is not supported. See the [OpenCode guide](opencode-plugin/README.md).
+(Pass `--opencode /absolute/path/to/opencode` if `opencode` is not on your `PATH`.) Use **OpenCode 1.x, version 1.19.3 or newer**, with working model access, and start a new OpenCode session after installation. The installer adds a native plugin loader without changing your OpenCode configuration. Each watch uses a dedicated result session; later events resume that session through the CLI, including when the UI is closed. Delivery into the conversation where you created the watch is not supported. See the [OpenCode guide](opencode-plugin/README.md).
 
 ### Other MCP clients
 
-Any stdio MCP client (Cursor, Windsurf, Cline, Claude Desktop, and others) can connect to `self-starter mcp` directly to draft, test, activate and manage local zero-token `notify` watches across all 10 push channels (`action.type: "agent"` conversation wakeups require one of the five native coding-agent integrations above). Build a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7), start the background service (`node dist/src/cli/main.js service install`), and add the MCP server:
+Any stdio MCP client (Cursor, Windsurf, Cline, Claude Desktop, and others) can connect to `self-starter mcp` directly to draft, test, activate and manage local zero-token `notify` watches across all 10 push channels (`action.type: "agent"` conversation wakeups require one of the five native coding-agent integrations above). Install `npm install -g self-starter`, start the background service (`self-starter service install`), and add the MCP server:
 
 ```json
 {
   "mcpServers": {
     "self-starter": {
-      "command": "node",
-      "args": ["/absolute/path/to/self-starter/dist/src/cli/main.js", "mcp"]
+      "command": "self-starter",
+      "args": ["mcp"]
     }
   }
 }

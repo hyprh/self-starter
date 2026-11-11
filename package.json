@@ -2,20 +2,26 @@
   "name": "self-starter",
   "version": "0.0.7",
   "license": "MIT",
-  "private": true,
-  "description": "Give Codex eyes and it becomes an AI worker: when CI fails, a training run finishes, your server goes down or NVDA crosses your price, Codex starts working on its own, right in your conversation, even if it's closed. Zero tokens while it waits.",
+  "description": "Standing jobs and local zero-token event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode. Probes watch PRs, logs, GPUs, services and APIs; your agent wakes only when it happens.",
   "homepage": "https://hyprh.github.io/self-starter/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hyprh/self-starter.git"
   },
+  "bugs": {
+    "url": "https://github.com/hyprh/self-starter/issues"
+  },
   "keywords": [
+    "claude-code",
     "codex",
-    "codex-plugin",
+    "antigravity",
+    "opencode",
+    "zcode",
     "mcp",
-    "agent",
-    "triggers",
-    "automation"
+    "coding-agent",
+    "event-triggers",
+    "automation",
+    "local-first"
   ],
   "type": "module",
   "bin": {
@@ -36,6 +42,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "tsc -p tsconfig.json",
+    "prepack": "npm run clean && npm run build",
     "test": "npm run build && node --test --test-reporter=spec $(find dist/test -name \"*.test.js\" | sort)",
     "clean": "rm -rf dist"
   },

@@ -6,30 +6,28 @@ For example: “When this training log says the run finished, compare its result
 
 This first integration supports **dedicated CLI result sessions**. It does not resume or wake the original ZCode desktop conversation. Write each action as a complete task, including the working directory and the context it needs. Results and receipts are available through `self-starter history` and the trigger tools.
 
-## Source installation
+## Installation
 
-Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user. This integration has been available since Self-Starter v0.0.4. Use a checkout of the [v0.0.7 tag](https://github.com/hyprh/self-starter/tree/v0.0.7).
-
-From the repository root:
+Requires macOS or Linux, Node.js 24.14.0 or newer for the current ZCode CLI, and a ZCode CLI already configured and authenticated by the user:
 
 ```sh
-npm ci
-npm run build
-node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
-node dist/src/cli/main.js doctor
+npx self-starter install --zcode /absolute/path/to/zcode
+~/.self-starter/bin/self-starter doctor
 ```
 
-The installer copies the plugin into a local marketplace, points its MCP server at this checkout, and configures the background service to use your ZCode executable. Keep the checkout available. Start a new ZCode session after installation. This is a local source installation; the plugin has not been published in ZCode's official catalog.
+(Omit `--zcode` if `zcode` is already on your `PATH`, or install globally with `npm install -g self-starter` so `self-starter` is on `PATH`.)
 
-The installer registers the explicit `marketplace.json` file: adding this repository directory alone would select its Claude Code catalog instead. Use the source installer above to register the ZCode integration.
+The installer persists the Self-Starter runtime, copies the plugin into a local marketplace, and configures the background service to use your ZCode executable. Start a new ZCode session after installation.
 
-Use a file that does not exist yet, then ask: “Notify me once when `/tmp/self-starter-zcode-done` appears. Check every minute and stop after an hour. After activation, confirm the first scheduled check found no file.” Once that check is confirmed, create the file in a terminal and inspect `node dist/src/cli/main.js history`. Use a dedicated agent action next when you want ZCode to analyze or change something.
+The installer registers the explicit `marketplace.json` file: adding the repository directory alone would select its Claude Code catalog instead.
+
+Use a file that does not exist yet, then ask: “Notify me once when `/tmp/self-starter-zcode-done` appears. Check every minute and stop after an hour. After activation, confirm the first scheduled check found no file.” Once that check is confirmed, create the file in a terminal and inspect `~/.self-starter/bin/self-starter history`. Use a dedicated agent action next when you want ZCode to analyze or change something.
 
 Agent watches initialize a result session once when activated; this calls a model. Scheduled probe checks do not call a model. Keep the CLI's model configuration available to the background service; credentials exported only in an interactive shell may not reach it. Pause a watch before manually continuing its result session.
 
 ## Permissions
 
-Probes run as the current user by default and should only observe. API-only probes can use `probe.access: sandbox`, which limits Deno to declared network hosts and environment variables. Store credentials in a terminal with `node dist/src/cli/main.js secret set NAME`, never in chat or probe source.
+Probes run as the current user by default and should only observe. API-only probes can use `probe.access: sandbox`, which limits Deno to declared network hosts and environment variables. Store credentials in a terminal with `self-starter secret set NAME` (or `~/.self-starter/bin/self-starter secret set NAME`), never in chat or probe source.
 
 For agent actions, Self-Starter explicitly selects ZCode's tool permission mode:
 

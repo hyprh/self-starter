@@ -17,17 +17,14 @@ This integration supports **dedicated CLI result sessions**. Because Antigravity
 
 Requires macOS or Linux, Node.js 20 or newer, and an authenticated Antigravity CLI (`agy auth status`).
 
-### Option 1: Install from a source checkout (recommended)
+### Option 1: Install via npm (recommended)
 
 ```sh
-git clone --branch v0.0.7 https://github.com/hyprh/self-starter.git
-cd self-starter
-npm ci && npm run build
-node dist/src/cli/main.js install --agy /path/to/agy
-node dist/src/cli/main.js doctor
+npx self-starter install
+~/.self-starter/bin/self-starter doctor
 ```
 
-If `agy` is already on your `PATH` or in `~/.local/bin/agy`, `node dist/src/cli/main.js install` discovers it automatically.
+If `agy` is not on your `PATH` or in `~/.local/bin/agy`, pass `--agy /absolute/path/to/agy`. Installing globally (`npm install -g self-starter && self-starter install`) puts `self-starter` directly on your `PATH`.
 
 ### Option 2: Install the plugin directly with `agy`
 
