@@ -49,6 +49,8 @@ describe("OpenCode's native trigger tools", () => {
     await plugin["experimental.chat.system.transform"]!({ model: {} as never }, output);
     assert.equal(output.system[0], "Existing instructions");
     assert.match(output.system[1]!, /dedicated CLI session/);
+    assert.match(output.system[1]!, /## Offering a watch/);
+    assert.match(output.system[1]!, /wait until the user says yes/);
     assert.match(output.system[1]!, /<trigger-data trust="untrusted">/);
     assert.match(output.system[1]!, /restriction still applies after reporting/);
     assert.doesNotMatch(output.system[1]!, /^---/);

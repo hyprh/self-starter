@@ -1,20 +1,34 @@
 ---
 license: MIT
 name: triggers
-description: Define and manage custom events by checking files, logs, commands, local services or APIs, then notify the user or run a task in a dedicated ZCode CLI session. Use for "when X happens" requests and messages beginning with [self-starter].
+description: Define and manage custom events by checking files, logs, commands, local services or APIs, then notify the user or run a task in a dedicated ZCode CLI session. Use for "when X happens" requests, when offering or setting up a watch for an in-flight asynchronous task (such as PR CI/reviews or a detached job), and for messages beginning with [self-starter].
 ---
 
 # Self-Starter
 
 A trigger combines a TypeScript probe, firing rules and an action. A background service runs the probe without calling a model while it waits. When it fires, ZCode handles the task in a **dedicated CLI session**, or the service sends a notification. This integration does not deliver into or wake the original ZCode desktop conversation.
 
+## Offering a watch
+
+When a turn leaves the user waiting on something asynchronous, you may add one short sentence at the end of your reply offering to watch it:
+
+- You just opened or pushed to a pull request and CI checks or review comments are still pending (for example: "Want me to watch CI on this PR and investigate in a background ZCode session if a check fails?").
+- You just started a detached long-running job—training, benchmark, build, migration or deployment—writing to a log or status endpoint (for example: "Want me to watch `runs/exp42/train.log` and compare the metrics when it finishes?").
+- The user has manually re-checked the same status across turns (`gh pr checks`, `nvidia-smi`, a health endpoint or a release feed).
+
+Keep offers unobtrusive and consent-first:
+
+- Call **no** `trigger_*` tools when making an unsolicited offer; wait until the user says yes before calling `trigger_draft` or `trigger_activate`.
+- Offer at most once for a given task; if the user ignores or declines it, do not repeat it.
+- Do not offer on ordinary edits, synchronous commands that already finished, general questions, or while handling a `[self-starter]` fire.
+
 ## Creating a trigger
 
 1. Resolve important ambiguity: the exact condition, acceptable checking interval, whether to act once or repeatedly, and the notification or task the user wants. Ask one short question only when needed.
 2. Find a source the probe can check: files, logs, installed commands, local services or web APIs. Prefer structured output. If credentials are needed, have the user store them in a terminal with `self-starter secret set NAME`; never request secrets in chat or include them in code or params.
 3. Write the probe and definition below. Always set `target.kind: dedicated` and `target.cwd` to the intended absolute working directory. Make the action self-contained: its session does not inherit this conversation.
-4. Call `trigger_draft` with `{ definition, code }`. It validates the definition and runs the probe once. Inspect the trial output and warnings; fix failures or incorrect results before activation.
-5. Describe what will be checked, how often, where results will appear and any meaningful permissions or immediate-fire warning. Before activating an action with side effects, frequent or long-running checks, or an ambiguous request, obtain the user's authorization if it has not already been given. An explicit, fully specified notification request can be activated directly. Offer a notify-only action when the user only needs an alert.
+4. Call `trigger_draft` with `{ definition, code }` (or a `recipe` from `trigger_recipes`). It validates the definition and runs the probe once. Inspect the trial output and warnings; fix failures or incorrect results before activation.
+5. Describe what will be checked, how often, where results will appear and any meaningful permissions or immediate-fire warning. Before activating an action with side effects, frequent or long-running checks, or an ambiguous request, obtain the user's authorization if it has not already been given. An explicit, fully specified notification or read-only request—including saying yes to a specific notify-only or read-only watch you just offered—can be activated directly. Offer a notify-only action when the user only needs an alert.
 6. Call `trigger_activate` with the returned `draft_id`.
 
 The plugin identifies ZCode through its MCP environment. Do not invent another host or an original-conversation identifier to bypass a missing session or unsupported target error.

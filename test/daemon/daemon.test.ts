@@ -116,6 +116,7 @@ describe("daemon, control socket and MCP server", { skip: deno ? false : "the de
     const init = await mcp.request("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test" } });
     assert.equal(init.result.serverInfo.name, "self-starter");
     assert.match(init.result.instructions, /\[self-starter\]/);
+    assert.match(init.result.instructions, /without calling any trigger tool until they agree/);
     const tools = await mcp.request("tools/list");
     assert.deepEqual(tools.result.tools.map((tool: Json) => tool.name), TOOLS.map((tool) => tool.name));
 
