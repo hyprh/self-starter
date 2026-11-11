@@ -483,3 +483,32 @@ describe("self-starter doctor probe timeouts", () => {
     }
   });
 });
+
+describe("proactive watch offer skill parity across all hosts", () => {
+  it("documents consent-first watch offers in every host's triggers skill", () => {
+    const skillPaths = [
+      "codex-plugin/skills/triggers/SKILL.md",
+      "cc-plugin/skills/triggers/SKILL.md",
+      "agy-plugin/skills/triggers/SKILL.md",
+      "opencode-plugin/skills/triggers/SKILL.md",
+      "zcode-plugin/skills/triggers/SKILL.md",
+    ];
+    for (const relPath of skillPaths) {
+      const content = readFileSync(join(PACKAGE_ROOT, relPath), "utf8");
+      const frontmatter = /^---\n([\s\S]*?)\n---/.exec(content)?.[1] ?? "";
+      assert.match(
+        frontmatter,
+        /when offering or setting up a watch for an in-flight asynchronous task/,
+        `${relPath} frontmatter description should surface the skill for async waiting moments`,
+      );
+      assert.match(content, /## Offering a watch/, `${relPath} missing Offering a watch section`);
+      assert.match(
+        content,
+        /Call \*\*no\*\* `trigger_\*` tools when making an unsolicited offer; wait until the user says yes/,
+        `${relPath} missing consent-first no-tool-call rule`,
+      );
+      assert.match(content, /Offer at most once for a given task/, `${relPath} missing anti-repeat rule`);
+      assert.match(content, /while handling a `\[self-starter\]` fire/, `${relPath} missing fire-turn exclusion`);
+    }
+  });
+});

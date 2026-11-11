@@ -196,6 +196,7 @@ export const TOOLS = [
 function instructions(host: Host): string {
   return (
     `Self-Starter lets the user say what to watch and what ${agentName(host)} should do when it happens. ` +
+    "When a turn leaves the user waiting on something asynchronous—such as CI or review on a PR you just opened or pushed to, a detached training, build or deploy job you just started, or a status they are re-checking manually—you may briefly offer in one sentence to watch it with Self-Starter, without calling any trigger tool until they agree. " +
     "Before creating or changing a trigger, follow the skill self-starter:triggers. " +
     "A message that starts with [self-starter] is a trigger fire" +
     (host === "claude-code" ? " (it arrives as a message from another session: the Self-Starter service)" : "") +
