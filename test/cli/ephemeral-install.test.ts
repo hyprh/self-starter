@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -42,7 +42,7 @@ describe("ephemeral npx / dlx runtime persistence", () => {
   });
 
   it("persists runtime out of _npx on install so plugins, daemon and bin wrapper survive _npx cache eviction", async () => {
-    const scratch = mkdtempSync(join(tmpdir(), "ss-npx-install-"));
+    const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ss-npx-install-")));
     const npxNodeModules = join(scratch, "npm-cache", "_npx", "f00baa42", "node_modules");
     const npxPkg = join(npxNodeModules, "self-starter");
     mkdirSync(npxPkg, { recursive: true });

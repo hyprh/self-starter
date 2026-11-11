@@ -73,6 +73,10 @@ export interface MaterializeOptions {
 export function materializeRuntime(paths: Paths, options: MaterializeOptions = {}): string {
   const packageRoot = options.packageRoot ?? PACKAGE_ROOT;
   const version = options.version ?? VERSION;
+  if (!/^[0-9A-Za-z._+-]+$/.test(version)) {
+    throw new Error(`invalid runtime version: ${version}`);
+  }
+  const spec = "self-starter@" + version;
   const runtimeDir = join(paths.home, "runtime", version);
   const cli = runtimeCliPath(paths, version);
   if (existsSync(cli)) return cli;
@@ -93,7 +97,6 @@ export function materializeRuntime(paths: Paths, options: MaterializeOptions = {
   if (canCopyHoistedNodeModules(packageRoot)) {
     cpSync(dirname(packageRoot), join(staging, "node_modules"), { recursive: true, verbatimSymlinks: true });
   } else {
-    const spec = `self-starter@${version}`;
     const npm = spawnSync("npm", ["install", "--prefix", staging, "--no-audit", "--no-fund", "--loglevel=error", spec], {
       stdio: ["ignore", 2, 2],
     });
