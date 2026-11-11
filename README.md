@@ -5,8 +5,8 @@
 <h1 align="center">Self-Starter</h1>
 
 <p align="center"><b>Give your coding agent a standing job.</b><br>
-"Keep an eye on this PR." "Tell me when the run converges." "Check why if my positions move."<br>
-Local code keeps watch with no model calls—even after you close your terminal. When it happens, your agent picks up the work with the context you already gave it, and decides whether it is worth interrupting you.</p>
+Not another agent or separate memory—the missing local event layer for the coding agent you already use.<br>
+Local code keeps watch with no model calls, even after you close your terminal. When it happens, your agent picks up the work with the context you already gave it, and decides whether it is worth interrupting you.</p>
 
 <p align="center"><sub>Claude Code · Codex · Antigravity · OpenCode · ZCode — macOS and Linux — MIT</sub></p>
 
@@ -41,7 +41,7 @@ Local code keeps watch with no model calls—even after you close your terminal.
 
 ## Why Self-Starter
 
-Coding agents work turn by turn: you ask, they act, they stop. Much real work is "keep watching, and act when it happens"—a PR under review, a long training run, a flaky service, a watchlist. Self-Starter turns one request into a standing job with three parts:
+Coding agents work turn by turn: you ask, they act, they stop. Much real work is "keep watching, and act when it happens"—*"keep an eye on this PR"*, *"tell me when the run converges"*, *"check why if my positions move"*. Self-Starter is not a separate agent gateway; it adds a local event layer to your existing agent in three parts:
 
 - **What to watch** is code. Your agent writes a small probe once; a local background service runs it without calling a model.
 - **What counts** is enforced by the engine: fire on a real change only, require a minimum duration, deduplicate, cool down, cap agent wakeups per day, and hold notifications during quiet hours.
