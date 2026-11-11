@@ -1,8 +1,9 @@
-# Publishes a GitHub release when a version tag is pushed, with its section of CHANGELOG.md.
-# A release made on the website (which creates the tag) gets the same notes.
-# The plugin's launcher installs the runtime from this tag (github:hyprh/self-starter#v<version>).
+# Publishes the npm package (`self-starter`) and GitHub release when a version tag is pushed,
+# with its section of CHANGELOG.md.
+# The plugin's launcher installs the prebuilt npm package (`self-starter@<version>`), falling
+# back to the release tag (`github:hyprh/self-starter#v<version>`) if needed.
 # During development, existing catalogs keep their published runtime version.
-# Before tagging, update all three plugin manifests to match package.json.
+# Before tagging, update all plugin manifests to match package.json.
 name: Release
 
 on:
@@ -11,13 +12,19 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Check the tag against the package and the plugin
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - name: Check the tag against the package and the plugins
         run: |
           version="${GITHUB_REF_NAME#v}"
           test "$(node -p 'require("./package.json").version')" = "$version"
@@ -30,7 +37,21 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           awk -v heading="## $version " 'index($0, heading) == 1 { found = 1; next } found && /^## / { exit } found' CHANGELOG.md > notes.md
           test -s notes.md
-      - name: Publish the release
+      - name: Build and verify the package
+        run: |
+          npm ci
+          npm test
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "self-starter@$version" version --registry https://registry.npmjs.org > /dev/null 2>&1; then
+            echo "self-starter@$version is already published on npm; skipping."
+            exit 0
+          fi
+          npm publish --provenance --access public
+      - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
