@@ -1,12 +1,22 @@
 # Self-Starter guide
 
-Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, Antigravity, ZCode and OpenCode source installations, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
+Everything beyond the [README](../README.md): day-to-day triggers, result delivery in Codex and Claude Code, Antigravity, ZCode and OpenCode integrations, secrets, email, recipes and the command line. The [design](design.md) explains how it is built.
 
 ## Install
 
-Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. [ZCode](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer. [Antigravity](#antigravity), ZCode and [OpenCode](#opencode) use a local source installation.
+Requirements: macOS or Linux, Node.js 20 or newer, and your chosen agent configured with working model access. Deno is installed for you. [ZCode](../zcode-plugin/README.md) requires Node.js 24.14.0 or newer.
 
-For Codex:
+For any supported agent (`Codex`, `Claude Code`, `Antigravity`, `ZCode`, `OpenCode`):
+
+```sh
+npm install -g self-starter
+self-starter install
+self-starter doctor
+```
+
+(`npx self-starter install` also works without a global install; it persists the runtime into `~/.self-starter/runtime/<version>` and writes `~/.self-starter/bin/self-starter`.)
+
+Or install the Codex / Claude Code plugin directly from GitHub:
 
 ```sh
 codex plugin marketplace add hyprh/self-starter
@@ -47,7 +57,7 @@ Later you can ask "what triggers do I have?", "why didn't the CI trigger fire?",
 
 ## Antigravity
 
-Google Antigravity (`agy` CLI / Antigravity 2.0) installs as a native plugin (`agy-plugin/`) via `node dist/src/cli/main.js install --agy /absolute/path/to/agy`. Each watch runs in a dedicated CLI conversation (`agy --conversation <id>`) guarded by `agy-plugin/bin/guard.mjs` (`PreToolUse`), enforcing `read-only`, `workspace-write` (blocking outside-workspace writes, symlinks, `.git`/`.agents`/`.gemini` edits, and shell commands), or `danger-full-access`. Running `agy remote-control` on your workstation pairs directly with Self-Starter so local zero-token probes keep running while you inspect or continue triggered conversations from mobile—unlike cloud [Remote Agents](https://antigravity.google/docs/remote-agents) that shut down after ~15 minutes of inactivity. See the [Antigravity plugin guide](../agy-plugin/README.md).
+Google Antigravity (`agy` CLI / Antigravity 2.0) installs as a native plugin (`agy-plugin/`) via `self-starter install` (or `npx self-starter install`, passing `--agy /absolute/path/to/agy` if needed). Each watch runs in a dedicated CLI conversation (`agy --conversation <id>`) guarded by `agy-plugin/bin/guard.mjs` (`PreToolUse`), enforcing `read-only`, `workspace-write` (blocking outside-workspace writes, symlinks, `.git`/`.agents`/`.gemini` edits, and shell commands), or `danger-full-access`. Running `agy remote-control` on your workstation pairs directly with Self-Starter so local zero-token probes keep running while you inspect or continue triggered conversations from mobile—unlike cloud [Remote Agents](https://antigravity.google/docs/remote-agents) that shut down after ~15 minutes of inactivity. See the [Antigravity plugin guide](../agy-plugin/README.md).
 
 ## ZCode
 
@@ -55,7 +65,7 @@ The ZCode integration uses dedicated CLI result sessions. It shares the probe en
 
 ## OpenCode
 
-The OpenCode integration has been available since v0.0.4 for **OpenCode >=1.19.3 and <2**. Install it from the [v0.0.7 release checkout](https://github.com/hyprh/self-starter/tree/v0.0.7) with `node dist/src/cli/main.js install --opencode /absolute/path/to/opencode`, then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
+The OpenCode integration has been available since v0.0.4 for **OpenCode >=1.19.3 and <2**. Install it with `self-starter install` (or `npx self-starter install`, passing `--opencode /absolute/path/to/opencode` if needed), then start a new OpenCode session. The installer keeps existing OpenCode configuration and other plugins intact. See the [OpenCode guide](../opencode-plugin/README.md) for requirements and permissions.
 
 Each watch uses a dedicated result session in the watch's working directory. Self-Starter resumes the same session for subsequent events with `opencode run --session <id> --format json`, so the UI can be closed while it works. The machine must remain awake and the CLI must have model access. `target.kind: origin` is rejected; the conversation where you created the watch is not used for event execution. Avoid running another task in the result session while the watch is active.
 

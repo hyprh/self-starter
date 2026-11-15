@@ -1171,8 +1171,8 @@ footer>.wrap {
             <button id="codex" type="button" role="tab" data-pick="codex" aria-controls="panel-codex" aria-selected="true">Codex</button>
             <button id="claude-code" type="button" role="tab" data-pick="claude" aria-controls="panel-claude" aria-selected="false" tabindex="-1">Claude Code</button>
             <button id="antigravity" type="button" role="tab" data-pick="antigravity" aria-controls="panel-antigravity" aria-selected="false" tabindex="-1">Antigravity</button>
-            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode <span class="preview-label">Source</span></button>
-            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode <span class="preview-label">Source</span></button>
+            <button id="zcode" type="button" role="tab" data-pick="zcode" aria-controls="panel-zcode" aria-selected="false" tabindex="-1">ZCode</button>
+            <button id="opencode" type="button" role="tab" data-pick="opencode" aria-controls="panel-opencode" aria-selected="false" tabindex="-1">OpenCode</button>
           </div>
           <div class="install-panel" id="panel-codex" data-panel="codex" role="tabpanel" aria-labelledby="codex" tabindex="0">
             <h3>Install for Codex</h3><p class="fine">macOS or Linux · Node.js 20+ · Codex app or CLI</p>
@@ -1190,35 +1190,23 @@ claude plugin install self-starter@self-starter</code></pre><button class="copy"
           </div>
           <div class="install-panel" id="panel-antigravity" data-panel="antigravity" role="tabpanel" aria-labelledby="antigravity" tabindex="0">
             <h3>Install for Google Antigravity</h3><p class="fine">macOS or Linux · Node.js 20+ · Antigravity CLI (<code>agy</code>)</p>
-            <div class="command"><pre id="install-antigravity"><code>git clone --branch v0.0.7 https://github.com/hyprh/self-starter.git
-cd self-starter
-npm ci
-npm run build
-node dist/src/cli/main.js install --agy /absolute/path/to/agy
-node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-antigravity" aria-label="Copy Antigravity install commands">Copy</button></div>
-            <div class="after-install"><p>Installs the native <code>agy-plugin</code> (MCP server, trigger skill, and <code>PreToolUse</code> sandbox guard) plus the local background service. Start a new Antigravity conversation afterward.</p><p>Pair with <code>agy remote-control</code> on your workstation to inspect or continue triggered sessions from your phone while zero-token local probes stay alive. <a href="https://github.com/hyprh/self-starter/blob/main/agy-plugin/README.md">Antigravity plugin guide →</a></p></div>
+            <div class="command"><pre id="install-antigravity"><code>npx self-starter install
+~/.self-starter/bin/self-starter doctor</code></pre><button class="copy" type="button" data-copy="install-antigravity" aria-label="Copy Antigravity install commands">Copy</button></div>
+            <div class="after-install"><p>Installs the native <code>agy-plugin</code> (MCP server, trigger skill, and <code>PreToolUse</code> sandbox guard) plus the local background service (pass <code>--agy /path/to/agy</code> if <code>agy</code> is not on <code>PATH</code>, or install globally with <code>npm install -g self-starter</code>). Start a new Antigravity conversation afterward.</p><p>Pair with <code>agy remote-control</code> on your workstation to inspect or continue triggered sessions from your phone while zero-token local probes stay alive. <a href="https://github.com/hyprh/self-starter/blob/main/agy-plugin/README.md">Antigravity plugin guide →</a></p></div>
             <div class="delivery"><b>Results in dedicated CLI conversations</b>Each watch owns a dedicated <code>agy --conversation &lt;id&gt;</code> session guarded by <code>action.sandbox</code>.</div>
           </div>
           <div class="install-panel" id="panel-zcode" data-panel="zcode" role="tabpanel" aria-labelledby="zcode" tabindex="0">
-            <h3>Install ZCode from source</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
-            <div class="command"><pre id="install-zcode"><code>git clone --branch v0.0.7 https://github.com/hyprh/self-starter.git
-cd self-starter
-npm ci
-npm run build
-node dist/src/cli/main.js install --zcode /absolute/path/to/zcode
-node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-zcode" aria-label="Copy ZCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use the actual ZCode CLI path, rather than the desktop app launcher. Keep this checkout available and start a new ZCode session after installation.</p><p>Available since v0.0.4. The commands use the v0.0.7 release tag. <a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">Source installation guide →</a></p></div>
+            <h3>Install for ZCode</h3><p class="fine">macOS or Linux · Node.js 24.14+ · Configured and authenticated ZCode CLI</p>
+            <div class="command"><pre id="install-zcode"><code>npx self-starter install --zcode /absolute/path/to/zcode
+~/.self-starter/bin/self-starter doctor</code></pre><button class="copy" type="button" data-copy="install-zcode" aria-label="Copy ZCode install commands">Copy</button></div>
+            <div class="after-install"><p>Omit <code>--zcode</code> if <code>zcode</code> is already on <code>PATH</code>; pass the actual ZCode CLI path rather than the desktop app launcher. Start a new ZCode session after installation.</p><p><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode plugin guide →</a></p></div>
             <div class="delivery"><b>Results in dedicated CLI sessions</b>Each agent watch uses a dedicated result session. Read results with Self-Starter history or the trigger tools. The original ZCode desktop conversation is not resumed.</div>
           </div>
           <div class="install-panel" id="panel-opencode" data-panel="opencode" role="tabpanel" aria-labelledby="opencode" tabindex="0">
-            <h3>Install OpenCode from source</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
-            <div class="command"><pre id="install-opencode"><code>git clone --branch v0.0.7 https://github.com/hyprh/self-starter.git
-cd self-starter
-npm ci
-npm run build
-node dist/src/cli/main.js install --opencode /absolute/path/to/opencode
-node dist/src/cli/main.js doctor</code></pre><button class="copy" type="button" data-copy="install-opencode" aria-label="Copy OpenCode source install commands">Copy</button></div>
-            <div class="after-install"><p>Use a CLI with working model access. Keep this checkout available and start a new OpenCode session. The installer adds a native plugin loader and preserves your configuration.</p><p>Available since v0.0.4. The commands use the v0.0.7 release tag. <a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">Source installation guide →</a></p></div>
+            <h3>Install for OpenCode</h3><p class="fine">macOS or Linux · Node.js 20+ · OpenCode 1.x, version 1.19.3 or newer</p>
+            <div class="command"><pre id="install-opencode"><code>npx self-starter install
+~/.self-starter/bin/self-starter doctor</code></pre><button class="copy" type="button" data-copy="install-opencode" aria-label="Copy OpenCode install commands">Copy</button></div>
+            <div class="after-install"><p>Use a CLI with working model access (pass <code>--opencode /path/to/opencode</code> if not on <code>PATH</code>). Start a new OpenCode session afterward. The installer adds a native plugin loader and preserves your configuration.</p><p><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode plugin guide →</a></p></div>
             <div class="delivery"><b>Results in a dedicated session</b>Each watch reuses its result session, including when the UI is closed. Use Self-Starter history to find it. Events do not run in the conversation where you created the watch.</div>
           </div>
         </div>
@@ -1291,8 +1279,8 @@ counts as seen; the next report fires</pre>
       <div><div class="section-head"><h2>Go a little deeper</h2></div><div class="resources">
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/guide.md">User guide →</a><span>Results, permissions, notifications, recipes and commands.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/agy-plugin/README.md">Antigravity native plugin →</a><span><code>agy</code> installation, PreToolUse sandbox guard and <code>agy remote-control</code> synergy.</span></div>
-        <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode source installation →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
-        <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode source installation →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/zcode-plugin/README.md">ZCode plugin guide →</a><span>CLI installation, dedicated result sessions and permission modes.</span></div>
+        <div><a href="https://github.com/hyprh/self-starter/blob/main/opencode-plugin/README.md">OpenCode plugin guide →</a><span>Native plugin setup, background result sessions and tool permissions.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/blob/main/docs/design.md">Design and verification notes →</a><span>How delivery works, CLI test coverage and remaining desktop checks.</span></div>
         <div><a href="https://github.com/hyprh/self-starter/issues">Questions or feedback →</a><span>Share your setup, what you watched and what happened.</span></div>
       </div></div>

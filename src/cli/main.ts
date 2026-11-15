@@ -4,6 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { callDaemon, isDaemonRunning, waitForDaemon } from "../client/client.js";
 import { agentName, hostOf } from "../core/conversations.js";
 import { AlreadyRunning, startDaemon, type Daemon } from "../daemon/daemon.js";
@@ -11,8 +12,9 @@ import { loadConfig, saveConfig } from "../engine/config.js";
 import { resolvePaths } from "../engine/paths.js";
 import type { DraftView, FireView, TriggerSummary } from "../engine/service.js";
 import { runMcpServer } from "../mcp/server.js";
-import { VERSION } from "../runtime.js";
+import { PACKAGE_ROOT, VERSION } from "../runtime.js";
 import { ensureDaemon, installService, serviceManager, stopRunningDaemon } from "../service/manager.js";
+import { ephemeralAction, isEphemeralPackageRoot, materializeRuntime, runtimeCliPath } from "./ephemeral.js";
 import { doctor, install, uninstall } from "./install.js";
 import { flag, need, out, parseArgs, UsageError, when } from "./io.js";
 import { channelCommand, secretCommand } from "./settings.js";
@@ -324,7 +326,23 @@ process.stdout.on("error", (error: NodeJS.ErrnoException) => {
   throw error;
 });
 
-main(process.argv.slice(2)).catch((error: Error) => {
+async function runCliEntry(argv: string[]): Promise<void> {
+  if (process.env.SELF_STARTER_DELEGATED !== "1" && isEphemeralPackageRoot(PACKAGE_ROOT)) {
+    const parsed = parseArgs(argv);
+    const [command, id] = parsed.positional;
+    const action = ephemeralAction(command, id);
+    const targetCli = action === "materialize" ? materializeRuntime(paths) : action === "if-present" ? runtimeCliPath(paths) : undefined;
+    if (targetCli && existsSync(targetCli)) {
+      process.env.SELF_STARTER_DELEGATED = "1";
+      process.argv = [process.argv[0] ?? process.execPath, targetCli, ...argv];
+      await import(pathToFileURL(targetCli).href);
+      return;
+    }
+  }
+  await main(argv);
+}
+
+runCliEntry(process.argv.slice(2)).catch((error: Error) => {
   process.stderr.write(`self-starter: ${error.message}\n`);
   process.exitCode = error instanceof UsageError ? 2 : 1;
 });

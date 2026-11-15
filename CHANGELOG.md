@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.8 (2026-11-16)
+
+- **Official npm package (`npx self-starter install`).** Self-Starter is now published on npm (`self-starter`), removing the source-clone and build step for Antigravity, OpenCode, ZCode, Codex, and Claude Code. Running `npx self-starter install` (or `pnpm dlx` / `bunx`) persists the runtime into `~/.self-starter/runtime/<version>` and writes `~/.self-starter/bin/self-starter` so background services, MCP configs, and OpenCode loaders survive ephemeral package-runner cache eviction.
+- **Registry-first plugin bootstrap.** Standalone plugin launchers (`codex-plugin`, `cc-plugin`, `agy-plugin`, `zcode-plugin`) install the prebuilt `self-starter@<version>` package from npm first and fall back to the release tag (`github:hyprh/self-starter#v<version>`) if needed.
+- **Consent-first proactive watch offers.** Across all five hosts' bundled `triggers` skills and MCP server instructions, agents now offer a concise, one-sentence watch suggestion at the end of asynchronous waiting turns (such as opening a PR, starting CI or training, or deploying a service) without drafting or activating anything until you confirm.
+- **Clearer standing-job positioning and end-to-end demo.** Updated the website and README to frame Self-Starter as the missing local event layer for your existing coding agent rather than another agent gateway, added a four-act end-to-end replay GIF, and updated `@opencode-ai/plugin` (1.19.5), `nodemailer` (10.3.1), and `@types/node` (26.6.6).
+
 ## 0.0.7 (2026-11-04)
 
 - **Google Antigravity native plugin (`agy-plugin/`).** Install Self-Starter into Antigravity (`agy` CLI / Antigravity 2.0) with `node dist/src/cli/main.js install --agy /absolute/path/to/agy` or directly via `agy plugin install ./agy-plugin`. The bundle provides the shared MCP trigger server, bundled `triggers` skill, and a `PreToolUse` policy guard (`agy-plugin/bin/guard.mjs`) enforcing `read-only`, `workspace-write` (blocking outside-workspace edits, symlinks, `.git`/`.agents`/`.gemini` writes, and shell commands), and `danger-full-access` sandboxes while disallowing recursive trigger mutations during fire turns.

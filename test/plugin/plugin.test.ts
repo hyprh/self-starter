@@ -430,7 +430,57 @@ describe("the plugin's launcher", () => {
     assert.equal(npmCalls().length, calls);
   });
 
+  it("prefers the npm registry package and falls back to the release tag when unpublished", async () => {
+    const fallbackScratch = mkdtempSync(join(tmpdir(), "ss-launcher-fallback-"));
+    const fallbackBin = join(fallbackScratch, "bin");
+    const fallbackLog = join(fallbackScratch, "npm.log");
+    mkdirSync(fallbackBin);
+    writeFileSync(
+      join(fallbackBin, "npm"),
+      `#!/bin/sh\necho "$*" >> "${fallbackLog}"\ncase "$7" in\n  self-starter@*) exit 1 ;;\n  github:*) mkdir -p "$3/node_modules" && ln -s "${PACKAGE_ROOT}" "$3/node_modules/self-starter" ;;\n  *) exit 2 ;;\nesac\n`,
+      { mode: 0o755 },
+    );
+    try {
+      const child = spawn(process.execPath, ["./bin/start.mjs", "mcp"], {
+        cwd: PLUGIN_SOURCE,
+        env: {
+          ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "SELF_STARTER_RUNTIME")),
+          PATH: `${fallbackBin}${delimiter}${process.env.PATH}`,
+          HOME: fallbackScratch,
+          SELF_STARTER_HOME: join(fallbackScratch, "home"),
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const serverInfo = await new Promise<{ name: string; version: string }>((resolve, reject) => {
+        let stderr = "";
+        child.stderr.on("data", (chunk) => (stderr += chunk));
+        createInterface({ input: child.stdout }).on("line", (line) => {
+          resolve(JSON.parse(line).result?.serverInfo);
+          child.kill();
+        });
+        child.on("exit", (code) => {
+          if (code !== null && code !== 0) reject(new Error(`launcher exited ${code}: ${stderr}`));
+        });
+        child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } } })}\n`);
+      });
+      assert.deepEqual(serverInfo, { name: "self-starter", version: VERSION });
+      const logged = readFileSync(fallbackLog, "utf8").trim().split("\n");
+      assert.equal(logged.length, 2);
+      assert.match(logged[0]!, new RegExp(`--loglevel=error self-starter@${catalogVersion.replace(/\./g, "\\.")}$`));
+      assert.match(logged[1]!, new RegExp(`--loglevel=error github:hyprh/self-starter#v${catalogVersion.replace(/\./g, "\\.")} --allow-git=root --allow-remote=root$`));
+    } finally {
+      rmSync(fallbackScratch, { recursive: true, force: true });
+    }
+  });
+
   it("keeps all four standalone plugin launchers byte-identical by SHA-256", () => {
+    const pkg = json("package.json");
+    assert.notEqual(pkg.private, true, "package.json must be publishable to npm");
+    assert.equal(pkg.name, "self-starter");
+    assert.equal(pkg.bin?.["self-starter"], "dist/src/cli/main.js");
+    for (const requiredEntry of ["dist/src", "codex-plugin", "cc-plugin", "agy-plugin", "zcode-plugin", "opencode-plugin", "recipes"]) {
+      assert.ok(pkg.files.includes(requiredEntry), `package.json files missing ${requiredEntry}`);
+    }
     const launcherPaths = [
       "codex-plugin/bin/start.mjs",
       "cc-plugin/bin/start.mjs",

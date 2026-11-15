@@ -20,7 +20,7 @@ import { findClaude } from "../engine/sessions.js";
 import { Store } from "../engine/store.js";
 import { findZCode } from "../engine/zcode.js";
 import { AGY_PLUGIN_SOURCE, CC_PLUGIN_SOURCE, CLI_SCRIPT, OPENCODE_PLUGIN_SOURCE, PLUGIN_SOURCE, VERSION, ZCODE_PLUGIN_SOURCE } from "../runtime.js";
-import { compareVersions, installService, serviceManager, spawnDetachedDaemon, stopRunningDaemon } from "../service/manager.js";
+import { compareVersions, installService, serviceManager, spawnDetachedDaemon, stopRunningDaemon, writeCommand } from "../service/manager.js";
 
 export const MARKETPLACE_NAME = "self-starter";
 export const PLUGIN_NAME = "self-starter";
@@ -460,7 +460,7 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   saveConfig(paths, config);
 
   const deno = resolveDeno(config);
-  if (!deno) throw new Error("deno was not found; run `npm install` in the self-starter folder (it ships deno), or install deno");
+  if (!deno) throw new Error("deno was not found; reinstall self-starter (it ships deno), or install deno");
   log(`deno: ${deno}`);
 
   buildMarketplace(paths);
@@ -484,6 +484,7 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
   } else {
     if (!options.service) saveConfig(paths, { ...loadConfig(paths), service: false });
     await stopRunningDaemon(paths);
+    writeCommand(paths);
     spawnDetachedDaemon(paths);
     if (!(await waitForDaemon(paths.socket, 10_000))) throw new Error(`the daemon did not start; see ${join(paths.logs, "service.log")}`);
     log(
@@ -491,6 +492,9 @@ export async function install(paths: Paths, options: InstallOptions): Promise<vo
         ? "background service: no launchd or systemd user session here, so the daemon runs as a detached process until the next restart"
         : "background service: not installed (--no-service); the daemon runs until the next restart",
     );
+  }
+  if (!which("self-starter")) {
+    log(`cli command: ${join(paths.home, "bin", "self-starter")}`);
   }
 }
 
@@ -531,7 +535,7 @@ export async function doctor(paths: Paths, options: { probeTimeoutMs?: number } 
       (timedOut ? `timed out after ${Math.max(1, Math.ceil(probeTimeoutMs / 1000))}s` : "");
     add(out.status === 0, "deno", `${firstLine} (${deno}${deno === bundledDeno() ? ", bundled" : ""})`.trim());
   } else {
-    add(false, "deno", "not found; run `npm install` in the self-starter folder");
+    add(false, "deno", "not found; reinstall self-starter (it ships deno), or install deno");
   }
 
   const agents = agentsFound({ codex: config.codexBin, claude: config.claudeBin, agy: config.agyBin, zcode: config.zcodeBin, opencode: config.opencodeBin });
