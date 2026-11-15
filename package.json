@@ -1,6 +1,6 @@
 {
   "name": "self-starter",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "license": "MIT",
   "description": "Standing jobs and local zero-token event triggers for Claude Code, Codex, Antigravity, OpenCode and ZCode. Probes watch PRs, logs, GPUs, services and APIs; your agent wakes only when it happens.",
   "homepage": "https://hyprh.github.io/self-starter/",

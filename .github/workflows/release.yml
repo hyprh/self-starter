@@ -22,7 +22,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: "https://registry.npmjs.org"
           cache: npm
       - name: Check the tag against the package and the plugins
         run: |
@@ -32,6 +31,7 @@ jobs:
           test "$(node -p 'require("./cc-plugin/.claude-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./agy-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./zcode-plugin/.zcode-plugin/plugin.json").version')" = "$version"
+          test "$(node -p 'require("./marketplace.json").plugins[0].version')" = "$version"
       - name: Take the notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -42,15 +42,14 @@ jobs:
           npm ci
           npm test
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           version="${GITHUB_REF_NAME#v}"
           if npm view "self-starter@$version" version --registry https://registry.npmjs.org > /dev/null 2>&1; then
             echo "self-starter@$version is already published on npm; skipping."
             exit 0
           fi
-          npm publish --provenance --access public
+          node -e 'const [maj,min,pat]=process.argv[1].split(".").map(Number); process.exit(maj>11||(maj===11&&(min>5||(min===5&&pat>=1)))?0:1)' "$(npm --version)" || npm install -g npm@latest
+          npm publish --provenance --access public --registry https://registry.npmjs.org
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
