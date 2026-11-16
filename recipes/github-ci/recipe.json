@@ -1,0 +1,65 @@
+{
+  "id": "github-ci",
+  "version": 1,
+  "title": "GitHub PR & CI watch",
+  "summary": "Watches a GitHub pull request or branch through the authenticated gh CLI and reports new failed or timed-out CI checks, optional all-green completions, submitted PR reviews, review/conversation comments, and merge conflicts—each reported once.",
+  "entry": "probe.ts",
+  "mode": "event",
+  "access": "full",
+  "permissions": {
+    "net": [],
+    "env": []
+  },
+  "interval": { "min": "30s", "max": "1h", "default": "2m" },
+  "timeout": "30s",
+  "params": {
+    "repo": {
+      "type": "string",
+      "default": "",
+      "description": "GitHub repository as OWNER/REPO. Leave empty to infer from the git repository in target.cwd."
+    },
+    "pr": {
+      "type": "number",
+      "default": 0,
+      "description": "Pull request number to watch (checks, reviews, comments, and merge conflicts). Leave 0 to watch workflow runs on a branch instead."
+    },
+    "branch": {
+      "type": "string",
+      "default": "",
+      "description": "Branch to watch when pr is 0 (such as main). Defaults to the current branch in target.cwd or the repository's default branch."
+    },
+    "workflow": {
+      "type": "string",
+      "default": "",
+      "description": "Optional workflow file name or ID (such as ci.yml) when watching a branch; empty watches all workflows on the branch."
+    },
+    "watch": {
+      "type": "string[]",
+      "default": ["ci", "reviews", "comments", "conflicts"],
+      "description": "What to report: ci (failed or timed-out checks/runs), ci_pass (all checks or latest workflow runs succeeded on the head commit), reviews (submitted PR reviews), comments (PR review and conversation comments), conflicts (PR has merge conflicts)."
+    },
+    "ignore_actors": {
+      "type": "string[]",
+      "default": [],
+      "description": "GitHub usernames to ignore on PR reviews and comments (case-insensitive)."
+    },
+    "gh_host": {
+      "type": "string",
+      "default": "github.com",
+      "advanced": true,
+      "description": "GitHub hostname passed to gh (for GitHub Enterprise Server)."
+    },
+    "gh_bin": {
+      "type": "string",
+      "default": "gh",
+      "advanced": true,
+      "description": "GitHub CLI executable name or path."
+    }
+  },
+  "secrets": [],
+  "setup": [
+    "Install the GitHub CLI (https://cli.github.com) and run `gh auth login` so the background service can read the repository.",
+    "Set target.cwd to your local clone (or pass probe.params.repo as \"OWNER/REPO\"), and pick either probe.params.pr (for a pull request) or probe.params.branch (for branch CI)."
+  ],
+  "suggestedPrompt": "Something changed on the GitHub PR or CI watch. Recheck that the reported commit or PR state is still current, inspect any failing job logs or review feedback with gh, and summarize the root cause and concrete next step. Keep the investigation read-only unless I explicitly asked you to push changes."
+}

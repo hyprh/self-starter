@@ -2,7 +2,7 @@
 
 Ask Codex to watch a GitHub Actions workflow and return to this conversation when a new failure needs attention. Self-Starter runs a small code probe while it waits; Codex reads the failure and investigates when the event fires.
 
-This uses the existing custom-event flow. There is no CI recipe to install.
+Self-Starter ships a ready-made [`github-ci` recipe](../recipes/github-ci) for pull requests and branch workflows, and your agent will prefer it automatically when it fits. This walkthrough also shows how custom `gh` probes work under the hood when you want bespoke rules.
 
 ## Try it
 

@@ -51,7 +51,9 @@ export const TOOLS = [
         },
         recipe: {
           type: "string",
-          description: "Id of a ready-made recipe from trigger_recipes, such as ibkr-account. The recipe supplies the code, access, permissions and mode; set its parameters in definition.probe.params.",
+          description:
+            "Id of a ready-made recipe from trigger_recipes, such as github-ci, log-watch, http-health, futu-news or ibkr-account. " +
+            "The recipe supplies the code, access, permissions and mode; set its parameters in definition.probe.params.",
         },
         replace: {
           type: "boolean",
@@ -65,7 +67,7 @@ export const TOOLS = [
   {
     name: "trigger_recipes",
     description:
-      "List the ready-made recipes: probes that ship with the plugin for common things to watch, such as an Interactive Brokers account. " +
+      "List the ready-made recipes: probes that ship with the plugin for common things to watch, such as GitHub PRs and CI runs, local log errors, HTTP health endpoints, Futu stock news, or an Interactive Brokers account. " +
       "Each lists its parameters, the secrets the user must store first and the setup steps. Prefer a recipe when one fits.",
     inputSchema: { type: "object", properties: {} },
     annotations: { title: "List recipes", readOnlyHint: true, destructiveHint: false, openWorldHint: false },

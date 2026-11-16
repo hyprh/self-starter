@@ -285,7 +285,10 @@ async function main(argv: string[]): Promise<void> {
         out(`  ${r.summary}`);
         if (r.secrets.length > 0) out(`  needs: ${r.secrets.map((x) => x.name).join(", ")} (self-starter secret set ...)`);
       }
-      out("\nAsk Codex or Claude to set one up, for example: \"watch my IBKR account for unusual activity\" or \"tell me when analysts change their view on Tencent\".");
+      out(
+        '\nAsk your agent to set one up, for example: "keep watching this PR for CI failures or review comments", ' +
+          '"watch logs/app.log for new stack traces", or "alert me if http://127.0.0.1:8080/healthz stays down for 2 minutes".',
+      );
       return;
     }
     case "drafts": {

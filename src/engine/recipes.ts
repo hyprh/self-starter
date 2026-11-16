@@ -35,6 +35,12 @@ export interface Recipe {
   /** "sandbox" for probes that only need the hosts in permissions.net; "full" (the default) otherwise. */
   access?: "full" | "sandbox";
   permissions: { net: string[]; env: string[] };
+  /**
+   * Optional parameter names whose values supply sandbox `permissions.net` hosts:
+   * a `string` parameter is parsed as an `http://` or `https://` URL (`url.host`),
+   * and a `string[]` parameter contributes `host[:port]` entries directly.
+   */
+  netFromParams?: string[];
   interval?: { min: string; max: string; default: string };
   timeout?: string;
   params: Record<string, RecipeParam>;
@@ -45,6 +51,7 @@ export interface Recipe {
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const HOST_ENTRY_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/;
 
 export function listRecipes(dir: string): Recipe[] {
   if (!existsSync(dir)) return [];
@@ -95,10 +102,6 @@ export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { def
   const probe = isRecord(raw.probe) ? { ...raw.probe } : {};
   const access = recipe.access ?? "full";
   if (raw.mode !== undefined && raw.mode !== recipe.mode) errors.push(`the ${recipe.id} recipe runs in ${recipe.mode} mode`);
-  if (probe.permissions !== undefined) {
-    const same = JSON.stringify(probe.permissions) === JSON.stringify(recipe.permissions);
-    if (!same) errors.push(`the ${recipe.id} recipe fixes the probe's permissions; leave probe.permissions out`);
-  }
   if (probe.access !== undefined && probe.access !== access) errors.push(`the ${recipe.id} recipe runs with ${access} access; leave probe.access out`);
 
   const given = isRecord(probe.params) ? probe.params : {};
@@ -116,6 +119,42 @@ export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { def
     if (!(name in recipe.params)) errors.push(`the ${recipe.id} recipe has no parameter ${name} (it has: ${Object.keys(recipe.params).join(", ")})`);
   }
 
+  const net = [...recipe.permissions.net];
+  for (const paramName of recipe.netFromParams ?? []) {
+    const value = params[paramName];
+    if (typeof value === "string") {
+      if (value.trim() === "") {
+        errors.push(`probe.params.${paramName} must be an http:// or https:// URL`);
+        continue;
+      }
+      try {
+        const parsed = new URL(value);
+        if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.host) {
+          errors.push(`probe.params.${paramName} must be an http:// or https:// URL`);
+        } else if (!net.includes(parsed.host)) {
+          net.push(parsed.host);
+        }
+      } catch {
+        errors.push(`probe.params.${paramName} must be an http:// or https:// URL`);
+      }
+    } else if (Array.isArray(value)) {
+      for (const [index, item] of value.entries()) {
+        if (typeof item !== "string") continue;
+        const trimmed = item.trim();
+        if (trimmed === "" || !HOST_ENTRY_PATTERN.test(trimmed)) {
+          errors.push(`probe.params.${paramName}[${index}] must be a host or host:port (such as "example.com" or "127.0.0.1:8080")`);
+        } else if (!net.includes(trimmed)) {
+          net.push(trimmed);
+        }
+      }
+    }
+  }
+  const effectivePermissions = { net, env: [...recipe.permissions.env] };
+  if (probe.permissions !== undefined) {
+    const same = JSON.stringify(probe.permissions) === JSON.stringify(effectivePermissions);
+    if (!same) errors.push(`the ${recipe.id} recipe fixes the probe's permissions; leave probe.permissions out`);
+  }
+
   const definition: Record<string, unknown> = {
     ...raw,
     mode: recipe.mode,
@@ -124,7 +163,7 @@ export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { def
       entry: recipe.entry,
       access,
       params,
-      permissions: recipe.permissions,
+      permissions: effectivePermissions,
       ...(probe.interval === undefined && recipe.interval ? { interval: recipe.interval } : {}),
       ...(probe.timeout === undefined && recipe.timeout ? { timeout: recipe.timeout } : {}),
     },

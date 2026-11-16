@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0 (2026-11-16)
+
+- **Official engineering recipes (`github-ci`, `log-watch`, `http-health`).** Three built-in engineering recipes now ship alongside `futu-news` and `ibkr-account`:
+  - **`github-ci` (`recipes/github-ci`):** Watches a GitHub pull request (failed check-runs and commit statuses, optional all-green `ci_pass`, paginated submitted reviews, review/issue comments, and merge conflicts) or branch workflow runs via your authenticated `gh` CLI—ignoring superseded branch runs and separating cancelled runs from active ones.
+  - **`log-watch` (`recipes/log-watch`):** Tails a local log file incrementally from current EOF across checks, preserving exact raw byte offsets across LF/CRLF logs, handling `logrotate` and `copytruncate` rotation without rereading historical output, coalescing stack traces and Python tracebacks without swallowing separate errors, and supporting timestamp-normalized line deduplication (`dedupe_by_line`) and `missing_ok`.
+  - **`http-health` (`recipes/http-health`):** Checks local, staging, or production HTTP/HTTPS endpoints inside a strict network-only Deno sandbox (`netFromParams` restricts `permissions.net` automatically to `params.url` and optional `allow_hosts`), firing on connection errors, request or mid-stream body timeouts, unexpected status codes, body regex / JSON dot-path mismatches, or high latency, and re-arming once healthy again.
+- **Recipe-first discovery across all five hosts.** Updated MCP and OpenCode native tool descriptions, `self-starter recipes` CLI guidance, all five hosts' bundled `triggers` skills, the website, `README.md`, `docs/guide.md`, and `docs/ci-watch.md` so agents prefer tested built-in recipes before writing custom probes.
+
 ## 0.0.8 (2026-11-16)
 
 - **Official npm package (`npx self-starter install`).** Self-Starter is now published on npm (`self-starter`), removing the source-clone and build step for Antigravity, OpenCode, ZCode, Codex, and Claude Code. Running `npx self-starter install` (or `pnpm dlx` / `bunx`) persists the runtime into `~/.self-starter/runtime/<version>` and writes `~/.self-starter/bin/self-starter` so background services, MCP configs, and OpenCode loaders survive ephemeral package-runner cache eviction.

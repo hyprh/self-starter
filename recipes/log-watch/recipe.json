@@ -1,0 +1,64 @@
+{
+  "id": "log-watch",
+  "version": 1,
+  "title": "Log error & pattern watch",
+  "summary": "Tails a local log file incrementally across checks—handling log rotation and truncation without rereading historical output—and reports new error lines or regex matches with surrounding stack-trace context.",
+  "entry": "probe.ts",
+  "mode": "event",
+  "access": "full",
+  "permissions": {
+    "net": [],
+    "env": []
+  },
+  "interval": { "min": "10s", "max": "30m", "default": "30s" },
+  "timeout": "15s",
+  "params": {
+    "path": {
+      "type": "string",
+      "required": true,
+      "description": "Log file to watch (absolute path, ~/..., or relative to target.cwd)."
+    },
+    "pattern": {
+      "type": "string",
+      "default": "\\b(?:ERROR|FATAL|CRITICAL|PANIC|UnhandledPromiseRejection)\\b|Traceback \\(most recent call last\\):",
+      "description": "Regular expression matching log lines to report."
+    },
+    "exclude": {
+      "type": "string",
+      "default": "",
+      "description": "Optional regular expression for noisy lines to ignore even when they match pattern."
+    },
+    "case_sensitive": {
+      "type": "boolean",
+      "default": false,
+      "description": "Match pattern and exclude case-sensitively."
+    },
+    "context_lines": {
+      "type": "number",
+      "default": 4,
+      "description": "Trailing continuation or stack-trace lines attached to each matched line (0 to 20)."
+    },
+    "dedupe_by_line": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, identical normalized error lines (ignoring leading timestamps) share one event key so repeated identical errors report once; when false, each new occurrence fires."
+    },
+    "missing_ok": {
+      "type": "boolean",
+      "default": false,
+      "description": "Wait quietly when the log file does not exist yet instead of failing the check."
+    },
+    "max_bytes_per_check": {
+      "type": "number",
+      "default": 524288,
+      "advanced": true,
+      "description": "Maximum new bytes inspected per check (skips ahead to the newest tail if log output bursts past this limit)."
+    }
+  },
+  "secrets": [],
+  "setup": [
+    "Point probe.params.path at your service, test, or training log file (set missing_ok: true if the process has not created the file yet).",
+    "The first check records the current end of the file as the baseline so historical errors do not fire; new lines appended afterward are checked incrementally."
+  ],
+  "suggestedPrompt": "New matching error lines appeared in the watched log file. Inspect the snippet and stack trace, trace it to the relevant source files in this workspace, and summarize the root cause and fix. Keep it read-only unless I asked you to edit code."
+}
