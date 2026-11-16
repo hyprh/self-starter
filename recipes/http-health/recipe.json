@@ -1,0 +1,66 @@
+{
+  "id": "http-health",
+  "version": 1,
+  "title": "HTTP health check",
+  "summary": "Checks a local, staging, or production HTTP/HTTPS endpoint inside a network-only sandbox and fires when it becomes unreachable, returns an unexpected status code, misses an expected body pattern or JSON field, or exceeds a latency threshold—re-arming automatically once healthy again.",
+  "entry": "probe.ts",
+  "mode": "state",
+  "access": "sandbox",
+  "netFromParams": ["url", "allow_hosts"],
+  "permissions": {
+    "net": [],
+    "env": []
+  },
+  "interval": { "min": "15s", "max": "1h", "default": "1m" },
+  "timeout": "20s",
+  "params": {
+    "url": {
+      "type": "string",
+      "required": true,
+      "description": "HTTP or HTTPS endpoint to check, such as http://127.0.0.1:8080/healthz or https://api.example.com/status."
+    },
+    "method": {
+      "type": "string",
+      "default": "GET",
+      "description": "HTTP request method (GET or HEAD)."
+    },
+    "expected_status": {
+      "type": "number[]",
+      "default": [200],
+      "description": "HTTP status codes that count as healthy (for example [200, 204])."
+    },
+    "expect_body": {
+      "type": "string",
+      "default": "",
+      "description": "Optional regular expression that the response body must match."
+    },
+    "expect_json": {
+      "type": "string",
+      "default": "",
+      "description": "Optional dot-path=value assertion on a JSON response body, such as status=ok or data.healthy=true."
+    },
+    "max_latency_ms": {
+      "type": "number",
+      "default": 0,
+      "description": "Optional maximum healthy response latency in milliseconds; 0 disables the latency threshold."
+    },
+    "request_timeout_ms": {
+      "type": "number",
+      "default": 10000,
+      "advanced": true,
+      "description": "Per-request timeout in milliseconds before treating the endpoint as unreachable."
+    },
+    "allow_hosts": {
+      "type": "string[]",
+      "default": [],
+      "advanced": true,
+      "description": "Additional host[:port] entries allowed in the probe sandbox if the endpoint redirects across hosts."
+    }
+  },
+  "secrets": [],
+  "setup": [
+    "Pass probe.params.url (for example http://127.0.0.1:3000/healthz). Set for: \"2m\" on the trigger definition if you want brief deploy restarts ignored.",
+    "The probe runs in a network-only Deno sandbox restricted to the target URL's host."
+  ],
+  "suggestedPrompt": "The watched HTTP endpoint is unhealthy. Review the failure details reported by the probe, inspect recent service logs or process status in this workspace, and summarize why the endpoint is failing or slow. Keep it read-only unless I explicitly asked you to restart or edit anything."
+}

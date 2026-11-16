@@ -145,10 +145,13 @@ Route individual watches in `self-starter ui` (or ask your agent to set `notify.
 
 ## Ready-made recipes
 
-Some things to watch come with a probe already written and tested, so Codex only fills in your settings. `self-starter recipes` lists them.
+Some things to watch come with a probe already written and tested, so your agent only fills in your settings. `self-starter recipes` lists them:
 
-- **IBKR account watch** (`ibkr-account`): new executions and option assignments within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a trade, and large moves in net asset value. It uses Interactive Brokers' Flex Web Service with a read-only token; ask Codex "watch my IBKR account" and it walks you through the five-minute setup.
-- **Futu news watch** (`futu-news`): new research reports (analyst ratings and price targets), company announcements or news about the stocks you follow, from Futu's news search, with no account needed. It pairs with [Futu's own skills for Codex](https://www.futunn.com/skillhub): with them installed, Codex handles each fire with Futu's stock digest and community sentiment. Ask Codex, for example, "tell me when analysts change their view on Tencent or NVIDIA, and what the community thinks".
+- **GitHub PR & CI watch** (`github-ci`): watches a pull request (failed checks, optional all-green completion, submitted reviews, review/issue comments, and merge conflicts) or workflow runs on a branch via your authenticated `gh` CLI, reporting each new item once.
+- **Log error & pattern watch** (`log-watch`): tails a local log file incrementally across checks—handling log rotation and truncation without rereading historical output—and reports new error lines or regex matches with surrounding stack-trace context.
+- **HTTP health check** (`http-health`): checks a local, staging, or production HTTP/HTTPS endpoint inside a network-only sandbox restricted to the target host, firing when it becomes unreachable, returns an unexpected status, misses an expected body/JSON field, or exceeds a latency threshold (pair with `for: "2m"` to ignore brief restarts).
+- **IBKR account watch** (`ibkr-account`): new executions and option assignments within 5 to 10 minutes, and once a day deposits and withdrawals, positions that changed without a trade, and large moves in net asset value. It uses Interactive Brokers' Flex Web Service with a read-only token; ask your agent "watch my IBKR account" and it walks you through the five-minute setup.
+- **Futu news watch** (`futu-news`): new research reports (analyst ratings and price targets), company announcements or news about the stocks you follow, from Futu's news search, with no account needed. It pairs with [Futu's own skills for Codex](https://www.futunn.com/skillhub): with them installed, Codex handles each fire with Futu's stock digest and community sentiment. Ask your agent, for example, "tell me when analysts change their view on Tencent or NVIDIA, and what the community thinks".
 
 ## Command line
 

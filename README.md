@@ -53,10 +53,10 @@ Self-Starter brings no data of its own. A probe reads whatever you can reach fro
 
 | When this happens… | Your agent picks up the next task |
 |---|---|
-| A new CI run fails on your commit | Read the failing job logs and suggest a fix ([walkthrough](docs/ci-watch.md)) |
-| Your PR gets new review comments | Investigate the feedback and propose changes |
-| Your training run finishes or `nvidia-smi` shows an idle GPU | Compare metrics with the last run or start the next experiment |
-| A local or staging service stays down for two minutes | Inspect recent logs and trace the root cause |
+| A new CI run fails on your commit | Read the failing job logs and suggest a fix ([`github-ci` recipe](recipes/github-ci) · [walkthrough](docs/ci-watch.md)) |
+| Your PR gets new review comments or conflicts | Investigate the feedback and propose changes ([`github-ci` recipe](recipes/github-ci)) |
+| Your training run finishes, a new error hits `app.log`, or `nvidia-smi` shows an idle GPU | Trace the stack trace, compare metrics, or start the next experiment ([`log-watch` recipe](recipes/log-watch)) |
+| A local or staging service stays down for two minutes | Inspect recent logs and trace the root cause ([`http-health` recipe](recipes/http-health)) |
 | NVDA moves 6% or analysts change their rating | Investigate what changed and summarize sentiment ([`futu-news` recipe](recipes/futu-news)) |
 | Your IBKR account report updates | Explain new trades, option assignments or cash movements ([`ibkr-account` recipe](recipes/ibkr-account)) |
 
@@ -216,13 +216,13 @@ Anything a small program can check. Your agent writes the probe, tries it once, 
 
 | Watch | Ask your agent | Source |
 |---|---|---|
-| **Long jobs** | "When the training run finishes, compare it with the last one." | A log or output file |
+| **Long jobs & logs** | "Watch `logs/app.log` for new stack traces, or compare results when training finishes." | Local logs ([recipe](recipes/log-watch)) |
 | **GPU availability** | "When the GPU is idle for ten minutes, start the next experiment." | `nvidia-smi` |
-| **PR reviews** | "When my PR gets new review comments, investigate them and propose changes." | GitHub pull requests |
+| **PR reviews** | "When my PR gets new review comments, investigate them and propose changes." | GitHub pull requests ([recipe](recipes/github-ci)) |
 | **Issues** | "When a new issue is labelled bug, read the report and suggest where to investigate." | GitHub Issues |
-| **CI** | "When CI fails on main, investigate and suggest a fix." | GitHub Actions ([guide](docs/ci-watch.md)) |
+| **CI** | "When CI fails on main, investigate and suggest a fix." | GitHub Actions ([recipe](recipes/github-ci) · [guide](docs/ci-watch.md)) |
 | **Releases** | "When a new version of zod is out, try it on a branch." | The npm registry |
-| **Services** | "If the dev server is down for two minutes, find out why." | A health endpoint |
+| **Services** | "If the dev server is down for two minutes, find out why." | Health endpoints ([recipe](recipes/http-health)) |
 | **Files** | "When a new invoice lands in invoices/, add it to expenses.csv." | A local folder |
 | **Research** | "When a speculative decoding paper hits arXiv, summarize it." | The arXiv API |
 | **Markets** | "Tell me when analysts change their view on Tencent." | Futu research ([recipe](recipes/futu-news)) |
