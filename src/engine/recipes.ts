@@ -51,6 +51,7 @@ export interface Recipe {
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const HOST_ENTRY_PATTERN = /^(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/;
 
 export function listRecipes(dir: string): Recipe[] {
   if (!existsSync(dir)) return [];
@@ -137,9 +138,13 @@ export function applyRecipe(recipe: Recipe, raw: Record<string, unknown>): { def
         errors.push(`probe.params.${paramName} must be an http:// or https:// URL`);
       }
     } else if (Array.isArray(value)) {
-      for (const item of value) {
-        if (typeof item === "string" && item.trim() !== "" && !net.includes(item.trim())) {
-          net.push(item.trim());
+      for (const [index, item] of value.entries()) {
+        if (typeof item !== "string") continue;
+        const trimmed = item.trim();
+        if (trimmed === "" || !HOST_ENTRY_PATTERN.test(trimmed)) {
+          errors.push(`probe.params.${paramName}[${index}] must be a host or host:port (such as "example.com" or "127.0.0.1:8080")`);
+        } else if (!net.includes(trimmed)) {
+          net.push(trimmed);
         }
       }
     }

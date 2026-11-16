@@ -9,10 +9,13 @@ type ProbeEvent = { key: string; summary: string; data: Record<string, unknown> 
 const ALLOWED_WATCH = new Set(["ci", "ci_pass", "reviews", "comments", "conflicts"]);
 const FAIL_CONCLUSIONS = new Set(["failure", "timed_out", "action_required", "startup_failure"]);
 const PASS_CONCLUSIONS = new Set(["success", "neutral", "skipped"]);
+const CANCELLED_CONCLUSIONS = new Set(["cancelled", "stale"]);
 const MAX_EVENTS = 80;
+const COMMENT_LOOKBACK_MS = 7 * 86_400_000;
 
 const input = JSON.parse(await new Response(Deno.stdin.readable).text());
 const params = input.params ?? {};
+const nowMs = Number.isFinite(Date.parse(input.now)) ? Date.parse(input.now) : Date.now();
 
 const ghBin = String(params.gh_bin || "gh").trim();
 const ghHost = String(params.gh_host || "github.com").trim();
@@ -69,6 +72,19 @@ async function ghApi<T>(endpoint: string): Promise<T> {
   }
 }
 
+/** Walks ascending-order GitHub list endpoints up to `maxPages` so busy PRs still reach newest items. */
+async function ghPaginatedList<T>(baseEndpoint: string, maxPages: number): Promise<T[]> {
+  const sep = baseEndpoint.includes("?") ? "&" : "?";
+  const all: T[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const batch = await ghApi<T[]>(baseEndpoint + sep + "per_page=100&page=" + page);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return all;
+}
+
 function clip(text: string, max = 140): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length <= max ? clean : clean.slice(0, max - 1) + "…";
@@ -82,7 +98,7 @@ if (repo) {
 } else {
   const viewed = await runCommand(ghBin, ["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"], { GH_HOST: ghHost });
   if (viewed.code !== 0 || !/^[^/\s]+\/[^/\s]+$/.test(viewed.stdout)) {
-    throw new Error('could not infer GitHub repository from target.cwd; set probe.params.repo to "OWNER/REPO"');
+    throw new Error('could not infer GitHub repository from target.cwd; set probe.params.repo to "OWNER/REPO" (or set target.cwd to your local clone)');
   }
   repo = viewed.stdout;
 }
@@ -114,11 +130,21 @@ if (prNumber > 0) {
   if (watchSet.has("ci") || watchSet.has("ci_pass")) {
     type CheckRun = { id: number; name: string; status: string; conclusion: string | null; html_url?: string; details_url?: string };
     type CombinedStatus = { statuses?: Array<{ context: string; state: string; description?: string; target_url?: string }> };
-    const [checksResp, statusResp] = await Promise.all([
-      ghApi<{ check_runs?: CheckRun[] }>("repos/" + repo + "/commits/" + headSha + "/check-runs?per_page=100"),
-      ghApi<CombinedStatus>("repos/" + repo + "/commits/" + headSha + "/status"),
-    ]);
-    const checkRuns = Array.isArray(checksResp.check_runs) ? checksResp.check_runs : [];
+
+    const checkRuns: CheckRun[] = [];
+    let totalCheckCount = 0;
+    for (let page = 1; page <= 3; page += 1) {
+      const checksResp = await ghApi<{ total_count?: number; check_runs?: CheckRun[] }>(
+        "repos/" + repo + "/commits/" + headSha + "/check-runs?per_page=100&page=" + page,
+      );
+      const batch = Array.isArray(checksResp.check_runs) ? checksResp.check_runs : [];
+      totalCheckCount = typeof checksResp.total_count === "number" ? checksResp.total_count : checkRuns.length + batch.length;
+      checkRuns.push(...batch);
+      if (batch.length < 100 || checkRuns.length >= totalCheckCount) break;
+    }
+    const truncatedChecks = totalCheckCount > checkRuns.length;
+
+    const statusResp = await ghApi<CombinedStatus>("repos/" + repo + "/commits/" + headSha + "/status");
     const latestStatuses = new Map<string, { context: string; state: string; description?: string; target_url?: string }>();
     for (const st of Array.isArray(statusResp.statuses) ? statusResp.statuses : []) {
       if (st.context && !latestStatuses.has(st.context)) latestStatuses.set(st.context, st);
@@ -126,6 +152,7 @@ if (prNumber > 0) {
 
     let failing = 0;
     let pending = 0;
+    let cancelled = 0;
     for (const run of checkRuns) {
       if (run.status !== "completed") {
         pending += 1;
@@ -149,6 +176,8 @@ if (prNumber > 0) {
             },
           });
         }
+      } else if (CANCELLED_CONCLUSIONS.has(conclusion)) {
+        cancelled += 1;
       } else if (!PASS_CONCLUSIONS.has(conclusion)) {
         pending += 1;
       }
@@ -178,13 +207,17 @@ if (prNumber > 0) {
       }
     }
 
-    const total = checkRuns.length + latestStatuses.size;
+    const total = Math.max(totalCheckCount, checkRuns.length) + latestStatuses.size;
     if (total === 0) {
       checkSummary = "no checks on " + shortSha;
     } else if (failing > 0) {
       checkSummary = failing + " failing, " + pending + " pending of " + total + " check(s) on " + shortSha;
     } else if (pending > 0) {
       checkSummary = pending + " of " + total + " check(s) pending on " + shortSha;
+    } else if (cancelled > 0) {
+      checkSummary = (total - cancelled) + " passed, " + cancelled + " cancelled of " + total + " check(s) on " + shortSha;
+    } else if (truncatedChecks) {
+      checkSummary = checkRuns.length + " of " + total + " check(s) inspected on " + shortSha;
     } else {
       checkSummary = "all " + total + " check(s) passed on " + shortSha;
       if (watchSet.has("ci_pass")) {
@@ -207,8 +240,8 @@ if (prNumber > 0) {
 
   if (watchSet.has("reviews")) {
     type Review = { id: number; state: string; body?: string | null; submitted_at?: string; html_url?: string; user?: { login?: string } | null };
-    const reviews = await ghApi<Review[]>("repos/" + repo + "/pulls/" + prNumber + "/reviews?per_page=50");
-    for (const review of Array.isArray(reviews) ? reviews.slice().reverse() : []) {
+    const reviews = await ghPaginatedList<Review>("repos/" + repo + "/pulls/" + prNumber + "/reviews", 5);
+    for (const review of reviews.slice().reverse()) {
       const actor = review.user?.login ?? "unknown";
       if (ignoredActors.has(actor.toLowerCase())) continue;
       if (review.state === "PENDING" || review.state === "DISMISSED") continue;
@@ -235,9 +268,10 @@ if (prNumber > 0) {
   if (watchSet.has("comments")) {
     type ReviewComment = { id: number; path?: string; line?: number | null; original_line?: number | null; body?: string; created_at?: string; html_url?: string; user?: { login?: string } | null };
     type IssueComment = { id: number; body?: string; created_at?: string; html_url?: string; user?: { login?: string } | null };
+    const sinceIso = new Date(nowMs - COMMENT_LOOKBACK_MS).toISOString();
     const [diffComments, issueComments] = await Promise.all([
-      ghApi<ReviewComment[]>("repos/" + repo + "/pulls/" + prNumber + "/comments?sort=created&direction=desc&per_page=30"),
-      ghApi<IssueComment[]>("repos/" + repo + "/issues/" + prNumber + "/comments?per_page=30"),
+      ghApi<ReviewComment[]>("repos/" + repo + "/pulls/" + prNumber + "/comments?sort=created&direction=desc&per_page=40"),
+      ghPaginatedList<IssueComment>("repos/" + repo + "/issues/" + prNumber + "/comments?since=" + encodeURIComponent(sinceIso), 3),
     ]);
 
     for (const comment of Array.isArray(diffComments) ? diffComments : []) {
@@ -263,7 +297,7 @@ if (prNumber > 0) {
       });
     }
 
-    for (const comment of Array.isArray(issueComments) ? issueComments.slice().reverse() : []) {
+    for (const comment of issueComments.slice().reverse()) {
       const actor = comment.user?.login ?? "unknown";
       if (ignoredActors.has(actor.toLowerCase())) continue;
       const body = (comment.body ?? "").trim();
@@ -303,8 +337,11 @@ if (prNumber > 0) {
   }
 
   const workflow = String(params.workflow ?? "").trim();
-  const commit = await ghApi<{ sha: string }>("repos/" + repo + "/commits/" + encodeURIComponent(branch));
-  const headSha = commit.sha;
+  const commitsResp = await ghApi<Array<{ sha?: string }> | { sha?: string }>(
+    "repos/" + repo + "/commits?sha=" + encodeURIComponent(branch) + "&per_page=1",
+  );
+  const headSha = Array.isArray(commitsResp) ? (commitsResp[0]?.sha ?? "") : (commitsResp.sha ?? "");
+  if (!headSha) throw new Error("no commits returned for branch " + branch + " in " + repo);
   const shortSha = headSha.slice(0, 7);
 
   type WorkflowRun = {
@@ -338,6 +375,7 @@ if (prNumber > 0) {
 
   let failing = 0;
   let pending = 0;
+  let cancelled = 0;
   for (const run of currentHeadRuns) {
     const attempt = run.run_attempt ?? 1;
     const wfName = run.name ?? (workflow || "workflow");
@@ -365,12 +403,14 @@ if (prNumber > 0) {
           },
         });
       }
+    } else if (CANCELLED_CONCLUSIONS.has(conclusion)) {
+      cancelled += 1;
     } else if (!PASS_CONCLUSIONS.has(conclusion)) {
       pending += 1;
     }
   }
 
-  if (watchSet.has("ci_pass") && currentHeadRuns.length > 0 && failing === 0 && pending === 0) {
+  if (watchSet.has("ci_pass") && currentHeadRuns.length > 0 && failing === 0 && pending === 0 && cancelled === 0) {
     const wfPart = workflow ? ":" + workflow : "";
     pushEvent({
       key: "ci-pass:" + repo + ":" + branch + wfPart + ":" + headSha.slice(0, 12),
@@ -392,7 +432,9 @@ if (prNumber > 0) {
         ? failing + " failing, " + pending + " running of " + currentHeadRuns.length + " workflow(s) on " + shortSha
         : pending > 0
           ? pending + " of " + currentHeadRuns.length + " workflow(s) running on " + shortSha
-          : "all " + currentHeadRuns.length + " workflow(s) passed on " + shortSha;
+          : cancelled > 0
+            ? (currentHeadRuns.length - cancelled) + " passed, " + cancelled + " cancelled of " + currentHeadRuns.length + " workflow(s) on " + shortSha
+            : "all " + currentHeadRuns.length + " workflow(s) passed on " + shortSha;
 
   console.log(JSON.stringify({ events, summary: repo + "@" + branch + ": " + statusText }));
 }

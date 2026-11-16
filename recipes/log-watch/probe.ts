@@ -14,10 +14,13 @@ type LogState = {
 };
 
 type ProbeEvent = { key: string; summary: string; data: Record<string, unknown> };
+type DecodedLine = { text: string; byteOffset: number };
 
 const MAX_EVENTS = 50;
 const PARTIAL_LINE_LIMIT = 16 * 1024;
-const STACK_CONTINUATION = /^\s+(?:at\s|File\s+"|Caused by:|\.\.\.\s+\d+\s+more\b|\^+)/;
+const STACK_CONTINUATION = /^(?:\s+\S|Caused by:)/;
+const PYTHON_TRACEBACK_HEADER = /Traceback \(most recent call last\):/i;
+const PYTHON_EXCEPTION_TAIL = /^[A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception|Warning|Exit)(?::|$)/;
 const LEADING_TIMESTAMP =
   /^(?:\[?\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\]?\s*|[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+)/;
 
@@ -74,6 +77,30 @@ function clip(text: string, max = 140): string {
   return clean.length <= max ? clean : clean.slice(0, max - 1) + "…";
 }
 
+/** Splits raw bytes on `\n` (stripping optional `\r`) so byte offsets stay exact on CRLF or non-UTF8 sequences. */
+function decodeLinesWithOffsets(bytes: Uint8Array, baseOffset: number): DecodedLine[] {
+  const result: DecodedLine[] = [];
+  let lineStart = 0;
+  for (let pos = 0; pos < bytes.length; pos += 1) {
+    if (bytes[pos] === 0x0a) {
+      const end = pos > lineStart && bytes[pos - 1] === 0x0d ? pos - 1 : pos;
+      result.push({
+        text: decoder.decode(bytes.subarray(lineStart, end)),
+        byteOffset: baseOffset + lineStart,
+      });
+      lineStart = pos + 1;
+    }
+  }
+  if (lineStart < bytes.length) {
+    const end = bytes[bytes.length - 1] === 0x0d ? bytes.length - 1 : bytes.length;
+    result.push({
+      text: decoder.decode(bytes.subarray(lineStart, end)),
+      byteOffset: baseOffset + lineStart,
+    });
+  }
+  return result;
+}
+
 const filePath = resolveLogPath(rawPath);
 let stat: Deno.FileInfo;
 try {
@@ -86,12 +113,13 @@ try {
       ino: null,
       head: "",
       headLen: 0,
-      epoch: (prevState?.epoch ?? 0),
+      epoch: prevState?.epoch ?? 0,
     };
     console.log(JSON.stringify({ events: [], state: waitingState, summary: "waiting for " + rawPath + " to be created" }));
     Deno.exit(0);
   }
-  throw new Error("cannot access log file " + filePath + ": " + (error as Error).message);
+  const cwdHint = rawPath.startsWith("/") || rawPath.startsWith("~") ? "" : " (check target.cwd or pass an absolute path)";
+  throw new Error("cannot access log file " + filePath + cwdHint + ": " + (error as Error).message);
 }
 
 const file = await Deno.open(filePath, { read: true });
@@ -126,7 +154,7 @@ try {
     prevState.headLen > 0 &&
     headRead >= prevState.headLen &&
     Boolean(prevState.head) &&
-     (await sha256Hex(headBuf.subarray(0, prevState.headLen))).slice(0, 16) !== prevState.head;
+    (await sha256Hex(headBuf.subarray(0, prevState.headLen))).slice(0, 16) !== prevState.head;
   const rotated = stat.size < prevOffset || inoChanged || headChanged;
 
   const epoch = (prevState.epoch ?? 1) + (rotated ? 1 : 0);
@@ -134,7 +162,7 @@ try {
   let skippedBytes = 0;
 
   if (stat.size - readFrom > maxBytes) {
-    skippedBytes = (stat.size - readFrom) - maxBytes;
+    skippedBytes = stat.size - readFrom - maxBytes;
     readFrom = stat.size - maxBytes;
   }
 
@@ -159,7 +187,11 @@ try {
   // When skipping ahead mid-burst, drop the partial leading line fragment so matching starts at a line boundary.
   if (skippedBytes > 0) {
     const firstNl = slice.indexOf(0x0a);
-    if (firstNl >= 0 && firstNl + 1 < slice.length) {
+    if (firstNl < 0) {
+      skippedBytes += slice.length;
+      sliceStartOffset += slice.length;
+      slice = slice.subarray(slice.length);
+    } else {
       skippedBytes += firstNl + 1;
       sliceStartOffset += firstNl + 1;
       slice = slice.subarray(firstNl + 1);
@@ -178,34 +210,40 @@ try {
     }
   }
 
-  const text = decoder.decode(slice).replace(/\r\n/g, "\n");
-  const lines = text.endsWith("\n") ? text.slice(0, -1).split("\n") : text ? text.split("\n") : [];
-
+  const lines = decodeLinesWithOffsets(slice, sliceStartOffset);
   const events: ProbeEvent[] = [];
   let totalMatches = 0;
-  let byteCursor = sliceStartOffset;
-  const lineOffsets: number[] = [];
-  for (const line of lines) {
-    lineOffsets.push(byteCursor);
-    byteCursor += encoder.encode(line).byteLength + 1;
-  }
 
   for (let idx = 0; idx < lines.length; idx += 1) {
-    const line = lines[idx]!;
+    const { text: line, byteOffset: matchOffset } = lines[idx]!;
     if (!matchRe.test(line) || (excludeRe && excludeRe.test(line))) continue;
-    const matchIndex = idx;
-    const matchOffset = lineOffsets[matchIndex]!;
     totalMatches += 1;
 
     const snippetLines = [line];
     let consumeUntil = idx;
+    let inPythonTraceback = PYTHON_TRACEBACK_HEADER.test(line);
+    let sawIndentedFrame = false;
     const limitIdx = Math.min(lines.length - 1, idx + contextLines);
+
     for (let j = idx + 1; j <= limitIdx; j += 1) {
-      const candidate = lines[j]!;
-      snippetLines.push(candidate);
-      if (STACK_CONTINUATION.test(candidate) || (matchRe.test(candidate) && !(excludeRe && excludeRe.test(candidate)))) {
-        consumeUntil = j;
+      const candidate = lines[j]!.text;
+      if (STACK_CONTINUATION.test(candidate)) {
+        snippetLines.push(candidate);
+        if ( j === consumeUntil + 1 ) consumeUntil = j;
+        if (/^\s+\S/.test(candidate)) sawIndentedFrame = true;
+        continue;
       }
+      if (inPythonTraceback && sawIndentedFrame && j === consumeUntil + 1 && PYTHON_EXCEPTION_TAIL.test(candidate)) {
+        snippetLines.push(candidate);
+        consumeUntil = j;
+        inPythonTraceback = false;
+        continue;
+      }
+      // Stop context before an independent matching log entry so it emits its own event next.
+      if (matchRe.test(candidate) && !(excludeRe && excludeRe.test(candidate))) {
+        break;
+      }
+      snippetLines.push(candidate);
     }
     idx = consumeUntil;
 

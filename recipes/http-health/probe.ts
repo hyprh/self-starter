@@ -2,9 +2,9 @@
 //
 // Runs in a network-only Deno sandbox restricted to `url.host` (plus any explicit
 // `allow_hosts`). Configuration mistakes throw so `trigger_draft` rejects them;
-// runtime connection errors, timeouts, unexpected status codes, body/JSON mismatches,
-// and slow responses report `{ fire: true }` so the state trigger fires when the
-// service goes unhealthy and re-arms once it recovers.
+// runtime connection errors, timeouts (including mid-body stalls), unexpected status
+// codes, body/JSON mismatches, and slow responses report `{ fire: true }` so the state
+// trigger fires when the service goes unhealthy and re-arms once it recovers.
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD"]);
 
@@ -79,7 +79,7 @@ function lookupPath(root: unknown, path: string[]): unknown {
 
 function matchesExpectedScalar(actual: unknown, expectedText: string): boolean {
   if (actual === undefined) return false;
-  if (typeof actual === "string") return actual === expectedText;
+  if (typeof actual === "string") return actual === expectedText || JSON.stringify(actual) === expectedText;
   if (typeof actual === "number" || typeof actual === "boolean") return String(actual) === expectedText;
   if (actual === null) return expectedText === "null";
   return JSON.stringify(actual) === expectedText;
@@ -92,6 +92,7 @@ function clip(text: string, max = 240): string {
 
 const started = performance.now();
 let response: Response;
+let bodyText = "";
 try {
   response = await fetch(targetUrl, {
     method,
@@ -102,13 +103,42 @@ try {
     },
     signal: AbortSignal.timeout(timeoutMs),
   });
+
+  if (method !== "HEAD" && (bodyRe || jsonExpect || !allowedStatusSet.has(response.status))) {
+    const reader = response.body?.getReader();
+    if (reader) {
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      const limit = 64 * 1024;
+      while (total < limit) {
+        const { done, value } = await reader.read();
+        if (done || !value) break;
+        const take = value.subarray(0, Math.min(value.byteLength, limit - total));
+        chunks.push(take);
+        total += take.byteLength;
+        if (total >= limit) {
+          await reader.cancel().catch(() => undefined);
+          break;
+        }
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      bodyText = new TextDecoder().decode(merged);
+    }
+  } else {
+    await response.body?.cancel().catch(() => undefined);
+  }
 } catch (error) {
   const latencyMs = Math.round(performance.now() - started);
   // Permission errors mean the URL redirected to a host outside `allow_hosts`; surface clearly.
   if (error instanceof Deno.errors.NotCapable) {
     throw new Error("blocked redirect outside allowed sandbox host(s); add the redirect host to probe.params.allow_hosts");
   }
-  const isTimeout = (error as Error)?.name === "TimeoutError" || /timed?\s*out/i.test(String((error as Error)?.message ?? ""));
+  const isTimeout = (error as Error)?.name === "TimeoutError" || /timed?\s*out|aborted/i.test(String((error as Error)?.message ?? ""));
   const reason = isTimeout ? "request timed out after " + timeoutMs + " ms" : clip((error as Error)?.message ?? String(error), 160);
   console.log(
     JSON.stringify({
@@ -124,36 +154,6 @@ try {
     }),
   );
   Deno.exit(0);
-}
-
-let bodyText = "";
-if (method !== "HEAD" && (bodyRe || jsonExpect || !allowedStatusSet.has(response.status))) {
-  const reader = response.body?.getReader();
-  if (reader) {
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    const limit = 64 * 1024;
-    while (total < limit) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      const take = value.subarray(0, Math.min(value.byteLength, limit - total));
-      chunks.push(take);
-      total += take.byteLength;
-      if (total >= limit) {
-        await reader.cancel().catch(() => undefined);
-        break;
-      }
-    }
-    const merged = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) {
-      merged.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    bodyText = new TextDecoder().decode(merged);
-  }
-} else {
-  await response.body?.cancel().catch(() => undefined);
 }
 
 const latencyMs = Math.round(performance.now() - started);

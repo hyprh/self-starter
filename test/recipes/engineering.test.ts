@@ -15,6 +15,7 @@ import { tempHome } from "../engine/fixtures.js";
 const deno = bundledDeno();
 const RECIPES = join(PACKAGE_ROOT, "recipes");
 const NOW = "2026-11-16T03:00:00Z";
+const SINCE_7D = encodeURIComponent(new Date(Date.parse(NOW) - 7 * 86_400_000).toISOString());
 
 describe("built-in recipe catalog", () => {
   it("loads all five official engineering and market recipes", () => {
@@ -104,8 +105,15 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
     assert.match(bad.errors.join("\n"), /no parameter unknown_knob/);
   });
 
-  it("watches a pull request for failed checks, reviews, comments, and merge conflicts while skipping ignored actors", async () => {
+  it("watches a pull request across paginated reviews and comments while skipping ignored actors", async () => {
     const headSha = "abcdef1234567890fedcba";
+    // Page 1 has 100 older empty COMMENTED reviews so page 2's newest CHANGES_REQUESTED review must still be reached.
+    const page1Reviews = Array.from({ length: 100 }, (_, i) => ({
+      id: 100 + i,
+      state: "COMMENTED",
+      body: "",
+      user: { login: "reviewer" },
+    }));
     writeFileSync(
       responsesFile,
       JSON.stringify({
@@ -120,7 +128,8 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
           mergeable_state: "dirty",
           head: { sha: headSha, ref: "feat/recipes" },
         },
-        ["repos/acme/widget/commits/" + headSha + "/check-runs?per_page=100"]: {
+        ["repos/acme/widget/commits/" + headSha + "/check-runs?per_page=100&page=1"]: {
+          total_count: 2,
           check_runs: [
             { id: 901, name: "CI / Test (ubuntu)", status: "completed", conclusion: "success", html_url: "https://github.com/acme/widget/runs/901" },
             { id: 902, name: "CI / Test (macos)", status: "completed", conclusion: "failure", html_url: "https://github.com/acme/widget/runs/902" },
@@ -129,16 +138,16 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
         ["repos/acme/widget/commits/" + headSha + "/status"]: {
           statuses: [{ context: "vercel", state: "success" }],
         },
-        "repos/acme/widget/pulls/42/reviews?per_page=50": [
+        "repos/acme/widget/pulls/42/reviews?per_page=100&page=1": page1Reviews,
+        "repos/acme/widget/pulls/42/reviews?per_page=100&page=2": [
           { id: 500, state: "PENDING", body: "draft", user: { login: "alice" } },
-          { id: 501, state: "COMMENTED", body: "", user: { login: "alice" } },
           { id: 502, state: "CHANGES_REQUESTED", body: "Please handle log rotation.", user: { login: "alice" }, html_url: "https://github.com/acme/widget/pull/42#pullrequestreview-502" },
           { id: 503, state: "APPROVED", body: "LGTM", user: { login: "dependabot[bot]" } },
         ],
-        "repos/acme/widget/pulls/42/comments?sort=created&direction=desc&per_page=30": [
+        "repos/acme/widget/pulls/42/comments?sort=created&direction=desc&per_page=40": [
           { id: 701, path: "src/probe.ts", line: 18, body: "Check offset reset on truncate.", user: { login: "bob" }, html_url: "https://github.com/acme/widget/pull/42#discussion_r701" },
         ],
-        "repos/acme/widget/issues/42/comments?per_page=30": [
+        ["repos/acme/widget/issues/42/comments?since=" + SINCE_7D + "&per_page=100&page=1"]: [
           { id: 801, body: "Can we also cover HEAD requests?", user: { login: "carol" }, html_url: "https://github.com/acme/widget/pull/42#issuecomment-801" },
           { id: 802, body: "Automated preview deployed", user: { login: "Dependabot[bot]" } },
         ],
@@ -158,16 +167,17 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
     ]);
   });
 
-  it("watches branch workflow runs on the current head commit and ignores superseded failures", async () => {
+  it("watches slash-named branches, ignores superseded failures, and does not treat cancelled runs as running or passed", async () => {
     const currentHead = "222222222222333333333333";
     const oldHead = "111111111111000000000000";
+    const branch = "feat/sub-branch";
+    const encoded = encodeURIComponent(branch);
     writeFileSync(
       responsesFile,
       JSON.stringify({
-        "repos/acme/widget/commits/main": { sha: currentHead },
-        "repos/acme/widget/actions/workflows/ci.yml/runs?branch=main&per_page=25": {
+        ["repos/acme/widget/commits?sha=" + encoded + "&per_page=1"]: [{ sha: currentHead }],
+        ["repos/acme/widget/actions/workflows/ci.yml/runs?branch=" + encoded + "&per_page=25"]: {
           workflow_runs: [
-            // Older failure on previous commit, plus older failed run superseded by a newer run on current commit:
             {
               id: 100,
               workflow_id: 1,
@@ -197,16 +207,16 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
       }),
     );
 
-    const failing = await run(definition({ repo: "acme/widget", branch: "main", workflow: "ci.yml", watch: ["ci", "ci_pass"] }));
+    const failing = await run(definition({ repo: "acme/widget", branch, workflow: "ci.yml", watch: ["ci", "ci_pass"] }));
     assert.ok(failing.ok, failing.ok ? "" : failing.error);
     assert.deepEqual(failing.output.mode === "event" && failing.output.events.map((e) => e.key), ["ci-fail:acme/widget:101:2"]);
 
-    // Once a newer run #12 succeeds on currentHead, the superseded failure #11 no longer emits and ci_pass fires once.
+    // A cancelled latest run is neither `running` nor `ci_pass`.
     writeFileSync(
       responsesFile,
       JSON.stringify({
-        "repos/acme/widget/commits/main": { sha: currentHead },
-        "repos/acme/widget/actions/workflows/ci.yml/runs?branch=main&per_page=25": {
+        ["repos/acme/widget/commits?sha=" + encoded + "&per_page=1"]: [{ sha: currentHead }],
+        ["repos/acme/widget/actions/workflows/ci.yml/runs?branch=" + encoded + "&per_page=25"]: {
           workflow_runs: [
             {
               id: 102,
@@ -214,11 +224,40 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
               name: "CI",
               run_number: 12,
               run_attempt: 1,
+              created_at: "2026-11-16T02:40:00Z",
+              head_sha: currentHead,
+              status: "completed",
+              conclusion: "cancelled",
+              html_url: "https://github.com/acme/widget/actions/runs/102",
+            },
+          ],
+        },
+      }),
+    );
+    const cancelledRun = await run(definition({ repo: "acme/widget", branch, workflow: "ci.yml", watch: ["ci", "ci_pass"] }));
+    assert.ok(cancelledRun.ok, cancelledRun.ok ? "" : cancelledRun.error);
+    assert.deepEqual(cancelledRun.output.mode === "event" && cancelledRun.output.events, []);
+    assert.match(cancelledRun.output.summary, /1 cancelled/);
+    assert.doesNotMatch(cancelledRun.output.summary, /running/);
+
+    // Once run #13 succeeds on currentHead, ci_pass fires once.
+    writeFileSync(
+      responsesFile,
+      JSON.stringify({
+        ["repos/acme/widget/commits?sha=" + encoded + "&per_page=1"]: [{ sha: currentHead }],
+        ["repos/acme/widget/actions/workflows/ci.yml/runs?branch=" + encoded + "&per_page=25"]: {
+          workflow_runs: [
+            {
+              id: 103,
+              workflow_id: 1,
+              name: "CI",
+              run_number: 13,
+              run_attempt: 1,
               created_at: "2026-11-16T02:45:00Z",
               head_sha: currentHead,
               status: "completed",
               conclusion: "success",
-              html_url: "https://github.com/acme/widget/actions/runs/102",
+              html_url: "https://github.com/acme/widget/actions/runs/103",
             },
             {
               id: 101,
@@ -236,10 +275,10 @@ describe("github-ci recipe", { skip: deno ? false : "the deno npm package is not
         },
       }),
     );
-    const recovered = await run(definition({ repo: "acme/widget", branch: "main", workflow: "ci.yml", watch: ["ci", "ci_pass"] }));
+    const recovered = await run(definition({ repo: "acme/widget", branch, workflow: "ci.yml", watch: ["ci", "ci_pass"] }));
     assert.ok(recovered.ok, recovered.ok ? "" : recovered.error);
     assert.deepEqual(recovered.output.mode === "event" && recovered.output.events.map((e) => e.key), [
-      "ci-pass:acme/widget:main:ci.yml:222222222222",
+      "ci-pass:acme/widget:" + branch + ":ci.yml:222222222222",
     ]);
   });
 });
@@ -286,7 +325,7 @@ describe("log-watch recipe", { skip: deno ? false : "the deno npm package is not
     });
   }
 
-  it("records EOF baseline on first run, groups stack traces incrementally, handles copytruncate rotation, and supports dedupe_by_line", async () => {
+  it("records EOF baseline, coalesces stack traces & Python tracebacks without swallowing separate errors, handles CRLF & copytruncate, and dedupes lines", async () => {
     const logFile = join(scratch, "app.log");
     writeFileSync(logFile, "2026-11-16T01:00:00Z ERROR historical failure before watch started\n");
 
@@ -295,29 +334,41 @@ describe("log-watch recipe", { skip: deno ? false : "the deno npm package is not
     assert.ok(first.ok, first.ok ? "" : first.error);
     assert.deepEqual(first.output.mode === "event" && first.output.events, []);
 
-    // Append routine INFO, an excluded ERROR, and a real multi-line stack trace.
-    writeFileSync(
-      logFile,
-      [
-        "2026-11-16T02:00:01Z INFO request ok",
-        "2026-11-16T02:00:02Z ERROR healthcheck transient noise",
-        "2026-11-16T02:00:03Z ERROR Unhandled exception in worker:",
-        "    at processJob (src/worker.ts:42:11)",
-        "    at async main (src/index.ts:10:3)",
-        "Caused by: Error: connection reset",
-        "",
-      ].join("\n"),
-      { flag: "a" },
-    );
+    // Append CRLF lines: 1 JS stack trace, 1 Python traceback, and 2 adjacent independent ERROR lines.
+    const initialSize = (first.output.state as { offset: number }).offset;
+    const chunk = [
+      "2026-11-16T02:00:01Z INFO request ok",
+      "2026-11-16T02:00:02Z ERROR healthcheck transient noise",
+      "2026-11-16T02:00:03Z ERROR Unhandled exception in worker:",
+      "    at processJob (src/worker.ts:42:11)",
+      "Caused by: Error: connection reset",
+      "Traceback (most recent call last):",
+      '  File "train.py", line 14, in main',
+      "    step()",
+      "RuntimeError: CUDA out of memory",
+      "2026-11-16T02:00:04Z ERROR First independent failure",
+      "2026-11-16T02:00:05Z INFO normal line between failures",
+      "2026-11-16T02:00:06Z ERROR Second independent failure",
+      "",
+    ].join("\r\n");
+    writeFileSync(logFile, chunk, { flag: "a" });
 
     const second = await run(def, first.output.state);
     assert.ok(second.ok, second.ok ? "" : second.error);
     const events2 = second.output.mode === "event" ? second.output.events : [];
-    assert.equal(events2.length, 1, "one stack trace coalesces into one event while excluded noise is ignored");
-    assert.match(String((events2[0]!.data as Record<string, unknown>).snippet), /at processJob/);
+    assert.equal(events2.length, 4, "JS trace, Python traceback, and both independent ERROR lines emit separate events");
     assert.match(String((events2[0]!.data as Record<string, unknown>).snippet), /Caused by: Error: connection reset/);
+    assert.match(String((events2[1]!.data as Record<string, unknown>).snippet), /RuntimeError: CUDA out of memory/);
+    assert.match(events2[2]!.summary ?? "", /First independent failure/);
+    assert.doesNotMatch(String((events2[2]!.data as Record<string, unknown>).snippet), /Second independent failure/);
+    assert.match(events2[3]!.summary ?? "", /Second independent failure/);
+    // Exact byte offset of "2026-11-16T02:00:03Z ERROR..." under CRLF:
+    const expectedFirstMatchOffset =
+      initialSize +
+      Buffer.byteLength("2026-11-16T02:00:01Z INFO request ok\r\n2026-11-16T02:00:02Z ERROR healthcheck transient noise\r\n");
+    assert.equal((events2[0]!.data as Record<string, unknown>).byte_offset, expectedFirstMatchOffset);
 
-    // Simulate copytruncate rotation with completely new content larger than 0 bytes.
+    // Simulate copytruncate rotation with completely new content.
     writeFileSync(
       logFile,
       "2026-11-16T02:10:00Z INFO rotated fresh file\n2026-11-16T02:10:01Z FATAL disk full on /var/lib/data\n",
@@ -361,12 +412,12 @@ describe("http-health recipe", { skip: deno ? false : "the deno npm package is n
   const { recipe } = loadRecipe(RECIPES, "http-health");
   const dir = join(RECIPES, "http-health");
   let home: ReturnType<typeof tempHome>;
-  let mode: "ok" | "503" | "bad-json" | "redirect-outside" = "ok";
+  let mode: "ok" | "503" | "bad-json" | "redirect-outside" | "body-stall" = "ok";
   let origin = "";
   let host = "";
   let forbiddenOrigin = "";
 
-  const server = createServer((req, res) => {
+  const server = createServer((_req, res) => {
     if (mode === "503") {
       res.writeHead(503, { "content-type": "text/plain" });
       res.end("maintenance");
@@ -380,6 +431,12 @@ describe("http-health recipe", { skip: deno ? false : "the deno npm package is n
     if (mode === "redirect-outside") {
       res.writeHead(302, { location: forbiddenOrigin + "/secret" });
       res.end();
+      return;
+    }
+    if (mode === "body-stall") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"status":');
+      // Intentionally never finish the stream until client aborts.
       return;
     }
     res.writeHead(200, { "content-type": "application/json" });
@@ -431,8 +488,8 @@ describe("http-health recipe", { skip: deno ? false : "the deno npm package is n
     });
   }
 
-  it("derives sandbox permissions.net strictly from params.url and blocks cross-host redirects", async () => {
-    const def = definition({ url: origin + "/healthz", expect_json: "data.healthy=true" });
+  it("derives sandbox permissions.net strictly from params.url, supports quoted JSON strings, and blocks cross-host redirects", async () => {
+    const def = definition({ url: origin + "/healthz", expect_json: 'status="ok"' });
     assert.equal(def.probe.access, "sandbox");
     assert.deepEqual(def.probe.permissions, { net: [host], env: [] });
 
@@ -442,21 +499,29 @@ describe("http-health recipe", { skip: deno ? false : "the deno npm package is n
     assert.equal(okRes.output.mode === "state" && okRes.output.fire, false);
     assert.equal(okRes.output.mode === "state" && okRes.output.rearm, true);
 
+    const boolDef = definition({ url: origin + "/healthz", expect_json: "data.healthy=true" });
     mode = "bad-json";
-    const mismatch = await run(def);
+    const mismatch = await run(boolDef);
     assert.ok(mismatch.ok, mismatch.ok ? "" : mismatch.error);
     assert.equal(mismatch.output.mode === "state" && mismatch.output.fire, true);
     assert.match(mismatch.output.summary, /JSON data\.healthy=false/);
 
     mode = "503";
-    const down = await run(def);
+    const down = await run(boolDef);
     assert.ok(down.ok, down.ok ? "" : down.error);
     assert.equal(down.output.mode === "state" && down.output.fire, true);
     assert.match(down.output.summary, /HTTP 503/);
 
+    // Mid-stream response body stall fires `timeout` cleanly instead of crashing the probe.
+    mode = "body-stall";
+    const stalled = await run(definition({ url: origin + "/healthz", expect_json: "status=ok", request_timeout_ms: 500 }));
+    assert.ok(stalled.ok, stalled.ok ? "" : stalled.error);
+    assert.equal(stalled.output.mode === "state" && stalled.output.fire, true);
+    assert.match(stalled.output.summary, /timed out/);
+
     // Redirecting to a port outside `permissions.net` is blocked by Deno's sandbox!
     mode = "redirect-outside";
-    const redirected = await run(def);
+    const redirected = await run(boolDef);
     assert.equal(redirected.ok, false);
     if (!redirected.ok) assert.match(redirected.error, /blocked redirect outside allowed sandbox host/);
   });
@@ -474,9 +539,14 @@ describe("http-health recipe", { skip: deno ? false : "the deno npm package is n
     assert.match(res.output.summary, /unhealthy/);
   });
 
-  it("re-derives sandbox host allowlist on parameter changes and rejects non-HTTP URLs", () => {
-    const bad = applyRecipe(recipe, { probe: { params: { url: "ftp://example.com/file" } } });
-    assert.match(bad.errors.join("\n"), /probe\.params\.url must be an http:\/\/ or https:\/\/ URL/);
+  it("re-derives sandbox host allowlist on parameter changes and validates URL and allow_hosts syntax", () => {
+    const badUrl = applyRecipe(recipe, { probe: { params: { url: "ftp://example.com/file" } } });
+    assert.match(badUrl.errors.join("\n"), /probe\.params\.url must be an http:\/\/ or https:\/\/ URL/);
+
+    const badHost = applyRecipe(recipe, {
+      probe: { params: { url: "https://status.example.com/healthz", allow_hosts: ["https://cdn.example.com"] } },
+    });
+    assert.match(badHost.errors.join("\n"), /probe\.params\.allow_hosts\[0\] must be a host or host:port/);
 
     const updated = applyRecipe(recipe, {
       probe: { params: { url: "https://status.example.com:8443/healthz", allow_hosts: ["cdn.example.com"] } },

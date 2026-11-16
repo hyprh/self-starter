@@ -20,7 +20,7 @@
     },
     "pattern": {
       "type": "string",
-      "default": "\\b(ERROR|FATAL|CRITICAL|PANIC|UnhandledPromiseRejection|Traceback \\(most recent call last\\))\\b",
+      "default": "\\b(?:ERROR|FATAL|CRITICAL|PANIC|UnhandledPromiseRejection)\\b|Traceback \\(most recent call last\\):",
       "description": "Regular expression matching log lines to report."
     },
     "exclude": {
