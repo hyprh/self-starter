@@ -32,6 +32,9 @@ jobs:
           test "$(node -p 'require("./agy-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./zcode-plugin/.zcode-plugin/plugin.json").version')" = "$version"
           test "$(node -p 'require("./marketplace.json").plugins[0].version')" = "$version"
+          test "$(node -p 'require("./server.json").version')" = "$version"
+          test "$(node -p 'require("./server.json").packages[0].version')" = "$version"
+          test "$(node -p 'require("./package.json").mcpName')" = "$(node -p 'require("./server.json").name')"
       - name: Take the notes from CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
@@ -59,3 +62,28 @@ jobs:
           else
             gh release create "$GITHUB_REF_NAME" --title "Self-Starter $GITHUB_REF_NAME" --notes-file notes.md --verify-tag
           fi
+      - name: Publish to the Official MCP Registry
+        env:
+          MCP_PUBLISHER_VERSION: 1.8.9
+          MCP_PUBLISHER_SHA256: 4d527ca8f1ced0394c962dc925c2a4a4addef441cbefd62501c875e9481823a8
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          status="$(curl -sS -o /dev/null -w '%{http_code}' "https://registry.modelcontextprotocol.io/v0.1/servers/io.github.hyprh%2Fself-starter/versions/$version")"
+          if [ "$status" = "200" ]; then
+            echo "io.github.hyprh/self-starter@$version is already published on the MCP Registry; skipping."
+            exit 0
+          fi
+          archive="$RUNNER_TEMP/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/v${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" -o "$archive"
+          printf '%s  %s\n' "$MCP_PUBLISHER_SHA256" "$archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" mcp-publisher
+          "$RUNNER_TEMP/mcp-publisher" validate server.json
+          # Wait briefly for npm CDN propagation right after publish before MCP Registry verifies package.json.
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsSL "https://registry.npmjs.org/self-starter/$version" | node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(0,"utf8")); process.exit(p.mcpName==="io.github.hyprh/self-starter"?0:1)'; then
+              break
+            fi
+            sleep 10
+          done
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish server.json

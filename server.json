@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.hyprh/self-starter",
+  "title": "Self-Starter",
+  "description": "Local zero-token event triggers and standing jobs for Claude Code, Codex, Antigravity & OpenCode.",
+  "version": "0.1.1",
+  "websiteUrl": "https://hyprh.github.io/self-starter/",
+  "repository": {
+    "url": "https://github.com/hyprh/self-starter",
+    "source": "github",
+    "id": "1416399736"
+  },
+  "icons": [
+    {
+      "src": "https://hyprh.github.io/self-starter/icon-trigger.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "self-starter",
+      "version": "0.1.1",
+      "runtimeHint": "npx",
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

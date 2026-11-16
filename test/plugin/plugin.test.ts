@@ -475,10 +475,17 @@ describe("the plugin's launcher", () => {
 
   it("keeps all four standalone plugin launchers byte-identical by SHA-256", () => {
     const pkg = json("package.json");
+    const mcpServer = json("server.json");
     assert.notEqual(pkg.private, true, "package.json must be publishable to npm");
     assert.equal(pkg.name, "self-starter");
+    assert.equal(pkg.mcpName, "io.github.hyprh/self-starter");
+    assert.equal(mcpServer.name, pkg.mcpName);
+    assert.equal(mcpServer.version, pkg.version);
+    assert.equal(mcpServer.packages?.[0]?.identifier, pkg.name);
+    assert.equal(mcpServer.packages?.[0]?.version, pkg.version);
+    assert.deepEqual(mcpServer.packages?.[0]?.packageArguments, [{ type: "positional", value: "mcp" }]);
     assert.equal(pkg.bin?.["self-starter"], "dist/src/cli/main.js");
-    for (const requiredEntry of ["dist/src", "codex-plugin", "cc-plugin", "agy-plugin", "zcode-plugin", "opencode-plugin", "recipes"]) {
+    for (const requiredEntry of ["dist/src", "codex-plugin", "cc-plugin", "agy-plugin", "zcode-plugin", "opencode-plugin", "recipes", "server.json"]) {
       assert.ok(pkg.files.includes(requiredEntry), `package.json files missing ${requiredEntry}`);
     }
     const launcherPaths = [

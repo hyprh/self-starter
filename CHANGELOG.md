@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-11-16)
+
+- **Official MCP Registry publication (`io.github.hyprh/self-starter`).** Added `server.json` (`2025-12-11` schema), `package.json` `mcpName` namespace verification, and automated GitHub OIDC publication (`mcp-publisher login github-oidc`) in the release workflow so downstream MCP directories and IDE galleries index Self-Starter automatically.
+
 ## 0.1.0 (2026-11-16)
 
 - **Official engineering recipes (`github-ci`, `log-watch`, `http-health`).** Three built-in engineering recipes now ship alongside `futu-news` and `ibkr-account`:
