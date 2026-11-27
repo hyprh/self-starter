@@ -25,6 +25,7 @@ Local code keeps watch with no model calls, even after you close your terminal. 
   <a href="https://github.com/hyprh/self-starter/actions/workflows/ci.yml"><img src="https://github.com/hyprh/self-starter/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://github.com/hyprh/self-starter/releases"><img src="https://img.shields.io/github/v/release/hyprh/self-starter" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <a href="https://glama.ai/mcp/servers/hyprh/self-starter"><img src="https://glama.ai/mcp/servers/hyprh/self-starter/badges/score.svg" alt="hyprh/self-starter MCP server"></a>
 </p>
 
 ## Demo
